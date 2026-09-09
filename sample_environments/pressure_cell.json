@@ -1,0 +1,21 @@
+{
+  "name": "Pressure Cell",
+  "dark_angle_reference": "Reference Q",
+  "dark_angle_ranges": [
+    {
+      "from": -15,
+      "to": 15,
+      "offset": 0
+    },
+    {
+      "from": -15,
+      "to": 15,
+      "offset": 120
+    },
+    {
+      "from": -15,
+      "to": 15,
+      "offset": -120
+    }
+  ]
+}

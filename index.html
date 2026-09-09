@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TAS Q-E Range & Resolution Simulator</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+<header><h1>TAS Q-E Range & Resolution Simulator</h1><div id="status" class="status"></div></header>
+<div class="shell">
+<aside class="sidebar">
+<section>
+  <h2>Sample</h2>
+  <div class="grid2">
+    <label>Type<select id="sampleMode"><option value="single" selected>Single crystal</option><option value="powder">Powder</option></select></label>
+    <label>Lattice centering<select id="latticeCentering"><option value="P" selected>P — Primitive</option><option value="I">I — Body-centered</option><option value="F">F — Face-centered</option><option value="A">A — A-centered</option><option value="B">B — B-centered</option><option value="C">C — C-centered</option><option value="R">R — Rhombohedral (hex axes)</option></select></label>
+  </div>
+  <h3>Lattice parameters</h3>
+  <div class="grid3">
+    <label>a (Å)<input id="a" type="number" value="5" step="0.01"></label><label>b (Å)<input id="b" type="number" value="5" step="0.01"></label><label>c (Å)<input id="c" type="number" value="5" step="0.01"></label>
+    <label>α (deg)<input id="alpha" type="number" value="90" step="1"></label><label>β (deg)<input id="beta" type="number" value="90" step="1"></label><label>γ (deg)<input id="gamma" type="number" value="90" step="1"></label>
+  </div>
+  <div id="singleCrystalInputs">
+    <h3>Scattering plane</h3>
+    <div class="vector"><span>U</span><input id="Uh" type="number" value="1"><input id="Uk" type="number" value="0"><input id="Ul" type="number" value="0"></div>
+    <div class="vector"><span>V</span><input id="Vh" type="number" value="0"><input id="Vk" type="number" value="1"><input id="Vl" type="number" value="0"></div>
+    <div class="vector auto-row"><span>W</span><span id="Wauto" class="auto-vector">auto: (0, 0, 1)</span></div>
+  </div>
+  <h3>Propagation vector</h3>
+  <label class="checkbox-label"><input id="showK" type="checkbox"><span>show</span></label>
+  <div class="grid3"><label>h<input id="kh" type="number" value="0" step="0.01"></label><label>k<input id="kk" type="number" value="0" step="0.01"></label><label>l<input id="kl" type="number" value="0" step="0.01"></label></div>
+  <div id="referenceSection">
+    <h3>Reference Q</h3>
+    <div class="grid4"><label>h<input id="refh" type="number" value="1" step="0.1"></label><label>k<input id="refk" type="number" value="0" step="0.1"></label><label>l<input id="refl" type="number" value="0" step="0.1"></label><label>S1 (deg)<input id="refs1" type="number" value="0" step="0.1"></label></div>
+  </div>
+  <h3>Background scattering</h3>
+  <label>Sample<select id="sampleSelect"><option value="">None</option></select></label>
+</section>
+<section>
+  <h2>Instrument setup</h2>
+  <label>Instrument<select id="instrument"><option>Loading...</option></select></label>
+  <div class="grid2">
+    <label>Energy mode<select id="energyMode"><option>Ei fixed</option><option selected>Ef fixed</option></select></label>
+    <label id="energyLabel">Ef (meV)<input id="energy" type="number" value="14.7" step="0.1"></label>
+    <label>Geometry<select id="geometry"><option>W</option><option>anti-W</option></select></label>
+    <label id="senseRow">Sign<select id="sense"><option>+-+</option><option selected>-+-</option></select></label>
+  </div>
+  <div class="grid2">
+    <label class="checkbox-label"><input id="lambdaHalf" type="checkbox"><span>λ/2 (range simulation)</span></label>
+    <span></span>
+  </div>
+  <div class="grid3"><label id="s2Label">S2 min (deg)<input id="S2min" type="number" value="8" step="0.1"></label><label id="s1minWrap">S1 min (deg)<input id="S1min" type="number" value="-180" step="0.1"></label><label id="s1maxWrap">S1 max (deg)<input id="S1max" type="number" value="180" step="0.1"></label></div>
+</section>
+<details id="darkSection"><summary>Dark angle</summary>
+  <label class="checkbox-label"><input id="addDark" type="checkbox"><span>show</span></label>
+  <label>Sample environment<select id="seSelect"><option value="">Standard</option></select></label>
+  <div class="grid2"><label>Reference<select id="darkRef"><option>Reference Q</option><option>Direct beam</option></select></label><label>Rotation (deg)<input id="darkRotation" type="number" value="0" step="1"></label></div>
+  <div class="dark-table"><div>No.</div><div>From</div><div>To</div><div>Offset</div>
+  <span>1</span><input id="darkFrom0" type="number" value="0"><input id="darkTo0" type="number" value="0"><input id="darkOffset0" type="number" value="0">
+  <span>2</span><input id="darkFrom1" type="number" value="0"><input id="darkTo1" type="number" value="0"><input id="darkOffset1" type="number" value="0">
+  <span>3</span><input id="darkFrom2" type="number" value="0"><input id="darkTo2" type="number" value="0"><input id="darkOffset2" type="number" value="0">
+  <span>4</span><input id="darkFrom3" type="number" value="0"><input id="darkTo3" type="number" value="0"><input id="darkOffset3" type="number" value="0"></div>
+</details>
+<details><summary>Focusing conditions</summary>
+  <div class="grid2 compact-checks">
+    <div><b>Monochromator</b><label><input id="monoHF" type="checkbox"> Horizontal</label><label><input id="monoVF" type="checkbox" checked> Vertical</label><label>H blades<input id="monoHB" type="number" value="1" min="1"></label><label>V blades<input id="monoVB" type="number" value="1" min="1"></label></div>
+    <div><b>Analyzer</b><label><input id="anaHF" type="checkbox"> Horizontal</label><label><input id="anaVF" type="checkbox" checked> Vertical</label><label>H blades<input id="anaHB" type="number" value="1" min="1"></label><label>V blades<input id="anaVB" type="number" value="1" min="1"></label></div>
+  </div>
+</details>
+<details><summary>Collimator conditions <small>(min)</small></summary><div class="grid2">
+  <label class="checkbox-label"><input id="gm1" type="checkbox"><span>1st supermirror</span></label><label>m-value<input id="div1m" type="number" value="2" step="0.1"></label>
+  <label>1st H<input id="div1h" type="number" value="40"></label><label>1st V<input id="div1v" type="number" value="40"></label><label>2nd H<input id="div2h" type="number" value="40"></label><label>2nd V<input id="div2v" type="number" value="40"></label><label>3rd H<input id="div3h" type="number" value="40"></label><label>3rd V<input id="div3v" type="number" value="40"></label><label>4th H<input id="div4h" type="number" value="80"></label><label>4th V<input id="div4v" type="number" value="80"></label></div></details>
+<details><summary>Crystal & Mosaic <small>(min)</small></summary>
+  <h3>Monochromator</h3><div class="grid2"><label>Crystal<select id="monoCrystal"></select></label><label>d (Å)<input id="dMono" type="number" value="3.355" step="0.001"></label><label>Mosaic H<input id="mosMonoH" type="number" value="30"></label><label>Mosaic V<input id="mosMonoV" type="number" value="30"></label></div>
+  <h3>Sample</h3><div class="grid2"><label>Mosaic H<input id="mosSamH" type="number" value="60"></label><label>Mosaic V<input id="mosSamV" type="number" value="60"></label></div>
+  <h3>Analyzer</h3><div class="grid2"><label>Crystal<select id="anaCrystal"></select></label><label>d (Å)<input id="dAna" type="number" value="3.355" step="0.001"></label><label>Mosaic H<input id="mosAnaH" type="number" value="30"></label><label>Mosaic V<input id="mosAnaV" type="number" value="30"></label></div>
+</details>
+<details><summary>Component size <small>(m)</small></summary>
+  <h3>Distance</h3><div class="grid4"><label>L0<input id="L0" type="number" value="1.5" step="0.01"></label><label>L1<input id="L1" type="number" value="1.5" step="0.01"></label><label>L2<input id="L2" type="number" value="1.5" step="0.01"></label><label>L3<input id="L3" type="number" value="1.5" step="0.01"></label></div>
+  <h3>Beam</h3><div class="grid2"><label>Width<input id="beamW" type="number" value="0.02" step="0.001"></label><label>Height<input id="beamH" type="number" value="0.02" step="0.001"></label></div>
+  <h3>Monochromator per piece</h3><div class="grid3"><label>Width<input id="monoW" type="number" value="0.02" step="0.001"></label><label>Height<input id="monoH" type="number" value="0.02" step="0.001"></label><label>Thickness<input id="monoT" type="number" value="0.002" step="0.001"></label></div>
+  <h3>Analyzer per piece</h3><div class="grid3"><label>Width<input id="anaW" type="number" value="0.02" step="0.001"></label><label>Height<input id="anaH" type="number" value="0.02" step="0.001"></label><label>Thickness<input id="anaT" type="number" value="0.002" step="0.001"></label></div>
+  <h3>Detector</h3><div class="grid2"><label>Width<input id="detW" type="number" value="0.02" step="0.001"></label><label>Height<input id="detH" type="number" value="0.02" step="0.001"></label></div>
+</details>
+</aside>
+<main>
+  <div id="errorBox" class="error hidden"></div>
+  <div id="singleMain">
+    <div class="chart-grid"><div><div id="singlePlot" class="qe-plot"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div id="geometryPlot" class="qe-plot geometry"></div></div>
+  </div>
+  <div id="powderMain" class="hidden"><div id="powderPlot" class="qe-plot powder"></div></div>
+
+  <section class="calc-card" id="resolutionCalculation">
+    <h2>Resolution & angle calculation</h2>
+    <div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
+    <div id="singleInputs" class="grid5"><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><button id="calc">Calc</button></div>
+    <div id="scanInputs" class="scan hidden"><div class="grid5"><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>ℏω final<input id="hw1" type="number" value="10"></label><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><button id="calcScan">Calc</button></div></div>
+  </section>
+  <section id="result" class="hidden"><h2>Resolution</h2><div id="summary" class="summary"></div><div id="scanNav" class="scan-nav hidden"><button id="prev">◀ Prev</button><input id="scanSlider" type="range" min="1" max="1" value="1"><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
+</main>
+</div>
+<script type="module" src="app.js"></script>
+</body></html>

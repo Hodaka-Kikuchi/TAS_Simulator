@@ -1,0 +1,18 @@
+{
+    "name": "Poplar(Normal)(HB2D)@HFIR",
+
+    "energy_mode": "Ei fixed",
+
+    "sense": "-+-",
+
+    "default_energy": 27.6,
+
+    "S2_min": 10.0,
+
+    "configuration": [
+        {
+            "S2limit": 120.0,
+            "Ei": 27.6
+        }
+    ]
+}

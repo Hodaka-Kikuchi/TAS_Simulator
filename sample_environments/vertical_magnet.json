@@ -1,0 +1,11 @@
+{
+  "name": "Vertical Magnet",
+  "dark_angle_reference": "Direct beam",
+  "dark_angle_ranges": [
+    {
+      "from": -15,
+      "to": 15,
+      "offset": 0
+    }
+  ]
+}
