@@ -185,7 +185,7 @@ function ellipsePoints(M2, scaleX=1, scaleY=1, n=181){
 function findMaxAlongAxis(RM,idx){
   RM=symmetrize(RM);
   if(!choleskyPositiveDefinite(RM)) throw new Error('RM must be positive definite to define a bounded resolution ellipsoid.');
-  const e=[0,0,0,0]; e[idx]=1;
+  const e=Array(RM.length).fill(0); e[idx]=1;
   const direction=solve(RM,e), a=direction[idx];
   if(!(a>0)) throw new Error('Failed to obtain a positive projected variance.');
   const c=2*Math.log(2);
@@ -326,16 +326,30 @@ export function calcResolution(lc,rl,col,mos,config,approximation,focusing,geom,
   const transform=R=>matmul(matmul(R,RM),transpose(R));
   const RM_U=transform(rot4(tu,pu)), RM_V=transform(rot4(tv,pv)), RM_W=transform(rot4(tw,pw));
   const maxU=findMaxAlongAxis(RM_U,0).max, maxV=findMaxAlongAxis(RM_V,0).max, maxW=findMaxAlongAxis(RM_W,0).max, maxE=findMaxAlongAxis(RM_U,2).max;
+
+  // Coherent widths are defined from the corresponding 2D slice ellipses:
+  //   U-E slice: V = W = 0
+  //   V-E slice: U = W = 0
+  //   W-E slice: U = V = 0
+  // The coherent width is the full FWHM extent of that slice along U/V/W,
+  // so it matches the horizontal width of the dashed ellipse shown in the UI.
+  const sliceUEMatrix=submatrix(RM_U,[0,2],[0,2]);
+  const sliceVEMatrix=submatrix(RM_U,[1,2],[1,2]);
+  const sliceWEMatrix=submatrix(RM_U,[3,2],[3,2]);
+  const maxUcoh=findMaxAlongAxis(sliceUEMatrix,0).max;
+  const maxVcoh=findMaxAlongAxis(sliceVEMatrix,0).max;
+  const maxWcoh=findMaxAlongAxis(sliceWEMatrix,0).max;
+
   const widths={
     U:2*maxU, V:2*maxV, W:2*maxW, E:2*maxE,
-    Ucoh:coherentFwhm(RM_U,0), Vcoh:coherentFwhm(RM_V,0), Wcoh:coherentFwhm(RM_W,0), Ecoh:coherentFwhm(RM_U,2)
+    Ucoh:2*maxUcoh, Vcoh:2*maxVcoh, Wcoh:2*maxWcoh, Ecoh:coherentFwhm(RM_U,2)
   };
   const normU=unitMode==='rlu'?qxNorm:1, normV=unitMode==='rlu'?qyNorm:1, normW=unitMode==='rlu'?qzNorm:1;
   const display={U:widths.U/normU,V:widths.V/normV,W:widths.W/normW,E:widths.E,Ucoh:widths.Ucoh/normU,Vcoh:widths.Vcoh/normV,Wcoh:widths.Wcoh/normW,Ecoh:widths.Ecoh};
   const scale=1.2, lim={U:maxU*scale/normU,V:maxV*scale/normV,W:maxW*scale/normW,E:maxE*scale};
-  const projUE=ellipsePoints(schur2(RM_U,[0,2]),normU,1), sliceUE=ellipsePoints(submatrix(RM_U,[0,2],[0,2]),normU,1);
-  const projVE=ellipsePoints(schur2(RM_V,[0,2]),normV,1), sliceVE=ellipsePoints(submatrix(RM_V,[0,2],[0,2]),normV,1);
-  const projWE=ellipsePoints(schur2(RM_W,[0,2]),normW,1), sliceWE=ellipsePoints(submatrix(RM_W,[0,2],[0,2]),normW,1);
+  const projUE=ellipsePoints(schur2(RM_U,[0,2]),normU,1), sliceUE=ellipsePoints(sliceUEMatrix,normU,1);
+  const projVE=ellipsePoints(schur2(RM_U,[1,2]),normV,1), sliceVE=ellipsePoints(sliceVEMatrix,normV,1);
+  const projWE=ellipsePoints(schur2(RM_U,[3,2]),normW,1), sliceWE=ellipsePoints(sliceWEMatrix,normW,1);
   const projUV=ellipsePoints(schur2(RM_U,[0,1]),normU,normV), sliceUV=ellipsePoints(submatrix(RM_U,[0,1],[0,1]),normU,normV);
   return {RM,RM_U,RM_V,RM_W, widths,display,lim,
     ellipses:{projUE,sliceUE,projVE,sliceVE,projWE,sliceWE,projUV,sliceUV},
