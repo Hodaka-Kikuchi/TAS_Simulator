@@ -977,6 +977,25 @@ function renderResolution(entry,indexInfo=''){
 function doSingleResolution(){clearError();try{const e=calcOne({hw:num('hw'),h:num('h'),k:num('k'),l:num('l')});$('scanNav').classList.add('hidden');renderResolution(e);}catch(e){showError(e);}}
 function doScanResolution(){clearError();try{const n=Math.max(2,Math.round(num('npts'))),xs=(a,b)=>linspace(a,b,n),hs=xs(num('h0'),num('h1')),ks=xs(num('k0'),num('k1')),ls=xs(num('l0'),num('l1')),ws=xs(num('hw0'),num('hw1'));scanResults=Array.from({length:n},(_,i)=>calcOne({hw:ws[i],h:hs[i],k:ks[i],l:ls[i]}));$('scanSlider').min=1;$('scanSlider').max=n;$('scanSlider').value=1;$('scanNav').classList.remove('hidden');renderResolutionScan(1);}catch(e){showError(e);}}
 function renderResolutionScan(i){i=Math.max(1,Math.min(scanResults.length,Number(i)));$('scanSlider').value=i;$('scanIndex').textContent=`${i} / ${scanResults.length}`;renderResolution(scanResults[i-1],`| scan ${i}/${scanResults.length}`);}
+
+function resizeVisiblePlots(){
+  if(typeof Plotly === "undefined" || !Plotly.Plots) return;
+  const panel = $("qePanel").classList.contains("hidden") ? $("resolutionPanel") : $("qePanel");
+  panel.querySelectorAll(".js-plotly-plot").forEach(el=>{
+    try{ Plotly.Plots.resize(el); }catch(_err){}
+  });
+}
+
+function setActiveTab(name){
+  const isQE = name !== "resolution";
+  $("qePanel").classList.toggle("hidden", !isQE);
+  $("resolutionPanel").classList.toggle("hidden", isQE);
+  $("tabQe").classList.toggle("active", isQE);
+  $("tabResolution").classList.toggle("active", !isQE);
+  $("tabQe").setAttribute("aria-selected", String(isQE));
+  $("tabResolution").setAttribute("aria-selected", String(!isQE));
+  requestAnimationFrame(()=>requestAnimationFrame(resizeVisiblePlots));
+}
 function updateCalcMode(){const scan=$('calcMode').value==='scan';$('singleInputs').classList.toggle('hidden',scan);$('scanInputs').classList.toggle('hidden',!scan);}
 
 async function tryLoadDir(directory,map){try{return await loadJsonDirectory(directory,map);}catch(_e){map.clear();return 0;}}
@@ -998,6 +1017,7 @@ async function initialize(){
   refreshSelect(instruments,$('instrument'),null);refreshSelect(samples,$('sampleSelect'),'None');refreshSelect(sampleEnvironments,$('seSelect'),'Standard');
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
   $('instrument').selectedIndex=0;$('sampleSelect').value='';$('seSelect').value='';applyInstrumentDefaults();applySampleEnvironmentDefaults();
+  $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
   setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded`);recalculate();

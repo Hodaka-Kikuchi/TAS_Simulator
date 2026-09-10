@@ -8,3 +8,39 @@
   outline:1px solid #ddd;
   outline-offset:-1px;
 }
+
+/* Main workspace tabs: Sample / Instrument setup remain shared in the sidebar. */
+.main-tabs{
+  display:flex;
+  gap:6px;
+  margin:0 0 12px;
+  padding:4px;
+  border:1px solid #ddd;
+  border-radius:9px;
+  background:#f7f7f7;
+}
+.tab-button{
+  flex:0 1 220px;
+  padding:8px 14px;
+  border:1px solid transparent;
+  border-radius:6px;
+  background:transparent;
+  font-weight:650;
+}
+.tab-button:hover{background:#fff}
+.tab-button.active{
+  background:#fff;
+  border-color:#ccc;
+  box-shadow:0 1px 3px rgba(0,0,0,.08);
+}
+.tab-button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.tab-panel{min-width:0}
+.panel-heading{margin:0 0 10px}
+.panel-heading h2{font-size:18px;margin:0 0 3px}
+.panel-heading p{font-size:12px;color:#666;margin:0}
+#resolutionPanel .calc-card{margin-top:0}
+
+@media(max-width:760px){
+  .main-tabs{position:sticky;top:49px;z-index:15;background:#f7f7f7}
+  .tab-button{flex:1;padding:8px 6px}
+}

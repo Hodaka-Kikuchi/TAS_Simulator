@@ -87,18 +87,36 @@
 </aside>
 <main>
   <div id="errorBox" class="error hidden"></div>
-  <div id="singleMain">
-    <div class="chart-grid"><div><div id="singlePlot" class="qe-plot"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div id="geometryPlot" class="qe-plot geometry"></div></div>
-  </div>
-  <div id="powderMain" class="hidden"><div id="powderPlot" class="qe-plot powder"></div></div>
 
-  <section class="calc-card" id="resolutionCalculation">
-    <h2>Resolution & angle calculation</h2>
-    <div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
-    <div id="singleInputs" class="grid5"><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><button id="calc">Calc</button></div>
-    <div id="scanInputs" class="scan hidden"><div class="grid5"><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>ℏω final<input id="hw1" type="number" value="10"></label><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><button id="calcScan">Calc</button></div></div>
-  </section>
-  <section id="result" class="hidden"><h2>Resolution</h2><div id="summary" class="summary"></div><div id="scanNav" class="scan-nav hidden"><button id="prev">◀ Prev</button><input id="scanSlider" type="range" min="1" max="1" value="1"><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
+  <nav class="main-tabs" role="tablist" aria-label="Simulator view">
+    <button id="tabQe" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="qePanel" data-tab="qe">Q-E Range</button>
+    <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution &amp; Angle</button>
+  </nav>
+
+  <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
+    <div class="panel-heading">
+      <h2>Q-E Range</h2>
+      <p>Explore the accessible Q-E region and TAS geometry for the selected sample and instrument.</p>
+    </div>
+    <div id="singleMain">
+      <div class="chart-grid"><div><div id="singlePlot" class="qe-plot"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div id="geometryPlot" class="qe-plot geometry"></div></div>
+    </div>
+    <div id="powderMain" class="hidden"><div id="powderPlot" class="qe-plot powder"></div></div>
+  </div>
+
+  <div id="resolutionPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabResolution">
+    <div class="panel-heading">
+      <h2>Resolution &amp; Angle</h2>
+      <p>Calculate TAS motor angles and resolution at a single Q-E point or along a scan.</p>
+    </div>
+    <section class="calc-card" id="resolutionCalculation">
+      <h2>Calculation point</h2>
+      <div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
+      <div id="singleInputs" class="grid5"><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><button id="calc">Calculate</button></div>
+      <div id="scanInputs" class="scan hidden"><div class="grid5"><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>ℏω final<input id="hw1" type="number" value="10"></label><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><button id="calcScan">Calculate</button></div></div>
+    </section>
+    <section id="result" class="hidden"><h2>Resolution</h2><div id="summary" class="summary"></div><div id="scanNav" class="scan-nav hidden"><button id="prev">◀ Prev</button><input id="scanSlider" type="range" min="1" max="1" value="1"><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
+  </div>
 </main>
 </div>
 <script type="module" src="app.js"></script>
