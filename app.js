@@ -309,6 +309,7 @@ function updateModeVisibility(){
   $("singleCrystalInputs").classList.toggle("hidden",!single);
   $("referenceSection").classList.toggle("hidden",!single);
   $("darkSection").classList.toggle("hidden",!single);
+  $("geometryRow").classList.toggle("hidden",!single);
   $("senseRow").classList.toggle("hidden",!single);
   $("s1minWrap").classList.toggle("hidden",!single);
   $("s1maxWrap").classList.toggle("hidden",!single);
@@ -704,6 +705,33 @@ function calculatePowder(){
     [...vals].map(Number).sort((a,b)=>a-b).forEach(q=>{
       shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color:"black",dash:"dot",width:1}});
       annotations.push({x:q,y:hwmax,text:"k*",showarrow:false,xshift:15,yshift:10,font:{color:"black"}});
+    });
+  }
+
+  const sampleKey=$("sampleSelect").value;
+  if(sampleKey && samples.has(sampleKey)){
+    const sample=samples.get(sampleKey);
+    const peaks=Array.isArray(sample.peaks)?sample.peaks:[];
+    const visiblePeaks=peaks
+      .map(p=>({...p,q:2*PI/Number(p.d)}))
+      .filter(p=>Number.isFinite(p.q) && p.q>0 && p.q<=Qlim);
+    const maxI=visiblePeaks.length
+      ? Math.max(...visiblePeaks.map(p=>Number(p.intensity)||0))
+      : 0;
+
+    visiblePeaks.forEach((p,index)=>{
+      const intensity=Number(p.intensity)||0;
+      const ratio=maxI>0?intensity/maxI:0;
+      const hkl=[p.h,p.k,p.l].every(v=>v!==undefined)
+        ? ` (${p.h}${p.k}${p.l})`
+        : "";
+      traces.push({
+        x:[p.q,p.q],y:[0,hwmax],mode:"lines",
+        name:`${sample.name||sampleKey} background`,
+        legendgroup:"background-scattering",showlegend:index===0,
+        line:{color:`rgba(0,0,255,${(0.15+0.70*ratio).toFixed(3)})`,width:3},
+        hovertemplate:`${sample.name||sampleKey}${hkl}<br>Q = ${p.q.toFixed(3)} Å⁻¹<br>I = ${intensity.toFixed(1)}<extra></extra>`
+      });
     });
   }
 
