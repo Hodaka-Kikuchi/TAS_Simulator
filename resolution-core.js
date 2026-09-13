@@ -43,6 +43,78 @@ function gcdInt(a,b){
   return a||1;
 }
 
+function canonicalDirectionHKL(v){
+  const w=v.map(Number);
+  for(const x of w){
+    if(Math.abs(x)>1e-12){
+      if(x<0) return w.map(y=>-y);
+      break;
+    }
+  }
+  return w;
+}
+
+function roundDirectionKey(v){ return v.map(x=>Math.round(Number(x)*1e12)/1e12); }
+function lexCompareDirection(a,b){
+  for(let i=0;i<Math.min(a.length,b.length);i++){
+    if(a[i]<b[i]) return -1;
+    if(a[i]>b[i]) return 1;
+  }
+  return a.length-b.length;
+}
+
+// Deterministic scattering-plane normal, matching the Q-E range convention.
+// Swapping the entered U and V must not flip the physical front/back side of
+// the scattering plane.  The entered U remains the first display axis; only
+// the sign of the orthogonal in-plane V axis is adjusted when necessary.
+function fixedPlaneNormal(rl,U,V){
+  const G=[
+    [rl.astar[0], rl.bstar[0], rl.cstar[0]],
+    [rl.astar[1], rl.bstar[1], rl.cstar[1]],
+    [rl.astar[2], rl.bstar[2], rl.cstar[2]],
+  ];
+  const qU=matvec(G,U.map(Number)), qV=matvec(G,V.map(Number));
+  let n=normalize(cross(qU,qV));
+
+  // SPICE-like deterministic front side: in reciprocal Cartesian space,
+  // make the first significant component of the plane normal positive.
+  // This is independent of the entered U/V order.  Examples for cubic:
+  //   (100),(010) -> +z  (kept)
+  //   (100),(001) -> -y, therefore flip -> +y, so inputs are swapped
+  //   to (001),(100) by normalizeScatteringPlaneHKL().
+  for(const x of n){
+    if(Math.abs(x)>1e-12){
+      if(x<0) n=n.map(v=>-v);
+      break;
+    }
+  }
+  return n;
+}
+
+// Canonicalize the entered scattering-plane pair itself.  If preserving the
+// user's U/V order would require flipping the calculated in-plane V axis to
+// keep the deterministic front-facing normal, swap U and V instead.  This
+// keeps simple positive directions visually natural, e.g.
+//   entered U=(0,1,0), V=(1,0,0) -> used U=(1,0,0), V=(0,1,0).
+export function normalizeScatteringPlaneHKL(rl, sv1, sv2){
+  const U=sv1.map(Number), V=sv2.map(Number);
+  if(norm(U)<1e-12) throw new Error('U must not be zero.');
+  if(norm(V)<1e-12) throw new Error('V must not be zero.');
+  const G=[
+    [rl.astar[0], rl.bstar[0], rl.cstar[0]],
+    [rl.astar[1], rl.bstar[1], rl.cstar[1]],
+    [rl.astar[2], rl.bstar[2], rl.cstar[2]],
+  ];
+  const qU=matvec(G,U), qV=matvec(G,V);
+  if(norm(qU)<1e-12 || norm(qV)<1e-12) throw new Error('U and V must give non-zero reciprocal-space vectors.');
+  const uvNormal=cross(qU,qV);
+  if(norm(uvNormal)<1e-12) throw new Error('U and V must define a non-degenerate scattering plane.');
+  const fixed=fixedPlaneNormal(rl,U,V);
+  return dot(uvNormal,fixed)<0
+    ? {U:V.slice(),V:U.slice(),swapped:true}
+    : {U:U.slice(),V:V.slice(),swapped:false};
+}
+
 function compactDirectionHKL(v){
   const s=Math.max(...v.map(x=>Math.abs(x)));
   if(!(s>1e-12)) throw new Error('Cannot normalize a zero reciprocal-space direction.');
@@ -84,10 +156,15 @@ export function inferOrthogonalInPlaneHKL(rl, sv1, sv2){
   // Gram-Schmidt in physical reciprocal Cartesian space.
   // The remaining component retains the direction of the user's original V.
   const uu=dot(qU,qU);
-  const qVperp=qV.map((x,i)=>x-dot(qV,qU)/uu*qU[i]);
+  let qVperp=qV.map((x,i)=>x-dot(qV,qU)/uu*qU[i]);
   if(norm(qVperp)<1e-12){
     throw new Error('U and V must define a non-degenerate scattering plane.');
   }
+
+  // Keep the same front-facing plane normal regardless of U/V input order.
+  // This may flip V_perp (e.g. U=(0,1,0), V=(1,0,0) -> V_perp=(-1,0,0)).
+  const fixed=fixedPlaneNormal(rl,U,V);
+  if(dot(cross(qU,qVperp),fixed)<0) qVperp=qVperp.map(x=>-x);
 
   const vPerp=solve(G,qVperp);
   return compactDirectionHKL(vPerp);
@@ -118,9 +195,9 @@ export function inferOutOfPlaneHKL(rl, sv1, sv2){
   const qWraw=cross(qU,qV);
   if(norm(qWraw)<1e-12) throw new Error('U and V must define a non-degenerate scattering plane.');
 
-  // Keep the U x V sign so W is consistent with the right-handed
-  // sample frame constructed in UB_calc.
-  const qW=normalize(qWraw);
+  // Use a deterministic front-facing normal so swapping U and V does not
+  // reverse W.  This is the same convention used by the Q-E range view.
+  const qW=fixedPlaneNormal(rl,U,V);
 
   // Express the physical normal again in reciprocal-lattice coordinates.
   let w=solve(G,qW);
@@ -146,9 +223,8 @@ export function UB_calc(lc,rl){
   const U1=normalize(q1);
   const q2perp=q2.map((x,i)=>x-dot(U1,q2)*U1[i]);
   if(norm(q2perp)<1e-12) throw new Error('sv1 and sv2 must not be parallel.');
-  let U2=normalize(q2perp);
-  const U3=normalize(cross(U1,U2));
-  U2=normalize(cross(U3,U1));
+  const U3=fixedPlaneNormal(rl,sv1,sv2);
+  const U2=normalize(cross(U3,U1));
   const U=[U1,U2,U3];
   const B=[
     [rl.astar[0],rl.bstar[0],rl.cstar[0]],
@@ -318,7 +394,7 @@ export function calcResolution(lc,rl,col,mos,config,approximation,focusing,geom,
   const qxNorm=norm(Qx), qyNorm=norm(Qy), qzNorm=norm(Qz), qvNorm=norm(Qsample);
   if(Math.min(qxNorm,qyNorm,qzNorm)<1e-12) throw new Error('U, V and W reciprocal-space directions must be non-zero.');
   const sampleNormal=[0,0,1], qOut=dot(Qsample,sampleNormal);
-  if(Math.abs(qOut)>1e-8*Math.max(qvNorm,1)) throw new Error('The requested Q is outside the scattering plane defined by sv1 and sv2.');
+  if(Math.abs(qOut)>1e-8*Math.max(qvNorm,1)) throw new Error('Calculation Q is out of plane: the requested resolution point lies outside the scattering plane defined by U and V. Reference Q may be out of plane because it is used only for the S1 offset.');
   const Qplane=Qsample.map((x,i)=>x-qOut*sampleNormal[i]), eX=normalize(Qplane), eZ=sampleNormal, eY=normalize(cross(eZ,eX));
   if(dot(cross(eX,eY),eZ)<1-1e-10) throw new Error('Failed to construct a right-handed local resolution basis.');
   const getThetaTilt=axis=>{ const ah=normalize(axis), x=dot(ah,eX),y=dot(ah,eY),z=dot(ah,eZ); return [-Math.atan2(y,x),-Math.atan2(z,Math.hypot(x,y))]; };

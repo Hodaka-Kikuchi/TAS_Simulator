@@ -121,17 +121,16 @@ export function UB_calc(lc, rl) {
   if (nv<EPS) throw new Error("sv2 gives a zero reciprocal-space vector.");
 
   const e1=scale(qu,1/nu);
-  const Uc=canonicalDirection(sv1), Vc=canonicalDirection(sv2);
-  const ku=Uc.map(round12), kv=Vc.map(round12);
-  let first,second;
-  if (lexCompare(ku,kv)>=0) { first=Uc; second=Vc; }
-  else { first=Vc; second=Uc; }
-
-  const qfirst=matVec(B,first), qsecond=matVec(B,second);
-  let fixed=cross(qfirst,qsecond);
+  let fixed=cross(qu,qv);
   const nfixed=norm(fixed);
   if (nfixed<EPS) throw new Error("sv1 and sv2 must define a non-degenerate scattering plane.");
   fixed=scale(fixed,1/nfixed);
+  for (const x of fixed) {
+    if (Math.abs(x)>EPS) {
+      if (x<0) fixed=scale(fixed,-1);
+      break;
+    }
+  }
 
   let normal=cross(qu,qv);
   if (norm(normal)<EPS) throw new Error("sv1 and sv2 must not be parallel.");
@@ -155,14 +154,14 @@ export function makeSpiceScatteringPlaneBasis(rl,uHkl,vHkl) {
   const qV=add(add(scale(rl.astar,V[0]),scale(rl.bstar,V[1])),scale(rl.cstar,V[2]));
   const ex=normalize(qU,"U vector gives a zero reciprocal-space vector.");
 
-  const Uc=canonicalDirection(U), Vc=canonicalDirection(V);
-  let first,second;
-  if (lexCompare(Uc.map(round12),Vc.map(round12))>=0) { first=Uc; second=Vc; }
-  else { first=Vc; second=Uc; }
-
-  const hklToQ = hkl => add(add(scale(rl.astar,hkl[0]),scale(rl.bstar,hkl[1])),scale(rl.cstar,hkl[2]));
-  let fixed=normalize(cross(hklToQ(first),hklToQ(second)),
+  let fixed=normalize(cross(qU,qV),
     "U and V must define a non-degenerate scattering plane.");
+  for (const x of fixed) {
+    if (Math.abs(x)>EPS) {
+      if (x<0) fixed=scale(fixed,-1);
+      break;
+    }
+  }
   let normal=cross(qU,qV);
   if (norm(normal)<EPS) throw new Error("U and V must not be parallel.");
   if (dot(normal,fixed)<0) normal=scale(normal,-1);

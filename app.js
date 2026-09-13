@@ -4,7 +4,7 @@ import {
   RL_calc, UB_calc, makeSpiceScatteringPlaneBasis, reciprocalVectors,
   linspace, arange, interpExtrap
 } from "./tas-core.js";
-import {RL_calc as RLRes, inferOutOfPlaneHKL, calcResolution} from "./resolution-core.js";
+import {RL_calc as RLRes, inferOutOfPlaneHKL, normalizeScatteringPlaneHKL, calcResolution} from "./resolution-core.js";
 
 const $ = id => document.getElementById(id);
 const instruments = new Map();
@@ -805,10 +805,28 @@ document.querySelectorAll("input,select").forEach(el=>{
 // ==================== Resolution calculator ====================
 let scanResults=[];
 function formatAutoHKL(v){return v.map(x=>{if(Math.abs(x)<1e-10)return '0';const r=Math.round(x);if(Math.abs(x-r)<1e-10)return String(r);return Number(x.toPrecision(6)).toString();}).join(', ');}
-function buildResolutionLattice(){const lc={...latticeParams(),sv1:[num('Uh'),num('Uk'),num('Ul')],sv2:[num('Vh'),num('Vk'),num('Vl')]};const rl=RLRes(lc);lc.sv3=inferOutOfPlaneHKL(rl,lc.sv1,lc.sv2);$('Wauto').textContent=`auto: (${formatAutoHKL(lc.sv3)})`;return {lc,rl};}
+function setPlaneVectorInputs(prefix,v){
+  const ids=prefix==='U'?['Uh','Uk','Ul']:['Vh','Vk','Vl'];
+  ids.forEach((id,i)=>{$(id).value=Number(v[i]);});
+}
+function buildResolutionLattice(normalizeOrder=false){
+  const lc={...latticeParams(),sv1:[num('Uh'),num('Uk'),num('Ul')],sv2:[num('Vh'),num('Vk'),num('Vl')]};
+  const rl=RLRes(lc);
+  if(normalizeOrder){
+    const ordered=normalizeScatteringPlaneHKL(rl,lc.sv1,lc.sv2);
+    if(ordered.swapped){
+      lc.sv1=ordered.U; lc.sv2=ordered.V;
+      setPlaneVectorInputs('U',lc.sv1);
+      setPlaneVectorInputs('V',lc.sv2);
+    }
+  }
+  lc.sv3=inferOutOfPlaneHKL(rl,lc.sv1,lc.sv2);
+  $('Wauto').textContent=`auto: (${formatAutoHKL(lc.sv3)})`;
+  return {lc,rl};
+}
 function updateAutoW(){try{buildResolutionLattice();}catch(_e){if($('Wauto'))$('Wauto').textContent='auto: unavailable';}}
 function collectResolutionBase(){
-  const {lc,rl}=buildResolutionLattice(), em=$('energyMode').value,E=num('energy');
+  const {lc,rl}=buildResolutionLattice(true), em=$('energyMode').value,E=num('energy');
   const config={energy_mode:em,Ei:em==='Ei fixed'?E:null,Ef:em==='Ef fixed'?E:null,geometry:$('geometry').value,sign_config:$('sense').value};
   const approximation={method:$('method').value};
   const focusing={monochromator:{horizontal:{enabled:$('monoHF').checked,blades:num('monoHB')},vertical:{enabled:$('monoVF').checked,blades:num('monoVB')}},analyzer:{horizontal:{enabled:$('anaHF').checked,blades:num('anaHB')},vertical:{enabled:$('anaVF').checked,blades:num('anaVB')}}};
@@ -884,22 +902,36 @@ function tasMotorAngles(calc,b){
   // The entered Reference Q is observed at refs1 in the elastic condition.
   const U=b.lc.sv1, V=b.lc.sv2;
   const {ex,ey}=makeSpiceScatteringPlaneBasis(b.rl,U,V);
-  const qAngle=q=>{
+  const qAngle=(q,{allowZeroProjection=false}={})=>{
     const x=dot(q,ex), y=dot(q,ey);
-    if(Math.hypot(x,y)<1e-12) throw new Error('Reference/target Q has no in-plane component.');
+    if(Math.hypot(x,y)<1e-12){
+      // Match the Q-E range convention for Reference Q: Reference Q is
+      // allowed to lie outside the scattering plane because it is used only
+      // to establish the S1 offset.  When its in-plane projection vanishes,
+      // use phi_ref = 0 rather than aborting the resolution calculation.
+      if(allowZeroProjection) return 0;
+      throw new Error('Calculation Q has no in-plane component and cannot define the TAS sample orientation.');
+    }
     return rad2deg(Math.atan2(y,x));
   };
 
+  // Reference Q is needed only for the optional S1/S2 angle calibration.
+  // A bad Reference Q must never suppress an otherwise valid resolution result.
   const ref=[num('refh'),num('refk'),num('refl')];
   const Qr=hklToQ(b.rl,ref);
   const QrNorm=norm(Qr);
-  if(QrNorm<1e-12) throw new Error('Reference Q must not be zero.');
+
+  if(QrNorm<1e-12){
+    return {Ei,Ef,m1,m2,s1:null,s2,a1,a2,
+      warning:'Reference Q is zero; S1 is unavailable.'};
+  }
 
   const fixedE=em==='Ei fixed' ? Number(b.config.Ei) : Number(b.config.Ef);
   const k0=Math.sqrt(fixedE/2.072);
   const cosRef=(2*k0*k0-QrNorm*QrNorm)/(2*k0*k0);
   if(cosRef<-1-1e-10 || cosRef>1+1e-10){
-    throw new Error('Reference Q is not accessible at the selected reference energy.');
+    return {Ei,Ef,m1,m2,s1:null,s2,a1,a2,
+      warning:'Reference Q is outside the measurable range at the selected reference energy; S1 is unavailable.'};
   }
   const s2Ref=senseS*rad2deg(Math.acos(clamp(cosRef,-1,1)));
 
@@ -911,7 +943,7 @@ function tasMotorAngles(calc,b){
   };
 
   const phiTarget=qAngle(Qt);
-  const phiRef=qAngle(Qr);
+  const phiRef=qAngle(Qr,{allowZeroProjection:true});
   const psiTarget=qLabAngle(ki,kf,s2);
   const psiRef=qLabAngle(k0,k0,s2Ref);
 
@@ -919,18 +951,32 @@ function tasMotorAngles(calc,b){
     + angleDiffDeg(phiTarget,phiRef)
     - angleDiffDeg(psiTarget,psiRef);
 
-  return {Ei,Ef,m1,m2,s1,s2,a1,a2};
+  return {Ei,Ef,m1,m2,s1,s2,a1,a2,warning:''};
 }
 
 function calcOne(calc){
   const b=collectResolutionBase();
   const result=calcResolution(b.lc,b.rl,b.col,b.mos,b.config,b.approximation,b.focusing,b.geom,calc,b.unitMode);
-  const angles=tasMotorAngles(calc,b);
+  let angles;
+  try{
+    angles=tasMotorAngles(calc,b);
+  }catch(err){
+    // Angle calculation is supplemental.  Do not hide a valid resolution
+    // result just because motor angles cannot be determined.
+    angles={m1:null,m2:null,s1:null,s2:null,a1:null,a2:null,
+      warning:`Angle calculation unavailable: ${err?.message || String(err)}`};
+  }
   return {calc,...b,result,angles};
 }
 function matrixText(M){return M.map(r=>'[ '+r.map(x=>Number(x).toExponential(6).padStart(14)).join('  ')+' ]').join('\n');}
 function traceEllipse(p,name,dash='solid'){return{x:p.x,y:p.y,mode:'lines',name,line:{dash},hoverinfo:'skip'};}
 function baseLayout(title,xlabel,ylabel,xlim,ylim,equal=false){return{title:{text:title,font:{size:14}},margin:{l:60,r:20,t:45,b:55},xaxis:{title:xlabel,range:[-xlim,xlim],zeroline:true,showgrid:true},yaxis:{title:ylabel,range:[-ylim,ylim],zeroline:true,showgrid:true,...(equal?{scaleanchor:'x',scaleratio:1}:{})},showlegend:false};}
+function formatAngle(value,absolute=false){
+  if(value===null || value===undefined || !Number.isFinite(Number(value))) return '';
+  const v=absolute ? Math.abs(Number(value)) : Number(value);
+  return v.toFixed(3);
+}
+
 function renderResolution(entry,indexInfo=''){
   const {result:r,calc,unitMode,lc,angles}=entry;
   const qUnit=unitMode==='rlu'?'r.l.u.':'Å⁻¹';
@@ -945,14 +991,15 @@ function renderResolution(entry,indexInfo=''){
   $('summary').innerHTML=
     `<div><b>Calculation point</b> ℏω=${calc.hw.toFixed(3)} meV, `+
     `h=${calc.h.toFixed(3)}, k=${calc.k.toFixed(3)}, l=${calc.l.toFixed(3)} ${indexInfo}</div>`+
-    `<div><b>Resolution</b> δQU=${r.display.U.toFixed(4)} (${r.display.Ucoh.toFixed(4)}) ${qUnit}, `+
-    `δQV=${r.display.V.toFixed(4)} (${r.display.Vcoh.toFixed(4)}) ${qUnit}, `+
-    `δQW=${r.display.W.toFixed(4)} (${r.display.Wcoh.toFixed(4)}) ${qUnit}, `+
+    `<div><b>Resolution</b> δQ//${fmtAxis(ax.U)}=${r.display.U.toFixed(4)} (${r.display.Ucoh.toFixed(4)}) ${qUnit}, `+
+    `δQ//${fmtAxis(ax.V)}=${r.display.V.toFixed(4)} (${r.display.Vcoh.toFixed(4)}) ${qUnit}, `+
+    `δQ//${fmtAxis(ax.W)}=${r.display.W.toFixed(4)} (${r.display.Wcoh.toFixed(4)}) ${qUnit}, `+
     `δℏω=${r.display.E.toFixed(4)} (${r.display.Ecoh.toFixed(4)}) meV</div>`+
     `<div><b>Resolution axes</b> U=${fmtAxis(ax.U)}, V=${fmtAxis(ax.V)}, W=${fmtAxis(ax.W)}</div>`+
-    `<div><b>Angles (deg)</b> M1=${angles.m1.toFixed(3)}, M2=${angles.m2.toFixed(3)}, `+
-    `S1=${angles.s1.toFixed(3)}, S2=${Math.abs(angles.s2).toFixed(3)}, `+
-    `A1=${angles.a1.toFixed(3)}, A2=${angles.a2.toFixed(3)}</div>`;
+    `<div><b>Angles (deg)</b> M1=${formatAngle(angles.m1)}, M2=${formatAngle(angles.m2)}, `+
+    `S1=${formatAngle(angles.s1)}, S2=${formatAngle(angles.s2,true)}, `+
+    `A1=${formatAngle(angles.a1)}, A2=${formatAngle(angles.a2)}`+
+    `${angles.warning ? ` &nbsp;⚠ ${angles.warning}` : ''}</div>`;
 
   // RM is the original TAS local matrix (Q_parallel,Q_perp,E,Q_out).
   // RM_U is the same matrix rotated to the U-based orthogonal frame.
@@ -966,21 +1013,21 @@ function renderResolution(entry,indexInfo=''){
   Plotly.react(
     'plotUE',
     [traceEllipse(r.ellipses.projUE,'projection'),traceEllipse(r.ellipses.sliceUE,'slice','dash')],
-    baseLayout('δQU vs ℏω ellipse',`δQU ∥ ${fmtAxis(ax.U)} (${qUnit})`,'δℏω (meV)',r.lim.U,r.lim.E),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,'δℏω (meV)',r.lim.U,r.lim.E),
     {responsive:true}
   );
 
   Plotly.react(
     'plotVE',
     [traceEllipse(r.ellipses.projVE,'projection'),traceEllipse(r.ellipses.sliceVE,'slice','dash')],
-    baseLayout('δQV vs ℏω ellipse',`δQV ∥ ${fmtAxis(ax.V)} (${qUnit})`,'δℏω (meV)',r.lim.V,r.lim.E),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,'δℏω (meV)',r.lim.V,r.lim.E),
     {responsive:true}
   );
 
   Plotly.react(
     'plotWE',
     [traceEllipse(r.ellipses.projWE,'projection'),traceEllipse(r.ellipses.sliceWE,'slice','dash')],
-    baseLayout('δQW vs ℏω ellipse',`δQW ∥ ${fmtAxis(ax.W)} (${qUnit})`,'δℏω (meV)',r.lim.W,r.lim.E),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.W)} (${qUnit})`,'δℏω (meV)',r.lim.W,r.lim.E),
     {responsive:true}
   );
 
@@ -995,8 +1042,8 @@ function renderResolution(entry,indexInfo=''){
     [traceEllipse(r.ellipses.projUV,'projection'),traceEllipse(r.ellipses.sliceUV,'slice','dash'),uline,vline],
     baseLayout(
       'Scattering-plane resolution ellipse',
-      `δQU ∥ ${fmtAxis(ax.U)} (${qUnit})`,
-      `δQV ∥ ${fmtAxis(ax.V)} (${qUnit})`,
+      `δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,
+      `δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,
       uvLim,uvLim,true
     ),
     {responsive:true}
@@ -1016,6 +1063,24 @@ function resizeVisiblePlots(){
 
 function setActiveTab(name){
   const isQE = name !== "resolution";
+  const sampleMode=$("sampleMode");
+  if(!isQE){
+    // Resolution & Angle is defined only for a single-crystal scattering plane.
+    // Force the shared Sample Type to Single crystal and prevent powder choice
+    // while this tab is active.
+    if(sampleMode.value!=="single"){
+      sampleMode.value="single";
+      updateModeVisibility();
+      scheduleRecalc();
+    }
+    sampleMode.disabled=true;
+    // Canonicalize the actual U/V input fields for the resolution view.  When
+    // keeping the entered order would force a minus sign on the calculated
+    // in-plane V direction, swap the two entered vectors instead.
+    try{ buildResolutionLattice(true); }catch(_err){}
+  }else{
+    sampleMode.disabled=false;
+  }
   $("qePanel").classList.toggle("hidden", !isQE);
   $("resolutionPanel").classList.toggle("hidden", isQE);
   $("tabQe").classList.toggle("active", isQE);
