@@ -805,19 +805,16 @@ document.querySelectorAll("input,select").forEach(el=>{
 // ==================== Resolution calculator ====================
 let scanResults=[];
 function formatAutoHKL(v){return v.map(x=>{if(Math.abs(x)<1e-10)return '0';const r=Math.round(x);if(Math.abs(x-r)<1e-10)return String(r);return Number(x.toPrecision(6)).toString();}).join(', ');}
-function setPlaneVectorInputs(prefix,v){
-  const ids=prefix==='U'?['Uh','Uk','Ul']:['Vh','Vk','Vl'];
-  ids.forEach((id,i)=>{$(id).value=Number(v[i]);});
-}
 function buildResolutionLattice(normalizeOrder=false){
   const lc={...latticeParams(),sv1:[num('Uh'),num('Uk'),num('Ul')],sv2:[num('Vh'),num('Vk'),num('Vl')]};
   const rl=RLRes(lc);
   if(normalizeOrder){
     const ordered=normalizeScatteringPlaneHKL(rl,lc.sv1,lc.sv2);
     if(ordered.swapped){
+      // Resolution uses the canonical U/V order internally, but the shared
+      // Scattering Plane inputs belong to both Q-E Range and Resolution.
+      // Keep the user's entered vectors untouched in the left panel.
       lc.sv1=ordered.U; lc.sv2=ordered.V;
-      setPlaneVectorInputs('U',lc.sv1);
-      setPlaneVectorInputs('V',lc.sv2);
     }
   }
   lc.sv3=inferOutOfPlaneHKL(rl,lc.sv1,lc.sv2);
@@ -1074,9 +1071,9 @@ function setActiveTab(name){
       scheduleRecalc();
     }
     sampleMode.disabled=true;
-    // Canonicalize the actual U/V input fields for the resolution view.  When
-    // keeping the entered order would force a minus sign on the calculated
-    // in-plane V direction, swap the two entered vectors instead.
+    // Resolution canonicalizes U/V only in its internal calculation state.
+    // The shared left-side Scattering Plane inputs remain exactly as entered
+    // so Q-E Range is not silently modified when switching tabs.
     try{ buildResolutionLattice(true); }catch(_err){}
   }else{
     sampleMode.disabled=false;
