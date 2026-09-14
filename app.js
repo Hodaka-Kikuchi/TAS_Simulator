@@ -436,10 +436,18 @@ function calculateSingleCrystal(){
     if(addDark){
       const s2dark=linspace(S2min,S2max,200);
       for(const rawRange of darkRanges){
-        let [from,to,offset]=rawRange;
+        const [from,to,offset]=rawRange;
         if(from===0 && to===0) continue;
-        if(sense==="+-+") { offset=-offset; from=-from; to=-to; }
-        const s1from=offset+from-Qoffset, s1to=offset+to-Qoffset;
+
+        // Dark-angle entries are geometric angles: counter-clockwise is always
+        // positive.  calcQDark() already mirrors the calculated Q trajectory for
+        // the +-+ instrument sense about the Reference-Q axis.  Therefore the
+        // dark-angle limits themselves must NOT be sign-flipped for +-+; doing
+        // both operations mirrors the geometry twice.  Use the same geometric
+        // S1 parameterization for both sign conventions and let calcQDark()
+        // perform the instrument-handedness mapping.
+        const s1from=offset+from-Qoffset;
+        const s1to=offset+to-Qoffset;
 
         const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,s1Offset,QrefXY,sense));
         const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,s1Offset,QrefXY,sense));
@@ -447,11 +455,16 @@ function calculateSingleCrystal(){
         const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense));
         hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
 
-        const fromKI=s2dark.map(s2=>calcQDark(s1from-(180-s2),s2,ki,kf,s1Offset,QrefXY,sense));
-        const toKI=s2dark.map(s2=>calcQDark(s1to-(180-s2),s2,ki,kf,s1Offset,QrefXY,sense));
-        const topKI=linspace(s1from-(180-S2max),s1to-(180-S2max),100)
+        // The ki-blocking boundary is displaced from the kf-blocking boundary
+        // by (180 - S2) in this geometric parameterization.  As above, the +-+
+        // handedness is applied inside calcQDark(), so this displacement must
+        // not receive an additional sign flip here.
+        const kiShift=s2=>(180-s2);
+        const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense));
+        const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense));
+        const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100)
           .map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense));
-        const bottomKI=linspace(s1to-(180-S2min),s1from-(180-S2min),100)
+        const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100)
           .map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense));
         hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
       }

@@ -108,6 +108,43 @@ export function RL_calc(lc) {
   };
 }
 
+
+function solve3(A,b) {
+  const M=A.map((row,i)=>[...row.map(Number),Number(b[i])]);
+  for(let col=0;col<3;col++) {
+    let piv=col;
+    for(let r=col+1;r<3;r++) if(Math.abs(M[r][col])>Math.abs(M[piv][col])) piv=r;
+    if(Math.abs(M[piv][col])<EPS) throw new Error("Singular reciprocal basis.");
+    if(piv!==col) [M[col],M[piv]]=[M[piv],M[col]];
+    const d=M[col][col];
+    for(let j=col;j<4;j++) M[col][j]/=d;
+    for(let r=0;r<3;r++) if(r!==col) {
+      const f=M[r][col];
+      for(let j=col;j<4;j++) M[r][j]-=f*M[col][j];
+    }
+  }
+  return M.map(row=>row[3]);
+}
+
+function orientNormalByDominantHKL(normal, rl) {
+  let n=normalize(normal);
+  const G=[
+    [rl.astar[0],rl.bstar[0],rl.cstar[0]],
+    [rl.astar[1],rl.bstar[1],rl.cstar[1]],
+    [rl.astar[2],rl.bstar[2],rl.cstar[2]],
+  ];
+  const w=solve3(G,n);
+  const maxAbs=Math.max(...w.map(x=>Math.abs(x)));
+  const tieTol=Math.max(EPS,maxAbs*1e-12);
+  for(const x of w) {
+    if(Math.abs(Math.abs(x)-maxAbs)<=tieTol) {
+      if(x<0) n=scale(n,-1);
+      break;
+    }
+  }
+  return n;
+}
+
 export function UB_calc(lc, rl) {
   const sv1=lc.sv1.map(Number), sv2=lc.sv2.map(Number);
   const B = columnStack([rl.astar,rl.bstar,rl.cstar]).map(row=>row.map(x=>x/(2*PI)));
@@ -122,19 +159,8 @@ export function UB_calc(lc, rl) {
 
   const e1=scale(qu,1/nu);
   let fixed=cross(qu,qv);
-  const nfixed=norm(fixed);
-  if (nfixed<EPS) throw new Error("sv1 and sv2 must define a non-degenerate scattering plane.");
-  fixed=scale(fixed,1/nfixed);
-  {
-    const maxAbs=Math.max(...fixed.map(x=>Math.abs(x)));
-    const tieTol=Math.max(EPS,maxAbs*1e-12);
-    for (const x of fixed) {
-      if (Math.abs(Math.abs(x)-maxAbs)<=tieTol) {
-        if (x<0) fixed=scale(fixed,-1);
-        break;
-      }
-    }
-  }
+  if (norm(fixed)<EPS) throw new Error("sv1 and sv2 must define a non-degenerate scattering plane.");
+  fixed=orientNormalByDominantHKL(fixed,rl);
 
   let normal=cross(qu,qv);
   if (norm(normal)<EPS) throw new Error("sv1 and sv2 must not be parallel.");
@@ -158,18 +184,9 @@ export function makeSpiceScatteringPlaneBasis(rl,uHkl,vHkl) {
   const qV=add(add(scale(rl.astar,V[0]),scale(rl.bstar,V[1])),scale(rl.cstar,V[2]));
   const ex=normalize(qU,"U vector gives a zero reciprocal-space vector.");
 
-  let fixed=normalize(cross(qU,qV),
-    "U and V must define a non-degenerate scattering plane.");
-  {
-    const maxAbs=Math.max(...fixed.map(x=>Math.abs(x)));
-    const tieTol=Math.max(EPS,maxAbs*1e-12);
-    for (const x of fixed) {
-      if (Math.abs(Math.abs(x)-maxAbs)<=tieTol) {
-        if (x<0) fixed=scale(fixed,-1);
-        break;
-      }
-    }
-  }
+  let fixed=cross(qU,qV);
+  if (norm(fixed)<EPS) throw new Error("U and V must define a non-degenerate scattering plane.");
+  fixed=orientNormalByDominantHKL(fixed,rl);
   let normal=cross(qU,qV);
   if (norm(normal)<EPS) throw new Error("U and V must not be parallel.");
   if (dot(normal,fixed)<0) normal=scale(normal,-1);

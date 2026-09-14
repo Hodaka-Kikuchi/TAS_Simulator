@@ -76,19 +76,20 @@ function fixedPlaneNormal(rl,U,V){
   const qU=matvec(G,U.map(Number)), qV=matvec(G,V.map(Number));
   let n=normalize(cross(qU,qV));
 
-  // Deterministic front side in reciprocal Cartesian space:
-  // make the component with the largest absolute magnitude positive.
-  // If two or more components are tied (within numerical tolerance), use
-  // X -> Y -> Z priority.  This keeps the U/V-order choice deterministic
-  // without letting a smaller leading component dominate the sign.
-  // Examples for cubic:
-  //   (100),(010) -> W=(0,0,+1)  (kept)
-  //   (100),(001) -> W=(0,-1,0), so flip -> (0,+1,0)
-  //   W=(-1,-1,+2) -> keep because the dominant Z component is positive
-  //   W=(-1,+1,0)  -> X/Y tie; X wins, so flip -> (+1,-1,0).
-  const maxAbs=Math.max(...n.map(x=>Math.abs(x)));
+  // Deterministic front side: express the physical plane normal back in
+  // reciprocal-lattice coordinates and make its dominant HKL component
+  // positive.  If components tie, use H -> K -> L priority.
+  //
+  // Using Cartesian X/Y/Z components here is not invariant to the arbitrary
+  // Cartesian embedding of a non-orthogonal reciprocal basis.  In particular,
+  // for a hexagonal lattice U=(1,1,0), V=(0,0,1), the same physical normal
+  // can appear Cartesian-dominant along a negative Y direction even though
+  // its reciprocal-space direction is (1,-1,0).  The HKL-based dominant
+  // component convention keeps the displayed/canonical W direction stable.
+  const w=solve(G,n);
+  const maxAbs=Math.max(...w.map(x=>Math.abs(x)));
   const tieTol=Math.max(1e-12,maxAbs*1e-12);
-  for(const x of n){
+  for(const x of w){
     if(Math.abs(Math.abs(x)-maxAbs)<=tieTol){
       if(x<0) n=n.map(v=>-v);
       break;
