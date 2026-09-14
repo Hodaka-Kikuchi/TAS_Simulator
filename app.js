@@ -638,7 +638,12 @@ function renderGeometry(cache){
     let a0=offset+from, a1=offset+to;
     if(a1<a0) a1+=360;
     const aa=linspace(a0,a1,200).map(deg2rad);
-    traces.push({x:aa.map(t=>-2*Math.sin(t)),y:aa.map(t=>2*Math.cos(t)),mode:"lines",line:{color:"black",width:6},showlegend:false,hoverinfo:"skip"});
+    // Display convention only; do not alter the dark-angle calculation.
+    //   -+- : positive displayed dark angle is counter-clockwise
+    //   +-+ : positive displayed dark angle is clockwise
+    // t=0 remains at +Y.
+    const displaySign=checkedValue("sense")==="+-+" ? +1 : -1;
+    traces.push({x:aa.map(t=>displaySign*2*Math.sin(t)),y:aa.map(t=>2*Math.cos(t)),mode:"lines",line:{color:"black",width:6},showlegend:false,hoverinfo:"skip"});
   });
 
   Plotly.react("geometryPlot",traces,{
