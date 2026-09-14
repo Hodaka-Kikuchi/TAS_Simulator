@@ -125,10 +125,14 @@ export function UB_calc(lc, rl) {
   const nfixed=norm(fixed);
   if (nfixed<EPS) throw new Error("sv1 and sv2 must define a non-degenerate scattering plane.");
   fixed=scale(fixed,1/nfixed);
-  for (const x of fixed) {
-    if (Math.abs(x)>EPS) {
-      if (x<0) fixed=scale(fixed,-1);
-      break;
+  {
+    const maxAbs=Math.max(...fixed.map(x=>Math.abs(x)));
+    const tieTol=Math.max(EPS,maxAbs*1e-12);
+    for (const x of fixed) {
+      if (Math.abs(Math.abs(x)-maxAbs)<=tieTol) {
+        if (x<0) fixed=scale(fixed,-1);
+        break;
+      }
     }
   }
 
@@ -156,10 +160,14 @@ export function makeSpiceScatteringPlaneBasis(rl,uHkl,vHkl) {
 
   let fixed=normalize(cross(qU,qV),
     "U and V must define a non-degenerate scattering plane.");
-  for (const x of fixed) {
-    if (Math.abs(x)>EPS) {
-      if (x<0) fixed=scale(fixed,-1);
-      break;
+  {
+    const maxAbs=Math.max(...fixed.map(x=>Math.abs(x)));
+    const tieTol=Math.max(EPS,maxAbs*1e-12);
+    for (const x of fixed) {
+      if (Math.abs(Math.abs(x)-maxAbs)<=tieTol) {
+        if (x<0) fixed=scale(fixed,-1);
+        break;
+      }
     }
   }
   let normal=cross(qU,qV);

@@ -76,14 +76,20 @@ function fixedPlaneNormal(rl,U,V){
   const qU=matvec(G,U.map(Number)), qV=matvec(G,V.map(Number));
   let n=normalize(cross(qU,qV));
 
-  // SPICE-like deterministic front side: in reciprocal Cartesian space,
-  // make the first significant component of the plane normal positive.
-  // This is independent of the entered U/V order.  Examples for cubic:
-  //   (100),(010) -> +z  (kept)
-  //   (100),(001) -> -y, therefore flip -> +y, so inputs are swapped
-  //   to (001),(100) by normalizeScatteringPlaneHKL().
+  // Deterministic front side in reciprocal Cartesian space:
+  // make the component with the largest absolute magnitude positive.
+  // If two or more components are tied (within numerical tolerance), use
+  // X -> Y -> Z priority.  This keeps the U/V-order choice deterministic
+  // without letting a smaller leading component dominate the sign.
+  // Examples for cubic:
+  //   (100),(010) -> W=(0,0,+1)  (kept)
+  //   (100),(001) -> W=(0,-1,0), so flip -> (0,+1,0)
+  //   W=(-1,-1,+2) -> keep because the dominant Z component is positive
+  //   W=(-1,+1,0)  -> X/Y tie; X wins, so flip -> (+1,-1,0).
+  const maxAbs=Math.max(...n.map(x=>Math.abs(x)));
+  const tieTol=Math.max(1e-12,maxAbs*1e-12);
   for(const x of n){
-    if(Math.abs(x)>1e-12){
+    if(Math.abs(Math.abs(x)-maxAbs)<=tieTol){
       if(x<0) n=n.map(v=>-v);
       break;
     }
