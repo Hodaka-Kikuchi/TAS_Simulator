@@ -422,13 +422,13 @@ export function calcResolution(lc,rl,col,mos,config,approximation,focusing,geom,
   const uHat=normalize(Qx), vHat=normalize(Qy), wHat=normalize(Qz);
   const components=a=>[dot(a,eX),dot(a,eY),dot(a,eZ)];
   const cu=components(uHat), cv=components(vHat), cw=components(wHat);
-  const C=[
+  const Cbasis=[
     [cu[0],cv[0],0,cw[0]],
     [cu[1],cv[1],0,cw[1]],
     [0,0,1,0],
     [cu[2],cv[2],0,cw[2]],
   ];
-  const RM_U=matmul(matmul(transpose(C),RM),C);
+  const RM_U=matmul(matmul(transpose(Cbasis),RM),Cbasis);
 
   // Keep the auxiliary matrices for compatibility/debugging.  They represent
   // frames whose first spatial coordinate is V or W respectively.
