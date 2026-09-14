@@ -403,11 +403,43 @@ export function calcResolution(lc,rl,col,mos,config,approximation,focusing,geom,
   if(Math.abs(qOut)>1e-8*Math.max(qvNorm,1)) throw new Error('Calculation Q is out of plane: the requested resolution point lies outside the scattering plane defined by U and V. Reference Q may be out of plane because it is used only for the S1 offset.');
   const Qplane=Qsample.map((x,i)=>x-qOut*sampleNormal[i]), eX=normalize(Qplane), eZ=sampleNormal, eY=normalize(cross(eZ,eX));
   if(dot(cross(eX,eY),eZ)<1-1e-10) throw new Error('Failed to construct a right-handed local resolution basis.');
+
+  // RM is expressed in the TAS-local coordinates
+  //   (Q_parallel, Q_perp, E, Q_out),
+  // where eX is parallel to the actual calculation Q, eY is the in-plane
+  // perpendicular direction, and eZ is out of the scattering plane.
+  //
+  // Build the U-based change of basis explicitly instead of reconstructing it
+  // from Euler-like angles.  The columns of C are the new (U,V,E,W) basis
+  // vectors expressed in the old local coordinates, so
+  //
+  //       delta_local = C delta_UVW
+  //       RM_U = C^T RM C .
+  //
+  // This guarantees that RM_U == RM only when U is parallel to the measured Q
+  // (apart from trivial symmetries of the matrix).  For a general Q direction
+  // the displayed U-based matrix is the genuinely rotated resolution matrix.
+  const uHat=normalize(Qx), vHat=normalize(Qy), wHat=normalize(Qz);
+  const components=a=>[dot(a,eX),dot(a,eY),dot(a,eZ)];
+  const cu=components(uHat), cv=components(vHat), cw=components(wHat);
+  const C=[
+    [cu[0],cv[0],0,cw[0]],
+    [cu[1],cv[1],0,cw[1]],
+    [0,0,1,0],
+    [cu[2],cv[2],0,cw[2]],
+  ];
+  const RM_U=matmul(matmul(transpose(C),RM),C);
+
+  // Keep the auxiliary matrices for compatibility/debugging.  They represent
+  // frames whose first spatial coordinate is V or W respectively.
   const getThetaTilt=axis=>{ const ah=normalize(axis), x=dot(ah,eX),y=dot(ah,eY),z=dot(ah,eZ); return [-Math.atan2(y,x),-Math.atan2(z,Math.hypot(x,y))]; };
-  const [tu,pu]=getThetaTilt(Qx), [tv,pv]=getThetaTilt(Qy), [tw,pw]=getThetaTilt(Qz);
+  const [tv,pv]=getThetaTilt(Qy), [tw,pw]=getThetaTilt(Qz);
   const transform=R=>matmul(matmul(R,RM),transpose(R));
-  const RM_U=transform(rot4(tu,pu)), RM_V=transform(rot4(tv,pv)), RM_W=transform(rot4(tw,pw));
-  const maxU=findMaxAlongAxis(RM_U,0).max, maxV=findMaxAlongAxis(RM_V,0).max, maxW=findMaxAlongAxis(RM_W,0).max, maxE=findMaxAlongAxis(RM_U,2).max;
+  const RM_V=transform(rot4(tv,pv)), RM_W=transform(rot4(tw,pw));
+
+  // All displayed U/V/W widths are now taken from the same orthogonal
+  // (U,V,E,W) matrix, matching the matrix shown to the user.
+  const maxU=findMaxAlongAxis(RM_U,0).max, maxV=findMaxAlongAxis(RM_U,1).max, maxW=findMaxAlongAxis(RM_U,3).max, maxE=findMaxAlongAxis(RM_U,2).max;
 
   // Coherent widths use one consistent 4D definition in the orthogonal
   // (U, V, E, W) frame: when evaluating one axis, the other three
