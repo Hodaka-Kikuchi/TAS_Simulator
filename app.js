@@ -347,14 +347,34 @@ function calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY){
   return q;
 }
 
-function calcQDark(s1,s2,ki,kf,s1Offset,QrefXY,sense){
+function calcQDark(s1,s2,ki,kf,s1Offset,QrefXY,sense,energyMode=null){
   const kiAngle=deg2rad(-s1+s1Offset);
   const kfAngle=deg2rad(s2-s1+s1Offset);
   let q=[ki*Math.sin(kiAngle)-kf*Math.sin(kfAngle),
          ki*Math.cos(kiAngle)-kf*Math.cos(kfAngle)];
+
+  // Keep the already-validated elastic handedness mapping first.  For +-+ this
+  // is the existing reflection about Reference Q; -+- uses the raw geometry.
+  // Apply exactly the same mapping to the corresponding elastic-Q vector so it
+  // can serve as the local angular reference for the inelastic correction.
+  const kElastic=energyMode ? ((energyMode==="Ef fixed") ? kf : ki) : null;
+  let qElastic=energyMode ? [kElastic*(Math.sin(kiAngle)-Math.sin(kfAngle)),
+                             kElastic*(Math.cos(kiAngle)-Math.cos(kfAngle))] : null;
+
   if(sense==="+-+" && norm(QrefXY)>1e-10){
     const eQ=normalize(QrefXY);
     q=sub(scale(eQ,2*dot(q,eQ)),q);
+    if(qElastic) qElastic=sub(scale(eQ,2*dot(qElastic,eQ)),qElastic);
+  }
+
+  // The elastic dark regions are correct for both senses.  Away from hw=0 the
+  // ki-kf triangle's azimuthal displacement has the opposite sign to the TAS
+  // geometry in BOTH senses.  Reflect only that inelastic displacement about
+  // the sense-correct elastic-Q direction.  At hw=0 q==qElastic, so this is an
+  // exact identity and cannot move the validated elastic boundaries.
+  if(qElastic && norm(qElastic)>1e-10){
+    const e0=normalize(qElastic);
+    q=sub(scale(e0,2*dot(q,e0)),q);
   }
   return q;
 }
@@ -393,6 +413,9 @@ function calculateSingleCrystal(){
     thetaRef=rad2deg(Math.asin(clamp(arg,-1,1)));
   }
   const darkRef=checkedValue("darkRef");
+  // Q-E Range dark-angle calculation is intentionally kept on the previously
+  // validated convention.  Direct-beam display corrections belong only to
+  // the TAS geometry schematic below and must not alter these regions.
   const Qoffset=darkRef==="Reference Q"?90+thetaRef:2*thetaRef;
   const s1Offset=-thetaRef+180-phiRef;
 
@@ -449,10 +472,10 @@ function calculateSingleCrystal(){
         const s1from=offset+from-Qoffset;
         const s1to=offset+to-Qoffset;
 
-        const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,s1Offset,QrefXY,sense));
-        const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,s1Offset,QrefXY,sense));
-        const topKF=linspace(s1from,s1to,100).map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense));
-        const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense));
+        const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
+        const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
+        const topKF=linspace(s1from,s1to,100).map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
+        const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
         hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
 
         // The ki-blocking boundary is displaced from the kf-blocking boundary
@@ -460,12 +483,12 @@ function calculateSingleCrystal(){
         // handedness is applied inside calcQDark(), so this displacement must
         // not receive an additional sign flip here.
         const kiShift=s2=>(180-s2);
-        const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense));
-        const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense));
+        const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
+        const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
         const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100)
-          .map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense));
+          .map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
         const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100)
-          .map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense));
+          .map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
         hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
       }
     }
@@ -619,124 +642,257 @@ function renderSingle(cache,index=0){
     title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
     xaxis:{title:"Qx (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true},
     yaxis:{title:"Qy (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1},
-    margin:{l:60,r:20,t:90,b:55},
-    legend:{orientation:"h"}
+    // UI-only spacing: reclaim a little space above the plot, while reserving
+    // more room below so the x-axis title and horizontal legend do not crowd.
+    margin:{l:60,r:20,t:72,b:82},
+    legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.19,yanchor:"top"}
   },{responsive:true});
 
   $("hwValue").textContent=`${cache.hwList[i].toFixed(1)} meV`;
   renderGeometry(cache,i);
 }
 
+function qeGeometryAngles(cache, senseOverride=null){
+  const calc={h:num("geomH"),k:num("geomK"),l:num("geomL"),hw:num("geomHW")};
+  // Reuse exactly the same motor-angle calculation as Resolution & Angle.
+  // Only override the fixed energy when Q-E Range is in lambda/2 mode, because
+  // calculateSingleCrystal() uses four times the entered energy in that mode.
+  const b=collectResolutionBase();
+  if(cache.energyMode==="Ei fixed"){
+    b.config.energy_mode="Ei fixed";
+    b.config.Ei=cache.Ei;
+    b.config.Ef=null;
+  }else{
+    b.config.energy_mode="Ef fixed";
+    b.config.Ef=cache.Ef;
+    b.config.Ei=null;
+  }
+  b.config.sign_config=senseOverride ?? cache.sense;
+  const angles=tasMotorAngles(calc,b);
+  const Ei=cache.energyMode==="Ei fixed" ? cache.Ei : cache.Ef+calc.hw;
+  const Ef=cache.energyMode==="Ei fixed" ? cache.Ei-calc.hw : cache.Ef;
+  return {calc,angles,Ei,Ef,ki:Math.sqrt(Ei/2.072),kf:Math.sqrt(Ef/2.072)};
+}
+
 function renderGeometry(cache,index=0){
   const i=Math.max(0,Math.min(index,cache.hwList.length-1));
   const sense=cache.sense || checkedValue("sense");
   const hw=cache.hwList[i] || 0;
-
-  // Display-only schematic. Keep the Q-E/dark-angle calculations untouched.
-  // Use a deliberately idealized TAS geometry with equal orthogonal flight legs.
-  // +-+: guide -> mono (-x), mono -> sample (-y), sample -> analyzer (-x),
-  //      analyzer -> detector (-y).  -+- is the exact x-mirror.
   const mirror=sense==="+-+" ? 1 : -1;
+
+  // Default explanatory geometry is retained when the requested target cannot
+  // be solved.  A valid h,k,l,hw target switches the drawing to calculated TAS
+  // motor angles while keeping all flight-leg lengths equal for readability.
+  let target=null;
+  let targetError="";
+  try{ target=qeGeometryAngles(cache); }
+  catch(err){ targetError=err?.message || String(err); }
+
   const L=2.05;
-  const sample=[0,0];
-  const mono=[0,L];
-  const guide=[mirror*L,L];
-  const analyzer=[-mirror*L,0];
-  const detector=[-mirror*L,-L];
+  let source,mono,sample,analyzer,detector;
+  let thetaKi,thetaKf,thetaOut;
+  let monoPlaneAngle,anaPlaneAngle;
+  let qAngle;
+  // Vector-display lengths are derived from the actual wave-vector magnitudes.
+  // The fixed-energy side is the visual scale reference: Ef fixed -> kf fixed,
+  // Ei fixed -> ki fixed.  Flight-path leg lengths remain schematic/equal.
+  let kiVectorLen=0.50*L, kfVectorLen=0.50*L, qVectorLen=1.38;
+
+  if(target){
+    // Build one canonical (+-+) drawing, then make -+- an exact left/right
+    // reflection of it.  This prevents the two sign configurations from drifting
+    // to different screen positions because of their signed motor angles.
+    const drawTarget=(sense==="+-+") ? target : qeGeometryAngles(cache,"+-+");
+    const {angles,ki,kf}=drawTarget;
+    source=[-L,0];
+    mono=[0,0];
+    thetaKi=deg2rad(angles.m2);
+    sample=[mono[0]+L*Math.cos(thetaKi),mono[1]+L*Math.sin(thetaKi)];
+    thetaKf=thetaKi+deg2rad(angles.s2);
+    analyzer=[sample[0]+L*Math.cos(thetaKf),sample[1]+L*Math.sin(thetaKf)];
+    thetaOut=thetaKf+deg2rad(angles.a2);
+    detector=[analyzer[0]+L*Math.cos(thetaOut),analyzer[1]+L*Math.sin(thetaOut)];
+    monoPlaneAngle=deg2rad(angles.m1);
+    anaPlaneAngle=thetaKf+deg2rad(angles.a1);
+
+    // Use the physical ki/kf ratio only to determine Q direction.  The displayed
+    // arrow length stays fixed, so cold/thermal settings do not rescale the figure.
+    const qx=ki*Math.cos(thetaKi)-kf*Math.cos(thetaKf);
+    const qy=ki*Math.sin(thetaKi)-kf*Math.sin(thetaKf);
+    const qMag=Math.hypot(qx,qy);
+    qAngle=Math.atan2(qy,qx);
+
+    // Encode inelasticity in the vector lengths without changing the instrument
+    // flight-path geometry.  The fixed-energy wave vector always has the same
+    // displayed length, and the other beam/Q vectors use the identical scale.
+    const kFixed=(cache.energyMode==="Ef fixed") ? kf : ki;
+    const vectorScale=(Number.isFinite(kFixed) && kFixed>1e-12) ? (0.50*L/kFixed) : 1;
+    kiVectorLen=vectorScale*ki;
+    kfVectorLen=vectorScale*kf;
+    qVectorLen=vectorScale*qMag;
+
+    // Keep the calculated coordinates in one canonical (+-+) frame.
+    // For -+-, the Plotly x-axis is reversed below.  Reversing the viewport,
+    // rather than recomputing/flipping every coordinate, guarantees a true
+    // pixel-for-pixel left/right mirror with the same scale and anchor point.
+  }else{
+    // Previous idealized fallback.
+    sample=[0,0]; mono=[0,L]; source=[-L,L]; analyzer=[-mirror*L,0]; detector=[-mirror*L,-L];
+    thetaKi=-Math.PI/2; thetaKf=mirror>0?Math.PI:-0; thetaOut=-Math.PI/2;
+    monoPlaneAngle=mirror*deg2rad(45); anaPlaneAngle=mirror*deg2rad(45);
+    qAngle=-mirror*Math.PI/4;
+  }
 
   const traces=[];
-  const addLine=(a,b,color,width=3,dash="solid")=>traces.push({
-    x:[a[0],b[0]],y:[a[1],b[1]],mode:"lines",
-    line:{color,width,dash},hoverinfo:"skip",showlegend:false
-  });
-
-  // Neutron flight path: a light-gray continuous guide line so the colored vectors remain clear.
+  const addLine=(a,b,color,width=3,dash="solid")=>traces.push({x:[a[0],b[0]],y:[a[1],b[1]],mode:"lines",line:{color,width,dash},hoverinfo:"skip",showlegend:false});
   const flightColor="#cfcfcf";
-  addLine(guide,mono,flightColor,4);
-  addLine(mono,sample,flightColor,4);
-  addLine(sample,analyzer,flightColor,4);
-  addLine(analyzer,detector,flightColor,4);
+  addLine(source,mono,flightColor,4); addLine(mono,sample,flightColor,4); addLine(sample,analyzer,flightColor,4); addLine(analyzer,detector,flightColor,4);
 
   const darkRadius=0.92;
   const circle=linspace(0,2*Math.PI,181);
-  traces.push({
-    x:circle.map(t=>darkRadius*Math.cos(t)),
-    y:circle.map(t=>darkRadius*Math.sin(t)),
-    mode:"lines",line:{color:"#d9d9d9",width:1},hoverinfo:"skip",showlegend:false
-  });
+  traces.push({x:circle.map(t=>sample[0]+darkRadius*Math.cos(t)),y:circle.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"#d9d9d9",width:1},hoverinfo:"skip",showlegend:false});
 
-  // The schematic uses |ki|=|kf| by construction, so Q=ki-kf is always the
-  // 45-degree diagonal: (+x,-y) for +-+, mirrored to (-x,-y) for -+-.
-  const qAngle=-Math.PI/4;
-  const qLen=1.38;
-  const qEnd=[mirror*qLen*Math.cos(qAngle),qLen*Math.sin(qAngle)];
+  // Dark-angle arcs are centered on the sample.  Use exactly one origin:
+  // the Reference-Q direction carried by the current sample orientation.
+  //
+  // Direct-beam mode is not anchored to the *current* ki.  Its zero direction
+  // is the ki direction at the Reference-Q condition.  Convert that direction
+  // to a fixed offset from Reference Q, then let the same sample orientation
+  // carry both origins as S1 changes.  This makes, e.g., a 90-deg sample move
+  // from (100) to (010) rotate a ki-referenced block by the same 90 deg.
+  let base=qAngle;
+  let deltaS1=0;
+  let darkReferenceOffset=0;
+  if(target){
+    try{
+      const U=[num("Uh"),num("Uk"),num("Ul")];
+      const V=[num("Vh"),num("Vk"),num("Vl")];
+      const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
+      const qPlaneAngle=(hkl)=>{
+        const q=hklToQ(cache.rl,hkl);
+        const x=dot(q,ex), y=dot(q,ey);
+        if(Math.hypot(x,y)<1e-12) return 0;
+        return Math.atan2(y,x);
+      };
+      const phiTarget=qPlaneAngle([target.calc.h,target.calc.k,target.calc.l]);
+      const phiRef=qPlaneAngle([num("refh"),num("refk"),num("refl")]);
+      const crystalDelta=phiRef-phiTarget;
+      base=qAngle+(sense==="-+-" ? -crystalDelta : crystalDelta);
 
-  // Dark-angle reference only changes the angular origin; it never rotates the
-  // idealized ki/kf/Q geometry. Direct beam uses ki (-y). Reference Q uses the
-  // fixed 45-degree Q direction above. Positive display sense remains clockwise
-  // for +-+ and becomes counter-clockwise automatically after the x mirror.
-  const base=(cache.darkRef==="Reference Q") ? qAngle : -Math.PI/2;
+      const refS1=num("refs1");
+      if(Number.isFinite(target.angles?.s1) && Number.isFinite(refS1)){
+        deltaS1=angleDiffDeg(target.angles.s1,refS1); // display/hover only
+      }
+
+      if(cache.darkRef==="Direct beam"){
+        // Elastic Reference-Q geometry: angle(Q -> ki) = 90deg-thetaRef.
+        // The Q-E calculation uses the equivalent Qoffset correction
+        // darkReferenceOffset = thetaRef-90deg.  Here we use the actual
+        // screen-space Q->ki angle, with the TAS sense handled by the same
+        // mirrored display convention as the Reference-Q geometry.
+        const qRef=hklToQ(cache.rl,[num("refh"),num("refk"),num("refl")]);
+        const qRefNorm=norm(qRef);
+        const refEnergy=(cache.energyMode==="Ei fixed") ? cache.Ei : cache.Ef;
+        if(qRefNorm>1e-12 && Number.isFinite(refEnergy) && refEnergy>0){
+          const kRef=Math.sqrt(refEnergy/2.072);
+          const thetaRef=Math.asin(clamp(qRefNorm/(2*kRef),-1,1));
+          const qToKi=Math.PI/2-thetaRef;
+          // base is the current Reference-Q direction.  Move its zero to the
+          // incident-beam direction that existed when Reference Q was observed.
+          base += -qToKi;
+          darkReferenceOffset=(sense==="+-+" ? -1 : +1)*rad2deg(qToKi);
+        }
+      }
+    }catch(_err){
+      base=qAngle;
+    }
+  }
+
   cache.darkRanges.forEach((r,j)=>{
-    const [from,to,offset]=r;
-    if(from===0 && to===0) return;
-    let a0=offset+from, a1=offset+to;
-    if(a1<a0) a1+=360;
-    const aa=linspace(a0,a1,120).map(d=>base-deg2rad(d));
-    traces.push({
-      x:aa.map(t=>mirror*darkRadius*Math.cos(t)),
-      y:aa.map(t=>darkRadius*Math.sin(t)),
-      mode:"lines",line:{color:"red",width:4},
-      name:`Dark ${j+1}`,hovertemplate:`Dark angle ${j+1}<extra></extra>`,showlegend:false
-    });
+    const [from,to,offset]=r; if(from===0 && to===0) return;
+    let a0=offset+from,a1=offset+to; if(a1<a0)a1+=360;
+    // TAS-geometry-only convention: the dark/black sector must rotate around Q
+    // in opposite senses for +-+ and -+-, matching the already-validated Q-E
+    // Range block definition.  Q-E Range calculations are intentionally untouched.
+    // Geometry-only display convention after the inelastic Q-E handedness fix:
+    // +-+ must sweep the dark sector in the opposite plot-coordinate direction.
+    // -+- is already validated, so leave it unchanged.
+    const sign=-1;
+    const aa=linspace(a0,a1,120).map(d=>base+sign*deg2rad(d));
+    traces.push({x:aa.map(t=>sample[0]+darkRadius*Math.cos(t)),y:aa.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"red",width:4},name:`Dark ${j+1}`,hovertemplate:`Dark angle ${j+1}<br>ΔS1=${deltaS1.toFixed(2)}°<br>Ref offset=${darkReferenceOffset.toFixed(2)}°<extra></extra>`,showlegend:false});
   });
 
-  // Component symbols. Analyzer is intentionally rotated by 90 degrees from
-  // the previous drawing.
-  const crystal=(c,ang,len=0.58)=>{
-    const dx=0.5*len*Math.cos(ang), dy=0.5*len*Math.sin(ang);
-    addLine([c[0]-dx,c[1]-dy],[c[0]+dx,c[1]+dy],"black",3);
-  };
-  crystal(mono,mirror*deg2rad(45));
-  crystal(analyzer,mirror*deg2rad(45));
-  traces.push({x:[detector[0]],y:[detector[1]],mode:"markers",marker:{size:24,symbol:"square",color:"orange",line:{color:"black",width:1}},hovertext:["Detector"],hovertemplate:"%{hovertext}<extra></extra>",showlegend:false});
-  traces.push({x:[0],y:[0],mode:"markers",marker:{size:8,symbol:"circle",color:"black"},hovertext:["Sample"],hovertemplate:"%{hovertext}<extra></extra>",showlegend:false});
+  const crystal=(c,ang,len=0.58)=>{const dx=.5*len*Math.cos(ang),dy=.5*len*Math.sin(ang);addLine([c[0]-dx,c[1]-dy],[c[0]+dx,c[1]+dy],"black",3);};
+  crystal(mono,monoPlaneAngle); crystal(analyzer,anaPlaneAngle);
+  traces.push({x:[detector[0]],y:[detector[1]],mode:"markers",marker:{size:24,symbol:"circle",color:"orange",line:{color:"black",width:1}},hovertext:["Detector"],hovertemplate:"%{hovertext}<extra></extra>",showlegend:false});
+  traces.push({x:[sample[0]],y:[sample[1]],mode:"markers",marker:{size:8,symbol:"circle",color:"black"},hovertext:["Sample"],hovertemplate:"%{hovertext}<extra></extra>",showlegend:false});
 
-  // Keep the vector arrows on the flight path and about half a leg long, but
-  // anchor them physically at the sample: ki ends at the sample centre and kf
-  // starts at the sample centre.
   const pointAlong=(a,b,f)=>[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];
-  const kiArrow={tail:pointAlong(mono,sample,0.50),head:sample.slice()};
-  const kfArrow={tail:sample.slice(),head:pointAlong(sample,analyzer,0.50)};
+  // ki points into the sample; kf points away from it.  Their lengths now carry
+  // the actual |ki|/|kf| ratio.  Q uses the same reciprocal-space scale, so its
+  // magnitude and direction are consistent with Q = ki - kf.
+  const kiArrow={
+    tail:[sample[0]-kiVectorLen*Math.cos(thetaKi),sample[1]-kiVectorLen*Math.sin(thetaKi)],
+    head:sample.slice()
+  };
+  const kfArrow={
+    tail:sample.slice(),
+    head:[sample[0]+kfVectorLen*Math.cos(thetaKf),sample[1]+kfVectorLen*Math.sin(thetaKf)]
+  };
+  const qEnd=[sample[0]+qVectorLen*Math.cos(qAngle),sample[1]+qVectorLen*Math.sin(qAngle)];
+
+  // Keep component labels in fixed screen-relative positions so their placement
+  // does not change with the +-+ / -+- configuration.
+  // Mono / Analyzer / Detector: always to the right. Sample: always to the left.
+  const screenRightSign=sense==="+-+" ? 1 : -1;
+  const monoLabel=[mono[0]+screenRightSign*0.72,mono[1]];
+  const anaLabel=[analyzer[0]+screenRightSign*0.52,analyzer[1]];
+  const sampleLabel=[sample[0]-screenRightSign*0.48,sample[1]];
+  const detLabel=[detector[0]+screenRightSign*0.66,detector[1]];
+  const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5);
 
   const annotations=[
-    {x:mono[0]+0.28*mirror,y:mono[1]+0.29,text:"Monochromator",showarrow:false},
-    {x:-0.34,y:0,text:"Sample",showarrow:false,xanchor:"right"},
-    {x:analyzer[0],y:analyzer[1]+0.34,text:"Analyzer",showarrow:false},
-    {x:detector[0],y:detector[1]-0.34,text:"Detector",showarrow:false},
-
-    // Keep the vector arrows exactly on top of the light-gray flight path. Labels
-    // are separate annotations so moving the text never displaces an arrow.
+    {x:monoLabel[0],y:monoLabel[1],text:"Monochromator",showarrow:false},
+    {x:sampleLabel[0],y:sampleLabel[1],text:"Sample",showarrow:false},
+    {x:anaLabel[0],y:anaLabel[1],text:"Analyzer",showarrow:false},
+    {x:detLabel[0],y:detLabel[1],text:"Detector",showarrow:false},
     {x:kiArrow.head[0],y:kiArrow.head[1],ax:kiArrow.tail[0],ay:kiArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#2e9b50"},
     {x:kfArrow.head[0],y:kfArrow.head[1],ax:kfArrow.tail[0],ay:kfArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#7b2cbf"},
-    {x:(kiArrow.tail[0]+kiArrow.head[0])/2+0.22*mirror,y:(kiArrow.tail[1]+kiArrow.head[1])/2,text:"ki",showarrow:false,font:{color:"#2e9b50"}},
-    {x:(kfArrow.tail[0]+kfArrow.head[0])/2,y:(kfArrow.tail[1]+kfArrow.head[1])/2-0.20,text:"kf",showarrow:false,font:{color:"#7b2cbf"}},
-
-    // Q starts at the exact centre of the sample circle.  Its label is placed
-    // independently at the arrow tip, avoiding Plotly annotation shifts that
-    // would otherwise move the apparent tail away from the sample centre.
-    {x:qEnd[0],y:qEnd[1],ax:0,ay:0,xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#000000"},
-    {x:qEnd[0]+0.13*mirror,y:qEnd[1]-0.10,text:"Q",showarrow:false,font:{color:"#000000"}}
+    {x:kiMid[0]-0.18*Math.sin(thetaKi),y:kiMid[1]+0.18*Math.cos(thetaKi),text:"ki",showarrow:false,font:{color:"#2e9b50"}},
+    {x:kfMid[0]+0.18*Math.sin(thetaKf),y:kfMid[1]-0.18*Math.cos(thetaKf),text:"kf",showarrow:false,font:{color:"#7b2cbf"}},
+    {x:qEnd[0],y:qEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#000"},
+    {x:qEnd[0]+.12*Math.cos(qAngle),y:qEnd[1]+.12*Math.sin(qAngle),text:"Q",showarrow:false,font:{color:"#000"}}
   ];
 
-  // No dashed Q/reference ray: the explicit black Q-vector arrow above is the
-  // visual reference.  The selected Direct-beam/Reference-Q mode still changes
-  // only the angular origin used to draw the red dark-angle arcs.
+  const xs=[...source,...mono,...sample,...analyzer,...detector,qEnd[0]],ys=[source[1],mono[1],sample[1],analyzer[1],detector[1],qEnd[1]];
+  const xmin=Math.min(source[0],mono[0],sample[0],analyzer[0],detector[0],qEnd[0])-1.0,xmax=Math.max(source[0],mono[0],sample[0],analyzer[0],detector[0],qEnd[0])+1.0;
+  const ymin=Math.min(source[1],mono[1],sample[1],analyzer[1],detector[1],qEnd[1])-1.0,ymax=Math.max(source[1],mono[1],sample[1],analyzer[1],detector[1],qEnd[1])+1.0;
+  // Keep the monochromator at a fixed screen position when the geometry target
+  // changes.  Use the same compact scale as the pre-v18 view, but place the
+  // monochromator above the vertical center so the instrument sits higher in
+  // the panel.  Only the viewport changes; the TAS geometry itself is untouched.
+  const span=Math.max(xmax-xmin,ymax-ymin);
+  const cx=mono[0];
+  const cy=mono[1]+0.28*span;
+
+  const angleBox=$("geometryAngles");
+  if(angleBox){
+    if(target){
+      const a=target.angles;
+      angleBox.classList.remove("error-text");
+      angleBox.innerHTML=`Ei=${target.Ei.toFixed(3)} meV, Ef=${target.Ef.toFixed(3)} meV &nbsp; | &nbsp; `+
+        `M1=${formatAngle(-a.m1)}°, M2=${formatAngle(-a.m2)}°, S1=${formatAngle(a.s1)}°, S2=${formatAngle(a.s2)}°, A1=${formatAngle(-a.a1)}°, A2=${formatAngle(-a.a2)}°`+
+        (a.warning?`<br>${a.warning}`:"");
+    }else{
+      angleBox.classList.add("error-text"); angleBox.textContent=`Angle calculation unavailable: ${targetError}`;
+    }
+  }
 
   Plotly.react("geometryPlot",traces,{
-    title:{text:`TAS geometry & dark angle<br><span style="font-size:12px">${sense} | ${cache.darkRef} reference | ℏω=${hw.toFixed(1)} meV</span>`,x:0.5},
-    xaxis:{range:[-2.75,2.75],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true},
-    yaxis:{range:[-2.60,2.70],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true},
-    annotations,margin:{l:10,r:10,t:72,b:10},showlegend:false
+    title:{text:"TAS geometry & dark angle",x:.5},
+    xaxis:{range:sense==="+-+" ? [cx-span/2,cx+span/2] : [cx+span/2,cx-span/2],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true},
+    yaxis:{range:[cy-span/2,cy+span/2],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true},
+    annotations,margin:{l:10,r:10,t:52,b:10},showlegend:false
   },{responsive:true,displayModeBar:false});
 }
 
@@ -854,6 +1010,18 @@ function scheduleRecalc(){
   clearTimeout(timer);
   timer=setTimeout(recalculate,50);
 }
+function syncGeometryHWSlider(cache){
+  const slider=$("geomHWSlider"), output=$("geomHWValue"), entry=$("geomHW");
+  if(!slider || !output || !entry || !cache?.hwList?.length) return;
+  const lo=Math.min(...cache.hwList), hi=Math.max(...cache.hwList);
+  const diffs=cache.hwList.slice(1).map((x,i)=>Math.abs(x-cache.hwList[i])).filter(x=>x>1e-9);
+  const step=diffs.length ? Math.min(...diffs) : 0.1;
+  slider.min=lo; slider.max=hi; slider.step=step;
+  const v=Math.max(lo,Math.min(hi,Number(entry.value)||0));
+  slider.value=v;
+  output.textContent=`${Number(entry.value||0).toFixed(1)} meV`;
+}
+
 function recalculate(){
   clearError();
   updateEnergyLabel();
@@ -861,6 +1029,7 @@ function recalculate(){
   try{
     if(checkedValue("sampleMode")==="single"){
       singleCache=calculateSingleCrystal();
+      syncGeometryHWSlider(singleCache);
       $("hwSlider").min=0;
       $("hwSlider").max=Math.max(0,singleCache.regions.length-1);
       $("hwSlider").step=1;
@@ -889,12 +1058,24 @@ $("hwSlider").addEventListener("input",()=>{
   }
 });
 
+$("geomHWSlider").addEventListener("input",()=>{
+  const v=Number($("geomHWSlider").value);
+  $("geomHW").value=Number.isFinite(v) ? v : 0;
+  $("geomHWValue").textContent=`${Number($("geomHW").value).toFixed(1)} meV`;
+  scheduleRecalc();
+});
+
+$("geomHW").addEventListener("input",()=>{
+  if(singleCache) syncGeometryHWSlider(singleCache);
+});
+
 document.querySelectorAll("input,select").forEach(el=>{
   if([
     "instrument",
     "seSelect",
     "sampleSelect",
-    "hwSlider"
+    "hwSlider",
+    "geomHWSlider"
   ].includes(el.id)) return;
 
   el.addEventListener("input",scheduleRecalc);
@@ -1032,21 +1213,49 @@ function tasMotorAngles(calc,b){
   }
   const s2Ref=senseS*rad2deg(Math.acos(clamp(cosRef,-1,1)));
 
-  const qLabAngle=(ki0,kf0,s2deg)=>{
+  // S1 is a physical sample-axis encoder calibration and must not change when
+  // the TAS sign configuration is switched.  The validated -+- convention
+  // uses the positive scattering branch, so use that same branch for the S1
+  // UB/reference calculation in both -+- and +-+.  Only the displayed/physical
+  // S2 motor angle above retains senseS.
+  const s2ForS1=rad2deg(Math.acos(clamp(cosS2,-1,1)));
+  const s2RefForS1=rad2deg(Math.acos(clamp(cosRef,-1,1)));
+
+  // Match the validated Python UB/reference geometry exactly.  In the
+  // canonical PDF frame, +z is the incident beam and +x is the in-plane
+  // transverse direction.  For a horizontal detector:
+  //   Q_lab = (-kf*sin(S2), 0, ki-kf*cos(S2))
+  // and the physical sample rotation is
+  //   omega = atan2(Qlab_x,Qlab_z) - atan2(Q0_x,Q0_z).
+  // Reference Q determines omega_ref only; the encoder offset is then
+  // transferred to the target by S1 = S1_ref + (omega_target-omega_ref).
+  const phiLab=(ki0,kf0,s2deg)=>{
     const t=deg2rad(s2deg);
     const qx=-kf0*Math.sin(t);
-    const qy=ki0-kf0*Math.cos(t);
-    return rad2deg(Math.atan2(qy,qx));
+    const qz= ki0-kf0*Math.cos(t);
+    return rad2deg(Math.atan2(qx,qz));
   };
 
+  // makeSpiceScatteringPlaneBasis gives ex along entered U and ey along the
+  // canonical in-plane transverse direction.  These correspond to PDF z and
+  // PDF x respectively, so atan2(ey,ex) is atan2(Q0_x,Q0_z).
   const phiTarget=qAngle(Qt);
   const phiRef=qAngle(Qr,{allowZeroProjection:true});
-  const psiTarget=qLabAngle(ki,kf,s2);
-  const psiRef=qLabAngle(k0,k0,s2Ref);
+  const omegaTarget=wrap180(phiLab(ki,kf,s2ForS1)-phiTarget);
+  const omegaRef=wrap180(phiLab(k0,k0,s2RefForS1)-phiRef);
 
-  const s1=num('refs1')
-    + angleDiffDeg(phiTarget,phiRef)
-    - angleDiffDeg(psiTarget,psiRef);
+  // The validated Python simulation uses C2_TO_OMEGA_SIGN = +1 for its
+  // native scattering sense.  The opposite TAS sign configuration is the
+  // left/right-mirrored instrument, so its sample encoder must run with the
+  // opposite C2->omega sign.  Without this factor +-+ and -+- collapse onto
+  // the same S1 solution after the signed-S2 geometry is formed.
+  //
+  //   omega = omega_ref + c2Sign * (S1-S1_ref)
+  //   S1    = S1_ref + (omega-omega_ref)/c2Sign
+  //
+  // Keep +-+ as the already validated result and mirror only -+-.
+  const c2Sign=(b.config.sign_config==='+-+') ? +1 : -1;
+  const s1=num('refs1') + angleDiffDeg(omegaTarget,omegaRef)/c2Sign;
 
   return {Ei,Ef,m1,m2,s1,s2,a1,a2,warning:''};
 }

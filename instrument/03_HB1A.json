@@ -61,7 +61,7 @@
     "width": 0.15,
     "height": 0.15
   },
-  "S2_min": 0.0,
+  "S2_min": 5,
   "S2_limits": [
       {
           "S2limit": 130,

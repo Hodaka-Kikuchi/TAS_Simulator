@@ -47,7 +47,7 @@
   },
   "configuration": {
     "energy_mode": "Ef fixed",
-    "Ef": 4.0,
+    "Ef": 3.635,
     "geometry": "W",
     "sign": "+-+"
   },
