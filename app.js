@@ -335,12 +335,16 @@ function getDarkRanges(){
   return out;
 }
 
-function calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY){
+function calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY,sense){
   const kiAngle=deg2rad(-s1+s1Offset+refS1);
   const kfAngle=deg2rad(s2-s1+s1Offset+refS1);
   let q=[ki*Math.sin(kiAngle)-kf*Math.sin(kfAngle),
          ki*Math.cos(kiAngle)-kf*Math.cos(kfAngle)];
-  if(norm(QrefXY)>1e-10){
+  // The two TAS sign conventions are mirror images about the Reference-Q axis.
+  // Keep the motor limits themselves unchanged; only the reciprocal-space
+  // handedness changes.  This also reverses the S2-sweep arc direction for a
+  // fixed S1, as required physically.
+  if(sense==="+-+" && norm(QrefXY)>1e-10){
     const eQ=normalize(QrefXY);
     q=sub(scale(eQ,2*dot(q,eQ)),q);
   }
@@ -444,13 +448,17 @@ function calculateSingleCrystal(){
     if(EiHw<=0 || EfHw<=0) continue;
     const ki=0.6947*Math.sqrt(EiHw), kf=0.6947*Math.sqrt(EfHw);
     const S2max=Number(interp(EiHw));
+
+    // S1min/S1max are motor limits and remain the same for both senses.
+    // The sign convention changes the reciprocal-space handedness, not the
+    // numerical motor interval.  calcQ0() applies that mirror about Reference Q.
     const s1range=linspace(S1min,S1max,200);
     const s2range=linspace(S2min,S2max,200);
 
-    const p1=s1range.map(s1=>calcQ0(s1,S2min,ki,kf,s1Offset,refS1,QrefXY));
-    const p2=s2range.map(s2=>calcQ0(S1max,s2,ki,kf,s1Offset,refS1,QrefXY));
-    const p3=[...s1range].reverse().map(s1=>calcQ0(s1,S2max,ki,kf,s1Offset,refS1,QrefXY));
-    const p4=[...s2range].reverse().map(s2=>calcQ0(S1min,s2,ki,kf,s1Offset,refS1,QrefXY));
+    const p1=s1range.map(s1=>calcQ0(s1,S2min,ki,kf,s1Offset,refS1,QrefXY,sense));
+    const p2=s2range.map(s2=>calcQ0(S1max,s2,ki,kf,s1Offset,refS1,QrefXY,sense));
+    const p3=[...s1range].reverse().map(s1=>calcQ0(s1,S2max,ki,kf,s1Offset,refS1,QrefXY,sense));
+    const p4=[...s2range].reverse().map(s2=>calcQ0(S1min,s2,ki,kf,s1Offset,refS1,QrefXY,sense));
     const boundary=[...p1,...p2,...p3,...p4];
     regions.push(boundary); S2list.push(S2max);
     QmaxList.push(Math.max(...boundary.map(norm)));
