@@ -537,7 +537,7 @@ function calculateSingleCrystal(){
     inst,lc,latticeCentering,U,V,rl,ex,ey,ez,
     energyMode,Ei,Ef,lambdaHalf,hwList,
     regions,S2list,QmaxList,darkKF,darkKI,addDark,
-    Gpoints,magPoints,ringData,darkRanges,darkRef
+    Gpoints,magPoints,ringData,darkRanges,darkRef,QrefXY,sense
   };
 }
 
@@ -624,37 +624,119 @@ function renderSingle(cache,index=0){
   },{responsive:true});
 
   $("hwValue").textContent=`${cache.hwList[i].toFixed(1)} meV`;
-  renderGeometry(cache);
+  renderGeometry(cache,i);
 }
 
-function renderGeometry(cache){
-  const traces=[];
-  const circle=linspace(0,2*PI,360);
-  traces.push({x:circle.map(t=>2*Math.cos(t)),y:circle.map(t=>2*Math.sin(t)),mode:"lines",line:{color:"gray",width:1},showlegend:false,hoverinfo:"skip"});
+function renderGeometry(cache,index=0){
+  const i=Math.max(0,Math.min(index,cache.hwList.length-1));
+  const sense=cache.sense || checkedValue("sense");
+  const hw=cache.hwList[i] || 0;
 
-  cache.darkRanges.forEach((r,i)=>{
-    let [from,to,offset]=r;
-    if(from===0&&to===0) return;
-    let a0=offset+from, a1=offset+to;
-    if(a1<a0) a1+=360;
-    const aa=linspace(a0,a1,200).map(deg2rad);
-    // Display convention only; do not alter the dark-angle calculation.
-    //   -+- : positive displayed dark angle is counter-clockwise
-    //   +-+ : positive displayed dark angle is clockwise
-    // t=0 remains at +Y.
-    const displaySign=checkedValue("sense")==="+-+" ? +1 : -1;
-    traces.push({x:aa.map(t=>displaySign*2*Math.sin(t)),y:aa.map(t=>2*Math.cos(t)),mode:"lines",line:{color:"black",width:6},showlegend:false,hoverinfo:"skip"});
+  // Display-only schematic. Keep the Q-E/dark-angle calculations untouched.
+  // Use a deliberately idealized TAS geometry with equal orthogonal flight legs.
+  // +-+: guide -> mono (-x), mono -> sample (-y), sample -> analyzer (-x),
+  //      analyzer -> detector (-y).  -+- is the exact x-mirror.
+  const mirror=sense==="+-+" ? 1 : -1;
+  const L=2.05;
+  const sample=[0,0];
+  const mono=[0,L];
+  const guide=[mirror*L,L];
+  const analyzer=[-mirror*L,0];
+  const detector=[-mirror*L,-L];
+
+  const traces=[];
+  const addLine=(a,b,color,width=3,dash="solid")=>traces.push({
+    x:[a[0],b[0]],y:[a[1],b[1]],mode:"lines",
+    line:{color,width,dash},hoverinfo:"skip",showlegend:false
   });
 
+  // Neutron flight path: a light-gray continuous guide line so the colored vectors remain clear.
+  const flightColor="#cfcfcf";
+  addLine(guide,mono,flightColor,4);
+  addLine(mono,sample,flightColor,4);
+  addLine(sample,analyzer,flightColor,4);
+  addLine(analyzer,detector,flightColor,4);
+
+  const darkRadius=0.92;
+  const circle=linspace(0,2*Math.PI,181);
+  traces.push({
+    x:circle.map(t=>darkRadius*Math.cos(t)),
+    y:circle.map(t=>darkRadius*Math.sin(t)),
+    mode:"lines",line:{color:"#d9d9d9",width:1},hoverinfo:"skip",showlegend:false
+  });
+
+  // The schematic uses |ki|=|kf| by construction, so Q=ki-kf is always the
+  // 45-degree diagonal: (+x,-y) for +-+, mirrored to (-x,-y) for -+-.
+  const qAngle=-Math.PI/4;
+  const qLen=1.38;
+  const qEnd=[mirror*qLen*Math.cos(qAngle),qLen*Math.sin(qAngle)];
+
+  // Dark-angle reference only changes the angular origin; it never rotates the
+  // idealized ki/kf/Q geometry. Direct beam uses ki (-y). Reference Q uses the
+  // fixed 45-degree Q direction above. Positive display sense remains clockwise
+  // for +-+ and becomes counter-clockwise automatically after the x mirror.
+  const base=(cache.darkRef==="Reference Q") ? qAngle : -Math.PI/2;
+  cache.darkRanges.forEach((r,j)=>{
+    const [from,to,offset]=r;
+    if(from===0 && to===0) return;
+    let a0=offset+from, a1=offset+to;
+    if(a1<a0) a1+=360;
+    const aa=linspace(a0,a1,120).map(d=>base-deg2rad(d));
+    traces.push({
+      x:aa.map(t=>mirror*darkRadius*Math.cos(t)),
+      y:aa.map(t=>darkRadius*Math.sin(t)),
+      mode:"lines",line:{color:"red",width:4},
+      name:`Dark ${j+1}`,hovertemplate:`Dark angle ${j+1}<extra></extra>`,showlegend:false
+    });
+  });
+
+  // Component symbols. Analyzer is intentionally rotated by 90 degrees from
+  // the previous drawing.
+  const crystal=(c,ang,len=0.58)=>{
+    const dx=0.5*len*Math.cos(ang), dy=0.5*len*Math.sin(ang);
+    addLine([c[0]-dx,c[1]-dy],[c[0]+dx,c[1]+dy],"black",3);
+  };
+  crystal(mono,mirror*deg2rad(45));
+  crystal(analyzer,mirror*deg2rad(45));
+  traces.push({x:[detector[0]],y:[detector[1]],mode:"markers",marker:{size:24,symbol:"square",color:"orange",line:{color:"black",width:1}},hovertext:["Detector"],hovertemplate:"%{hovertext}<extra></extra>",showlegend:false});
+  traces.push({x:[0],y:[0],mode:"markers",marker:{size:8,symbol:"circle",color:"black"},hovertext:["Sample"],hovertemplate:"%{hovertext}<extra></extra>",showlegend:false});
+
+  // Keep the vector arrows on the flight path and about half a leg long, but
+  // anchor them physically at the sample: ki ends at the sample centre and kf
+  // starts at the sample centre.
+  const pointAlong=(a,b,f)=>[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];
+  const kiArrow={tail:pointAlong(mono,sample,0.50),head:sample.slice()};
+  const kfArrow={tail:sample.slice(),head:pointAlong(sample,analyzer,0.50)};
+
+  const annotations=[
+    {x:mono[0]+0.28*mirror,y:mono[1]+0.29,text:"Monochromator",showarrow:false},
+    {x:-0.34,y:0,text:"Sample",showarrow:false,xanchor:"right"},
+    {x:analyzer[0],y:analyzer[1]+0.34,text:"Analyzer",showarrow:false},
+    {x:detector[0],y:detector[1]-0.34,text:"Detector",showarrow:false},
+
+    // Keep the vector arrows exactly on top of the light-gray flight path. Labels
+    // are separate annotations so moving the text never displaces an arrow.
+    {x:kiArrow.head[0],y:kiArrow.head[1],ax:kiArrow.tail[0],ay:kiArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#2e9b50"},
+    {x:kfArrow.head[0],y:kfArrow.head[1],ax:kfArrow.tail[0],ay:kfArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#7b2cbf"},
+    {x:(kiArrow.tail[0]+kiArrow.head[0])/2+0.22*mirror,y:(kiArrow.tail[1]+kiArrow.head[1])/2,text:"ki",showarrow:false,font:{color:"#2e9b50"}},
+    {x:(kfArrow.tail[0]+kfArrow.head[0])/2,y:(kfArrow.tail[1]+kfArrow.head[1])/2-0.20,text:"kf",showarrow:false,font:{color:"#7b2cbf"}},
+
+    // Q starts at the exact centre of the sample circle.  Its label is placed
+    // independently at the arrow tip, avoiding Plotly annotation shifts that
+    // would otherwise move the apparent tail away from the sample centre.
+    {x:qEnd[0],y:qEnd[1],ax:0,ay:0,xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#000000"},
+    {x:qEnd[0]+0.13*mirror,y:qEnd[1]-0.10,text:"Q",showarrow:false,font:{color:"#000000"}}
+  ];
+
+  // No dashed Q/reference ray: the explicit black Q-vector arrow above is the
+  // visual reference.  The selected Direct-beam/Reference-Q mode still changes
+  // only the angular origin used to draw the red dark-angle arcs.
+
   Plotly.react("geometryPlot",traces,{
-    title:{text:"Dark angle<br>(elastic & top view)",x:0.5},
-    xaxis:{range:[-2.3,2.3],showgrid:false,zeroline:false,showticklabels:false},
-    yaxis:{range:[-2.3,2.3],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1},
-    annotations:[
-      {x:0,y:2,ax:0,ay:-0.2,xref:"x",yref:"y",axref:"x",ayref:"y",showarrow:true,arrowhead:3,arrowsize:1.5,arrowwidth:3,arrowcolor:"red"},
-      {x:0.8,y:0.8,text:cache.darkRef==="Reference Q"?"Reference Q":"ki",showarrow:false,font:{size:16,color:"red"}}
-    ],
-    margin:{l:10,r:10,t:60,b:10},showlegend:false
+    title:{text:`TAS geometry & dark angle<br><span style="font-size:12px">${sense} | ${cache.darkRef} reference | ℏω=${hw.toFixed(1)} meV</span>`,x:0.5},
+    xaxis:{range:[-2.75,2.75],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true},
+    yaxis:{range:[-2.60,2.70],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true},
+    annotations,margin:{l:10,r:10,t:72,b:10},showlegend:false
   },{responsive:true,displayModeBar:false});
 }
 
