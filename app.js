@@ -1407,6 +1407,68 @@ function setActiveTab(name){
 }
 function updateCalcMode(){const scan=$('calcMode').value==='scan';$('singleInputs').classList.toggle('hidden',scan);$('scanInputs').classList.toggle('hidden',!scan);}
 
+// ==================== Local left-panel persistence ====================
+// Instrument/sample JSON files are the source of available choices and defaults.
+// Restore the user's browser-local values only AFTER those JSON files have loaded,
+// so saved values never race with or get overwritten by configuration loading.
+const LEFT_PANEL_STORAGE_KEY='tas-qe-left-panel-v1';
+let restoringLeftPanel=false;
+
+function leftPanelControls(){
+  return [...document.querySelectorAll('.sidebar input[id], .sidebar select[id]')];
+}
+
+function saveLeftPanelState(){
+  if(restoringLeftPanel) return;
+  try{
+    const values={};
+    for(const el of leftPanelControls()){
+      values[el.id]=(el.type==='checkbox'||el.type==='radio') ? !!el.checked : el.value;
+    }
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY,JSON.stringify({version:1,values}));
+  }catch(_e){ /* localStorage may be unavailable in a restricted browser context. */ }
+}
+
+function setSavedControl(id,value,{dispatchChange=false}={}){
+  const el=$(id); if(!el || value===undefined) return false;
+  if(el.type==='checkbox'||el.type==='radio') el.checked=!!value;
+  else if(el.tagName==='SELECT'){
+    if(![...el.options].some(o=>o.value===String(value))) return false;
+    el.value=String(value);
+  }else el.value=String(value);
+  if(dispatchChange) el.dispatchEvent(new Event('change'));
+  return true;
+}
+
+function restoreLeftPanelState(){
+  let saved;
+  try{saved=JSON.parse(localStorage.getItem(LEFT_PANEL_STORAGE_KEY)||'null');}catch(_e){return false;}
+  if(!saved || !saved.values || typeof saved.values!=='object') return false;
+  const v=saved.values;
+  restoringLeftPanel=true;
+  try{
+    // 1) The instrument must exist before its dependent defaults can be applied.
+    if(setSavedControl('instrument',v.instrument)) applyInstrumentDefaults();
+
+    // 2) The sample-environment JSON can populate dark-angle fields, so apply it
+    //    before restoring the user's individual left-panel values.
+    if(setSavedControl('seSelect',v.seSelect)) applySampleEnvironmentDefaults();
+
+    // 3) Restore every left-side parameter.  For crystal selectors, run their
+    //    existing UI handler first; dMono/dAna are restored afterwards in DOM order.
+    for(const el of leftPanelControls()){
+      if(el.id==='instrument'||el.id==='seSelect') continue;
+      setSavedControl(el.id,v[el.id],{dispatchChange:el.id==='monoCrystal'||el.id==='anaCrystal'});
+    }
+
+    updateModeVisibility(); updateEnergyLabel(); updateSupermirrorUI(); updateAutoW();
+    return true;
+  }finally{restoringLeftPanel=false;}
+}
+
+document.querySelector('.sidebar').addEventListener('input',saveLeftPanelState);
+document.querySelector('.sidebar').addEventListener('change',saveLeftPanelState);
+
 async function tryLoadDir(directory,map){try{return await loadJsonDirectory(directory,map);}catch(_e){map.clear();return 0;}}
 function mergeLegacyRangeData(){
   for(const [key,inst] of instruments){
@@ -1426,9 +1488,12 @@ async function initialize(){
   refreshSelect(instruments,$('instrument'),null);refreshSelect(samples,$('sampleSelect'),'None');refreshSelect(sampleEnvironments,$('seSelect'),'Standard');
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
   $('instrument').selectedIndex=0;$('sampleSelect').value='';$('seSelect').value='';applyInstrumentDefaults();applySampleEnvironmentDefaults();
+  // JSON configuration is now fully loaded.  Only at this point is it safe to
+  // overlay browser-local user parameters (including the selected instrument).
+  const restoredLocalState=restoreLeftPanelState();
   $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
-  setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded`);recalculate();
+  setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${restoredLocalState ? ' / local parameters restored' : ''}`);recalculate();
 }
 initialize().catch(err=>{showError(err);setStatus('Configuration loading failed. Open the project through an HTTP server.');});
