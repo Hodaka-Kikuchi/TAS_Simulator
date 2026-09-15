@@ -640,12 +640,15 @@ function renderSingle(cache,index=0){
 
   Plotly.react("singlePlot",traces,{
     title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
-    xaxis:{title:"Qx (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true},
-    yaxis:{title:"Qy (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1},
+    xaxis:{title:"Qx (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true,constrain:"domain"},
+    // Keep the reciprocal-space plotting box square: identical numerical Qx/Qy
+    // ranges and a 1:1 data-unit aspect ratio.  `constrain: domain` makes Plotly
+    // shrink the axis domain rather than silently expanding one numerical range.
+    yaxis:{title:"Qy (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1,constrain:"domain"},
     // UI-only spacing: reclaim a little space above the plot, while reserving
     // more room below so the x-axis title and horizontal legend do not crowd.
-    margin:{l:60,r:20,t:72,b:82},
-    legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.19,yanchor:"top"}
+    margin:{l:60,r:20,t:92,b:96},
+    legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"}
   },{responsive:true});
 
   $("hwValue").textContent=`${cache.hwList[i].toFixed(1)} meV`;
@@ -889,10 +892,9 @@ function renderGeometry(cache,index=0){
   }
 
   Plotly.react("geometryPlot",traces,{
-    title:{text:"TAS geometry & dark angle",x:.5},
     xaxis:{range:sense==="+-+" ? [cx-span/2,cx+span/2] : [cx+span/2,cx-span/2],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true},
     yaxis:{range:[cy-span/2,cy+span/2],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true},
-    annotations,margin:{l:10,r:10,t:52,b:10},showlegend:false
+    annotations,margin:{l:10,r:10,t:12,b:10},showlegend:false
   },{responsive:true,displayModeBar:false});
 }
 
@@ -1060,7 +1062,7 @@ $("hwSlider").addEventListener("input",()=>{
 
 $("geomHWSlider").addEventListener("input",()=>{
   const v=Number($("geomHWSlider").value);
-  $("geomHW").value=Number.isFinite(v) ? v : 0;
+  $("geomHW").value=Number.isFinite(v) ? v.toFixed(1) : "0.0";
   $("geomHWValue").textContent=`${Number($("geomHW").value).toFixed(1)} meV`;
   scheduleRecalc();
 });

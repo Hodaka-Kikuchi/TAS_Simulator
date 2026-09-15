@@ -47,7 +47,7 @@
 
 /* Q-E workspace: compact square reciprocal-space map + larger TAS schematic. */
 #singleMain .chart-grid{grid-template-columns:minmax(500px,1.08fr) minmax(500px,1fr);align-items:stretch}
-#singlePlot{min-height:580px}
+#singlePlot{height:680px;min-height:680px}
 #geometryPlot.geometry{min-height:580px}
 @media(max-width:1250px){#singleMain .chart-grid{grid-template-columns:minmax(440px,1.05fr) minmax(440px,1fr)}#geometryPlot.geometry{min-height:580px}}
 @media(max-width:1050px){#singleMain .chart-grid{grid-template-columns:1fr}#singlePlot{min-height:560px}#geometryPlot.geometry{min-height:620px}}
@@ -61,3 +61,14 @@
 #singleMain .chart-grid>div:first-child .energy-slider-row{
   padding:12px 20px 8px;
 }
+
+
+/* v53: enlarge the square Q-E map to approximately the former full x-axis width.
+   The data aspect remains 1:1 in Plotly; the extra vertical room prevents
+   `constrain:domain` from shrinking the x domain to fit the 580 px box. */
+@media(min-width:1051px){
+  #singlePlot{height:680px;min-height:680px}
+}
+
+/* v54: right-card heading above the angle controls; Plotly title removed. */
+.geometry-card-title{font-size:16px;font-weight:650;padding:9px 8px 2px}
