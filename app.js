@@ -737,7 +737,7 @@ function renderGeometry(cache,index=0){
     thetaKf=thetaKi+deg2rad(angles.s2);
     analyzer=[sample[0]+L*Math.cos(thetaKf),sample[1]+L*Math.sin(thetaKf)];
     thetaOut=thetaKf+deg2rad(angles.a2);
-    detector=[analyzer[0]+L*Math.cos(thetaOut),analyzer[1]+L*Math.sin(thetaOut)];
+    detector=[analyzer[0]+0.5*L*Math.cos(thetaOut),analyzer[1]+0.5*L*Math.sin(thetaOut)];
     monoPlaneAngle=deg2rad(angles.m1);
     anaPlaneAngle=thetaKf+deg2rad(angles.a1);
 
@@ -867,14 +867,20 @@ function renderGeometry(cache,index=0){
   };
   const qEnd=[sample[0]+qVectorLen*Math.cos(qAngle),sample[1]+qVectorLen*Math.sin(qAngle)];
 
-  // Keep component labels in fixed screen-relative positions so their placement
-  // does not change with the +-+ / -+- configuration.
-  // Mono / Analyzer / Detector: always to the right. Sample: always to the left.
+  // Component-label placement only; the TAS geometry/calculation is untouched.
+  // Put the monochromator label below the component.  Put the sample label
+  // outside the sample marker on the side opposite to Q, so it stays clear of
+  // the Q arrow for every target geometry.
   const screenRightSign=sense==="+-+" ? 1 : -1;
-  const monoLabel=[mono[0]+screenRightSign*0.72,mono[1]];
-  const anaLabel=[analyzer[0]+screenRightSign*0.52,analyzer[1]];
-  const sampleLabel=[sample[0]-screenRightSign*0.48,sample[1]];
-  const detLabel=[detector[0]+screenRightSign*0.66,detector[1]];
+  const monoLabel=[mono[0],mono[1]-0.48];
+  // const anaLabel=[analyzer[0]+screenRightSign*0.52,analyzer[1]];
+  const anaLabel=[analyzer[0],analyzer[1]-0.50];
+  const sampleLabelRadius=1.2;
+  // const sampleLabel=[sample[0]-sampleLabelRadius*Math.cos(qAngle),sample[1]-sampleLabelRadius*Math.sin(qAngle)];
+  const sampleLabel=[sample[0]-sampleLabelRadius*Math.cos(qAngle),sample[1]-sampleLabelRadius*Math.sin(qAngle)];
+  // const sampleLabel=[sample[0],sample[1]-sampleLabelRadius];
+  // const detLabel=[detector[0]+screenRightSign*0.66,detector[1]];
+  const detLabel=[detector[0],detector[1]+0.5];
   const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5);
 
   const annotations=[
