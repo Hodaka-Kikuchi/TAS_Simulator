@@ -507,20 +507,29 @@ function calculateSingleCrystal(){
         if(darkRef!=="Fixed" && QrefNorm<=1e-10) continue;
         const Qoffset=darkRef==="Reference Q" ? 90+thetaRef : 2*thetaRef;
         if(darkRef==="Fixed"){
-          // Laboratory-fixed obstacle: S1 sweep turns a blocked detector-angle
-          // interval into an annulus in Q space.
+          // Laboratory-fixed obstacle: compare the SIGNED physical S2 motor angle
+          // directly with the fixed angular interval.  Do not use abs(S2): a
+          // stopper at +30 deg must not block a -30 deg scattering arm (and vice
+          // versa).  The Q-E simulation currently scans the physical S2 branch
+          // from S2min to S2max, so a fixed interval on the unused negative branch
+          // naturally produces no blocked region.
           for(const rawRange of asset.ranges){
             let [from,to,offset]=rawRange;
             if(from===0 && to===0) continue;
-            let a=offset+from, b=offset+to; while(b<a) b+=360;
-            let lo,hi;
-            if(a<=0 && b>=0){ lo=0; hi=Math.max(Math.abs(a),Math.abs(b)); }
-            else { lo=Math.min(Math.abs(a),Math.abs(b)); hi=Math.max(Math.abs(a),Math.abs(b)); }
-            lo=Math.max(lo,S2min); hi=Math.min(hi,S2max);
-            if(!(hi>lo)) continue;
-            const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
-            const r0=qRadius(lo), r1=qRadius(hi), aa=linspace(0,2*Math.PI,241);
-            hwFixed.push([...aa.map(t=>[r1*Math.cos(t),r1*Math.sin(t)]),...[...aa].reverse().map(t=>[r0*Math.cos(t),r0*Math.sin(t)])]);
+            let a=offset+from, b=offset+to;
+            if(b<a) b+=360;
+
+            // Treat the fixed direction periodically, but intersect only with the
+            // actually scanned signed S2 interval.  This also handles ranges that
+            // cross 0 deg without mirroring the negative side onto the positive side.
+            for(const shift of [-360,0,360]){
+              const lo=Math.max(a+shift,S2min);
+              const hi=Math.min(b+shift,S2max);
+              if(!(hi>lo)) continue;
+              const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
+              const r0=qRadius(lo), r1=qRadius(hi), aa=linspace(0,2*Math.PI,241);
+              hwFixed.push([...aa.map(t=>[r1*Math.cos(t),r1*Math.sin(t)]),...[...aa].reverse().map(t=>[r0*Math.cos(t),r0*Math.sin(t)])]);
+            }
           }
           continue;
         }
