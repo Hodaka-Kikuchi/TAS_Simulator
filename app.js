@@ -10,6 +10,22 @@ const $ = id => document.getElementById(id);
 const instruments = new Map();
 const samples = new Map();
 const sampleEnvironments = new Map();
+
+// Four fixed background-scattering slots keep the sidebar compact.  Each slot
+// reuses the existing sample JSON data and is assigned a stable display color.
+const BACKGROUND_SLOTS=[
+  {id:"backgroundSelect1",rgb:[214,39,40]},
+  {id:"backgroundSelect2",rgb:[31,119,180]},
+  {id:"backgroundSelect3",rgb:[44,160,44]},
+  {id:"backgroundSelect4",rgb:[148,103,189]}
+];
+function selectedBackgrounds(){
+  return BACKGROUND_SLOTS.map((slot,index)=>({slot,index,key:$(slot.id)?.value||""}))
+    .filter(x=>x.key && samples.has(x.key));
+}
+function backgroundColor(slot,alpha=1){
+  const [r,g,b]=slot.rgb; return `rgba(${r},${g},${b},${alpha})`;
+}
 const legacyRangeInstruments = new Map();
 
 let singleCache = null;
@@ -545,12 +561,11 @@ function calculateSingleCrystal(){
   }
 
   const ringData=[];
-  const sampleKey=$("sampleSelect").value;
-  if(sampleKey && samples.has(sampleKey)){
-    const sample=samples.get(sampleKey);
+  const qlimit=Math.max(...QmaxList);
+  for(const bg of selectedBackgrounds()){
+    const sample=samples.get(bg.key);
     const peaks=Array.isArray(sample.peaks)?sample.peaks:[];
     const maxI=peaks.length?Math.max(...peaks.map(p=>Number(p.intensity)||0)):0;
-    const qlimit=Math.max(...QmaxList);
     for(const p of peaks){
       const q=2*PI/Number(p.d);
       if(!Number.isFinite(q) || q>qlimit) continue;
@@ -558,8 +573,8 @@ function calculateSingleCrystal(){
       const ratio=maxI>0?(Number(p.intensity)||0)/maxI:0;
       ringData.push({
         x:phi.map(t=>q*Math.cos(t)), y:phi.map(t=>q*Math.sin(t)),
-        color:`rgba(0,0,255,${(0.15+0.70*ratio).toFixed(3)})`,
-        hover:`${sample.name||sampleKey} (${p.h}${p.k}${p.l})<br>Q = ${q.toFixed(3)} Å⁻¹<br>I = ${Number(p.intensity).toFixed(1)}`
+        color:backgroundColor(bg.slot,0.20+0.75*ratio),
+        hover:`BG${bg.index+1}: ${sample.name||bg.key} (${p.h}${p.k}${p.l})<br>Q = ${q.toFixed(3)} Å⁻¹<br>I = ${Number(p.intensity).toFixed(1)}`
       });
     }
   }
@@ -974,9 +989,8 @@ function calculatePowder(){
     });
   }
 
-  const sampleKey=$("sampleSelect").value;
-  if(sampleKey && samples.has(sampleKey)){
-    const sample=samples.get(sampleKey);
+  for(const bg of selectedBackgrounds()){
+    const sample=samples.get(bg.key);
     const peaks=Array.isArray(sample.peaks)?sample.peaks:[];
     const visiblePeaks=peaks
       .map(p=>({...p,q:2*PI/Number(p.d)}))
@@ -993,10 +1007,10 @@ function calculatePowder(){
         : "";
       traces.push({
         x:[p.q,p.q],y:[0,hwmax],mode:"lines",
-        name:`${sample.name||sampleKey} background`,
-        legendgroup:"background-scattering",showlegend:index===0,
-        line:{color:`rgba(0,0,255,${(0.15+0.70*ratio).toFixed(3)})`,width:3},
-        hovertemplate:`${sample.name||sampleKey}${hkl}<br>Q = ${p.q.toFixed(3)} Å⁻¹<br>I = ${intensity.toFixed(1)}<extra></extra>`
+        name:`BG${bg.index+1}: ${sample.name||bg.key}`,
+        legendgroup:`background-scattering-${bg.index}`,showlegend:index===0,
+        line:{color:backgroundColor(bg.slot,0.20+0.75*ratio),width:3},
+        hovertemplate:`BG${bg.index+1}: ${sample.name||bg.key}${hkl}<br>Q = ${p.q.toFixed(3)} Å⁻¹<br>I = ${intensity.toFixed(1)}<extra></extra>`
       });
     });
   }
@@ -1060,7 +1074,7 @@ $("instrument").addEventListener("change",()=>{
 });
 
 $("seSelect").addEventListener("change",applySampleEnvironmentDefaults);
-$("sampleSelect").addEventListener("change",scheduleRecalc);
+BACKGROUND_SLOTS.forEach(slot=>$(slot.id).addEventListener("change",scheduleRecalc));
 
 $("hwSlider").addEventListener("input",()=>{
   if(singleCache){
@@ -1083,7 +1097,7 @@ document.querySelectorAll("input,select").forEach(el=>{
   if([
     "instrument",
     "seSelect",
-    "sampleSelect",
+    ...BACKGROUND_SLOTS.map(slot=>slot.id),
     "hwSlider",
     "geomHWSlider"
   ].includes(el.id)) return;
@@ -1454,6 +1468,9 @@ function restoreLeftPanelState(){
     //    before restoring the user's individual left-panel values.
     if(setSavedControl('seSelect',v.seSelect)) applySampleEnvironmentDefaults();
 
+    // Migrate the v57 single background selection into BG1 once, if present.
+    if(v.backgroundSelect1===undefined && v.sampleSelect!==undefined) v.backgroundSelect1=v.sampleSelect;
+
     // 3) Restore every left-side parameter.  For crystal selectors, run their
     //    existing UI handler first; dMono/dAna are restored afterwards in DOM order.
     for(const el of leftPanelControls()){
@@ -1485,9 +1502,9 @@ async function initialize(){
   const [nSample,nSE]=await Promise.all([tryLoadDir('sample',samples),tryLoadDir('sample_environments',sampleEnvironments)]);
   await tryLoadDir('instruments',legacyRangeInstruments); // migration compatibility only
   mergeLegacyRangeData();
-  refreshSelect(instruments,$('instrument'),null);refreshSelect(samples,$('sampleSelect'),'None');refreshSelect(sampleEnvironments,$('seSelect'),'Standard');
+  refreshSelect(instruments,$('instrument'),null);BACKGROUND_SLOTS.forEach(slot=>refreshSelect(samples,$(slot.id),'None'));refreshSelect(sampleEnvironments,$('seSelect'),'Standard');
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
-  $('instrument').selectedIndex=0;$('sampleSelect').value='';$('seSelect').value='';applyInstrumentDefaults();applySampleEnvironmentDefaults();
+  $('instrument').selectedIndex=0;BACKGROUND_SLOTS.forEach(slot=>$(slot.id).value='');$('seSelect').value='';applyInstrumentDefaults();applySampleEnvironmentDefaults();
   // JSON configuration is now fully loaded.  Only at this point is it safe to
   // overlay browser-local user parameters (including the selected instrument).
   const restoredLocalState=restoreLeftPanelState();
