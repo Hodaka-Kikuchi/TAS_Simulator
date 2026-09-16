@@ -25,6 +25,9 @@ function selectedBackgrounds(){
 }
 
 function enabledPropagationVectors(){
+  // Global display switch: keep q1/q2/q3 values/enables intact while hiding
+  // all magnetic Bragg peaks when Propagation vectors > show is off.
+  if($("showPropagation") && !$("showPropagation").checked) return [];
   const out=[];
   for(let i=1;i<=3;i++){
     if($(`q_enable${i}`)?.checked){
@@ -926,7 +929,7 @@ function renderGeometry(cache,index=0){
   // on the right for -+- and on the left for +-+.
   const monoLabel=[mono[0]-1.15,mono[1]];
   const anaLabel=[analyzer[0],analyzer[1]-0.48];
-  const sampleLabelRadius=1.35;
+  const sampleLabelRadius=1.25;
   const sampleLabel=[
     sample[0]-sampleLabelRadius*Math.cos(qAngle),
     sample[1]-sampleLabelRadius*Math.sin(qAngle)
@@ -1483,13 +1486,20 @@ function setToolboxFrom(kind){
     else if(kind==='toolCm') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value/CM1_PER_MEV));
     else if(kind==='toolVelocity') lambda=NEUTRON_V_LAMBDA/value;
     const v=toolboxValues(lambda);
-    $('toolLambda').value=v.lambda.toFixed(6);
-    $('toolEnergy').value=v.E.toFixed(6);
-    $('toolK').value=v.k.toFixed(6);
-    $('toolTHz').value=v.thz.toFixed(6);
-    $('toolTemp').value=v.temp.toFixed(6);
-    $('toolCm').value=v.cm.toFixed(6);
-    $('toolVelocity').value=v.velocity.toFixed(3);
+    // Keep the field currently being edited untouched so multi-digit/decimal
+    // input is not replaced after every keystroke. Only update the other fields.
+    const formatted={
+      toolLambda:v.lambda.toFixed(6),
+      toolEnergy:v.E.toFixed(6),
+      toolK:v.k.toFixed(6),
+      toolTHz:v.thz.toFixed(6),
+      toolTemp:v.temp.toFixed(6),
+      toolCm:v.cm.toFixed(6),
+      toolVelocity:v.velocity.toFixed(3)
+    };
+    for(const [id,text] of Object.entries(formatted)){
+      if(id!==kind) $(id).value=text;
+    }
     for(const [factor,prefix] of [[1/3,'harmThird'],[1/2,'harmHalf'],[1,'harmBase'],[2,'harmDouble'],[3,'harmTriple']]){
       const x=toolboxValues(lambda*factor);
       $(`${prefix}Lambda`).textContent=x.lambda.toFixed(6);
