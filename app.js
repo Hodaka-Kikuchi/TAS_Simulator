@@ -23,6 +23,16 @@ function selectedBackgrounds(){
   return BACKGROUND_SLOTS.map((slot,index)=>({slot,index,key:$(slot.id)?.value||""}))
     .filter(x=>x.key && samples.has(x.key));
 }
+
+function enabledPropagationVectors(){
+  const out=[];
+  for(let i=1;i<=3;i++){
+    if($(`q_enable${i}`)?.checked){
+      out.push({index:i, hkl:[num(`q${i}_h`),num(`q${i}_k`),num(`q${i}_l`)]});
+    }
+  }
+  return out;
+}
 function backgroundColor(slot,alpha=1){
   const [r,g,b]=slot.rgb; return `rgba(${r},${g},${b},${alpha})`;
 }
@@ -527,7 +537,13 @@ function calculateSingleCrystal(){
   const Mmax=Math.ceil(Qmax0/Ulen)+1, Nmax=Math.ceil(Qmax0/Vlen)+1;
   const Gpoints=[], magPoints=[];
   const QplotLattice=2*Qmax0;
-  const kvec=[num("kh"),num("kk"),num("kl")];
+  // Magnetic satellites are observable in this 2D TAS view only when their
+  // propagation vector itself lies in the selected scattering plane.
+  const propagationVectors=enabledPropagationVectors().filter(q=>{
+    const qCart=hklToQ(rl,q.hkl);
+    const scaleQ=Math.max(norm(qCart),1);
+    return Math.abs(dot(qCart,ez)) <= 1e-8*scaleQ;
+  });
 
   for(let m=-Mmax;m<=Mmax;m++){
     for(let n=-Nmax;n<=Nmax;n++){
@@ -543,7 +559,8 @@ function calculateSingleCrystal(){
 
       Gpoints.push({x:dot(G,ex),y:dot(G,ey),label:(h===0&&k===0&&l===0)?"":`(${formatHKL(hkl)})`});
 
-      if($("showK").checked){
+      for(const q of propagationVectors){
+        const kvec=q.hkl;
         for(const s of [1,-1]){
           const hm=add(hkl,scale(kvec,s));
           const Gm=hklToQ(rl,hm);
@@ -552,7 +569,8 @@ function calculateSingleCrystal(){
             magPoints.push({
               x:dot(Gm,ex),
               y:dot(Gm,ey),
-              label:`(${hm.map(x=>x.toFixed(2)).join(",")})`
+              qIndex:q.index,
+              label:`q${q.index}: (${hm.map(x=>x.toFixed(2)).join(",")})`
             });
           }
         }
@@ -630,17 +648,33 @@ function renderSingle(cache,index=0){
       showlegend:false,
       hoverinfo:"skip"
     },
-    {
-      x:cache.magPoints.map(p=>p.x), y:cache.magPoints.map(p=>p.y),
-      mode:"markers", name:"Magnetic Bragg peaks",
-      marker:{color:"red",size:6},
-      hovertext:cache.magPoints.map(p=>p.label), hovertemplate:"%{hovertext}<extra></extra>"
-    }
   ];
+  // Keep q1/q2/q3 visually distinct while retaining one magnetic-peak color.
+  const magneticSymbols={1:"circle",2:"x",3:"star"};
+  for(let qIndex=1;qIndex<=3;qIndex++){
+    const pts=cache.magPoints.filter(p=>p.qIndex===qIndex);
+    if(!pts.length) continue;
+    traces.push({
+      x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",name:`Magnetic Bragg peaks: q${qIndex}`,
+      marker:{color:"red",size:qIndex===3?9:7,symbol:magneticSymbols[qIndex]},
+      hovertext:pts.map(p=>p.label),hovertemplate:"%{hovertext}<extra></extra>"
+    });
+  }
   for(const ring of cache.ringData){
     traces.push({
       x:ring.x,y:ring.y,mode:"lines",showlegend:false,
       line:{color:ring.color,width:3},hovertemplate:ring.hover+"<extra></extra>"
+    });
+  }
+  // Match the Powder view: show one legend entry for each selected BG slot
+  // without duplicating a legend item for every individual powder ring.
+  for(const bg of selectedBackgrounds()){
+    const sample=samples.get(bg.key);
+    traces.push({
+      x:[null],y:[null],mode:"lines",
+      name:`BG${bg.index+1}: ${sample.name||bg.key}`,
+      line:{color:backgroundColor(bg.slot,1),width:3},
+      hoverinfo:"skip",showlegend:true
     });
   }
   if(cache.addDark){
@@ -735,9 +769,9 @@ function renderGeometry(cache,index=0){
     thetaKi=deg2rad(angles.m2);
     sample=[mono[0]+L*Math.cos(thetaKi),mono[1]+L*Math.sin(thetaKi)];
     thetaKf=thetaKi+deg2rad(angles.s2);
-    analyzer=[sample[0]+L*Math.cos(thetaKf),sample[1]+L*Math.sin(thetaKf)];
+    analyzer=[sample[0]+0.90*L*Math.cos(thetaKf),sample[1]+0.90*L*Math.sin(thetaKf)];
     thetaOut=thetaKf+deg2rad(angles.a2);
-    detector=[analyzer[0]+0.5*L*Math.cos(thetaOut),analyzer[1]+0.5*L*Math.sin(thetaOut)];
+    detector=[analyzer[0]+0.80*L*Math.cos(thetaOut),analyzer[1]+0.80*L*Math.sin(thetaOut)];
     monoPlaneAngle=deg2rad(angles.m1);
     anaPlaneAngle=thetaKf+deg2rad(angles.a1);
 
@@ -763,20 +797,45 @@ function renderGeometry(cache,index=0){
     // pixel-for-pixel left/right mirror with the same scale and anchor point.
   }else{
     // Previous idealized fallback.
-    sample=[0,0]; mono=[0,L]; source=[-L,L]; analyzer=[-mirror*L,0]; detector=[-mirror*L,-L];
+    sample=[0,0]; mono=[0,L]; source=[-L,L]; analyzer=[-mirror*0.75*L,0]; detector=[-mirror*0.75*L,0.5*L];
     thetaKi=-Math.PI/2; thetaKf=mirror>0?Math.PI:-0; thetaOut=-Math.PI/2;
     monoPlaneAngle=mirror*deg2rad(45); anaPlaneAngle=mirror*deg2rad(45);
     qAngle=-mirror*Math.PI/4;
   }
+
+  // Display-only transform: rotate the complete TAS schematic 90 degrees
+  // counterclockwise.  Motor angles and all physical calculations above remain
+  // untouched; only the coordinates/angles used for drawing are transformed.
+  const rotateCCW90=([x,y])=>[y,-x];
+  source=rotateCCW90(source);
+  mono=rotateCCW90(mono);
+  sample=rotateCCW90(sample);
+  analyzer=rotateCCW90(analyzer);
+  detector=rotateCCW90(detector);
+  // rotateCCW90() above maps [x,y] -> [y,-x], i.e. a 90° clockwise
+  // screen transform. Rotate all direction angles by the SAME amount so ki/kf/Q
+  // arrows remain aligned with their flight paths. This is display-only.
+  thetaKi-=Math.PI/2;
+  thetaKf-=Math.PI/2;
+  thetaOut-=Math.PI/2;
+  monoPlaneAngle-=Math.PI/2;
+  anaPlaneAngle-=Math.PI/2;
+  qAngle-=Math.PI/2;
 
   const traces=[];
   const addLine=(a,b,color,width=3,dash="solid")=>traces.push({x:[a[0],b[0]],y:[a[1],b[1]],mode:"lines",line:{color,width,dash},hoverinfo:"skip",showlegend:false});
   const flightColor="#cfcfcf";
   addLine(source,mono,flightColor,4); addLine(mono,sample,flightColor,4); addLine(sample,analyzer,flightColor,4); addLine(analyzer,detector,flightColor,4);
 
-  const darkRadius=0.92;
-  const circle=linspace(0,2*Math.PI,181);
-  traces.push({x:circle.map(t=>sample[0]+darkRadius*Math.cos(t)),y:circle.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"#d9d9d9",width:1},hoverinfo:"skip",showlegend:false});
+  // Fixed, compact display radius: independent of instrument/angle auto-scaling.
+  // The guide circle belongs to the dark-angle overlay, so hide it together
+  // with the dark-angle sectors when the left-panel "show" checkbox is off.
+  const showDarkGeometry=Boolean($("addDark")?.checked);
+  const darkRadius=1.0;
+  if(showDarkGeometry){
+    const circle=linspace(0,2*Math.PI,181);
+    traces.push({x:circle.map(t=>sample[0]+darkRadius*Math.cos(t)),y:circle.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"#d9d9d9",width:1},hoverinfo:"skip",showlegend:false});
+  }
 
   // Dark-angle arcs are centered on the sample.  Use exactly one origin:
   // the Reference-Q direction carried by the current sample orientation.
@@ -834,7 +893,7 @@ function renderGeometry(cache,index=0){
     }
   }
 
-  cache.darkRanges.forEach((r,j)=>{
+  if(showDarkGeometry) cache.darkRanges.forEach((r,j)=>{
     const [from,to,offset]=r; if(from===0 && to===0) return;
     let a0=offset+from,a1=offset+to; if(a1<a0)a1+=360;
     // TAS-geometry-only convention: the dark/black sector must rotate around Q
@@ -871,16 +930,17 @@ function renderGeometry(cache,index=0){
   // Put the monochromator label below the component.  Put the sample label
   // outside the sample marker on the side opposite to Q, so it stays clear of
   // the Q arrow for every target geometry.
-  const screenRightSign=sense==="+-+" ? 1 : -1;
-  const monoLabel=[mono[0],mono[1]-0.48];
-  // const anaLabel=[analyzer[0]+screenRightSign*0.52,analyzer[1]];
-  const anaLabel=[analyzer[0],analyzer[1]-0.50];
-  const sampleLabelRadius=1.2;
-  // const sampleLabel=[sample[0]-sampleLabelRadius*Math.cos(qAngle),sample[1]-sampleLabelRadius*Math.sin(qAngle)];
-  const sampleLabel=[sample[0]-sampleLabelRadius*Math.cos(qAngle),sample[1]-sampleLabelRadius*Math.sin(qAngle)];
-  // const sampleLabel=[sample[0],sample[1]-sampleLabelRadius];
-  // const detLabel=[detector[0]+screenRightSign*0.66,detector[1]];
-  const detLabel=[detector[0],detector[1]+0.5];
+  // Display Monochromator label on the requested screen side.
+  // The x-axis is reversed for -+-, so the same data-space x offset appears
+  // on the right for -+- and on the left for +-+.
+  const monoLabel=[mono[0]-1.15,mono[1]];
+  const anaLabel=[analyzer[0],analyzer[1]-0.48];
+  const sampleLabelRadius=1.25;
+  const sampleLabel=[
+    sample[0]-sampleLabelRadius*Math.cos(qAngle),
+    sample[1]-sampleLabelRadius*Math.sin(qAngle)
+  ];
+  const detLabel=[detector[0],detector[1]-0.58];
   const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5);
 
   const annotations=[
@@ -896,16 +956,13 @@ function renderGeometry(cache,index=0){
     {x:qEnd[0]+.12*Math.cos(qAngle),y:qEnd[1]+.12*Math.sin(qAngle),text:"Q",showarrow:false,font:{color:"#000"}}
   ];
 
-  const xs=[...source,...mono,...sample,...analyzer,...detector,qEnd[0]],ys=[source[1],mono[1],sample[1],analyzer[1],detector[1],qEnd[1]];
-  const xmin=Math.min(source[0],mono[0],sample[0],analyzer[0],detector[0],qEnd[0])-1.0,xmax=Math.max(source[0],mono[0],sample[0],analyzer[0],detector[0],qEnd[0])+1.0;
-  const ymin=Math.min(source[1],mono[1],sample[1],analyzer[1],detector[1],qEnd[1])-1.0,ymax=Math.max(source[1],mono[1],sample[1],analyzer[1],detector[1],qEnd[1])+1.0;
-  // Keep the monochromator at a fixed screen position when the geometry target
-  // changes.  Use the same compact scale as the pre-v18 view, but place the
-  // monochromator above the vertical center so the instrument sits higher in
-  // the panel.  Only the viewport changes; the TAS geometry itself is untouched.
-  const span=Math.max(xmax-xmin,ymax-ymin);
+  // Fixed display viewport.  Do not auto-fit the current angles: auto-fitting made
+  // identical schematic flight lengths appear different for different instruments.
+  // With the viewport tied only to L, Source-Mono, Mono-Sample, Sample-Analyzer
+  // (0.75 L), and Analyzer-Detector (0.5 L) keep constant on-screen lengths.
+  const span=4.32*L;
   const cx=mono[0];
-  const cy=mono[1]+0.28*span;
+  const cy=mono[1]-0.60*L;
 
   const angleBox=$("geometryAngles");
   if(angleBox){
@@ -979,8 +1036,8 @@ function calculatePowder(){
     }
   });
 
-  if($("showK").checked){
-    const kv=[num("kh"),num("kk"),num("kl")], vals=new Set();
+  for(const [qIndex,kv] of enabledPropagationVectors().entries()){
+    const vals=new Set();
     for(let h=-20;h<=20;h++) for(let k=-20;k<=20;k++) for(let l=-20;l<=20;l++){
       const G=add(add(scale(rv.astar,h),scale(rv.bstar,k)),scale(rv.cstar,l));
       const K=add(add(scale(rv.astar,kv[0]),scale(rv.bstar,kv[1])),scale(rv.cstar,kv[2]));
@@ -991,7 +1048,7 @@ function calculatePowder(){
     }
     [...vals].map(Number).sort((a,b)=>a-b).forEach(q=>{
       shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color:"black",dash:"dot",width:1}});
-      annotations.push({x:q,y:hwmax,text:"k*",showarrow:false,xshift:15,yshift:10,font:{color:"black"}});
+      annotations.push({x:q,y:hwmax,text:`q${qIndex+1}*`,showarrow:false,xshift:15,yshift:10+10*qIndex,font:{color:"black"}});
     });
   }
 
@@ -1028,10 +1085,10 @@ function calculatePowder(){
 
   Plotly.react("powderPlot",traces,{
     title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
-    xaxis:{title:"Q (Å⁻¹)",range:[0,Qlim+qMargin],showgrid:true,gridcolor:"lightgray",zeroline:false,mirror:true,linecolor:"black"},
-    yaxis:{title:"ħω (meV)",range:[0,hwmax*1.1||1],showgrid:true,gridcolor:"lightgray",zeroline:false,mirror:true,linecolor:"black"},
+    xaxis:{title:"Q (Å⁻¹)",range:[0,Qlim+qMargin],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
+    yaxis:{title:"ħω (meV)",range:[0,hwmax*1.1||1],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
     plot_bgcolor:"white",paper_bgcolor:"white",legend:{x:0.02,y:0.98},
-    shapes,annotations,margin:{l:60,r:20,t:80,b:55}
+    shapes,annotations,margin:{l:66,r:34,t:80,b:70}
   },{responsive:true});
 }
 
@@ -1040,6 +1097,20 @@ function scheduleRecalc(){
   clearTimeout(timer);
   timer=setTimeout(recalculate,50);
 }
+function setGeometryTargetHKL(hkl){
+  const values=hkl.map(Number);
+  if(values.length!==3 || values.some(v=>!Number.isFinite(v))) return;
+  $("geomH").value=values[0];
+  $("geomK").value=values[1];
+  $("geomL").value=values[2];
+  // Quick-target buttons and the initial Reference-Q target change HKL only.
+  // Keep the current geometry energy transfer (geomHW / slider) untouched.
+  scheduleRecalc();
+}
+function setGeometryTargetFromU(){ setGeometryTargetHKL([num("Uh"),num("Uk"),num("Ul")]); }
+function setGeometryTargetFromV(){ setGeometryTargetHKL([num("Vh"),num("Vk"),num("Vl")]); }
+function setGeometryTargetFromReference(){ setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]); }
+
 function syncGeometryHWSlider(cache){
   const slider=$("geomHWSlider"), output=$("geomHWValue"), entry=$("geomHW");
   if(!slider || !output || !entry || !cache?.hwList?.length) return;
@@ -1068,6 +1139,7 @@ function recalculate(){
       renderSingle(singleCache,idx);
     } else {
       calculatePowder();
+      updatePowderRelation(powderRelationDriver);
     }
   }catch(err){
     showError(err);
@@ -1098,6 +1170,10 @@ $("geomHWSlider").addEventListener("input",()=>{
 $("geomHW").addEventListener("input",()=>{
   if(singleCache) syncGeometryHWSlider(singleCache);
 });
+
+$("geomSetU").addEventListener("click",setGeometryTargetFromU);
+$("geomSetV").addEventListener("click",setGeometryTargetFromV);
+$("geomSetRef").addEventListener("click",setGeometryTargetFromReference);
 
 document.querySelectorAll("input,select").forEach(el=>{
   if([
@@ -1389,40 +1465,118 @@ function doSingleResolution(){clearError();try{const e=calcOne({hw:num('hw'),h:n
 function doScanResolution(){clearError();try{const n=Math.max(2,Math.round(num('npts'))),xs=(a,b)=>linspace(a,b,n),hs=xs(num('h0'),num('h1')),ks=xs(num('k0'),num('k1')),ls=xs(num('l0'),num('l1')),ws=xs(num('hw0'),num('hw1'));scanResults=Array.from({length:n},(_,i)=>calcOne({hw:ws[i],h:hs[i],k:ks[i],l:ls[i]}));$('scanSlider').min=1;$('scanSlider').max=n;$('scanSlider').value=1;$('scanNav').classList.remove('hidden');renderResolutionScan(1);}catch(e){showError(e);}}
 function renderResolutionScan(i){i=Math.max(1,Math.min(scanResults.length,Number(i)));$('scanSlider').value=i;$('scanIndex').textContent=`${i} / ${scanResults.length}`;renderResolution(scanResults[i-1],`| scan ${i}/${scanResults.length}`);}
 
+
+// ==================== Toolbox: neutron unit conversion ====================
+const NEUTRON_E_LAMBDA=81.8042;       // E[meV] = 81.8042 / lambda[Å]^2
+const MEV_PER_THz=4.135667696;        // E[meV] = h * f[THz]
+const K_PER_MEV=11.60451812;          // equivalent temperature E/kB
+const CM1_PER_MEV=8.065543937;        // spectroscopic wavenumber
+const NEUTRON_V_LAMBDA=3956.034;      // v[m/s] = 3956.034 / lambda[Å]
+let toolboxUpdating=false;
+function toolboxValues(lambda){
+  const E=NEUTRON_E_LAMBDA/(lambda*lambda);
+  return {lambda,E,k:2*Math.PI/lambda,thz:E/MEV_PER_THz,temp:E*K_PER_MEV,cm:E*CM1_PER_MEV,velocity:NEUTRON_V_LAMBDA/lambda};
+}
+function setToolboxFrom(kind){
+  if(toolboxUpdating) return;
+  toolboxUpdating=true;
+  try{
+    let lambda;
+    const value=Number($(kind).value);
+    if(!Number.isFinite(value) || value<=0) return;
+    if(kind==='toolLambda') lambda=value;
+    else if(kind==='toolEnergy') lambda=Math.sqrt(NEUTRON_E_LAMBDA/value);
+    else if(kind==='toolK') lambda=2*Math.PI/value;
+    else if(kind==='toolTHz') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value*MEV_PER_THz));
+    else if(kind==='toolTemp') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value/K_PER_MEV));
+    else if(kind==='toolCm') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value/CM1_PER_MEV));
+    else if(kind==='toolVelocity') lambda=NEUTRON_V_LAMBDA/value;
+    const v=toolboxValues(lambda);
+    $('toolLambda').value=v.lambda.toFixed(6);
+    $('toolEnergy').value=v.E.toFixed(6);
+    $('toolK').value=v.k.toFixed(6);
+    $('toolTHz').value=v.thz.toFixed(6);
+    $('toolTemp').value=v.temp.toFixed(6);
+    $('toolCm').value=v.cm.toFixed(6);
+    $('toolVelocity').value=v.velocity.toFixed(3);
+    for(const [factor,prefix] of [[1/3,'harmThird'],[1/2,'harmHalf'],[1,'harmBase'],[2,'harmDouble'],[3,'harmTriple']]){
+      const x=toolboxValues(lambda*factor);
+      $(`${prefix}Lambda`).textContent=x.lambda.toFixed(6);
+      $(`${prefix}Energy`).textContent=x.E.toFixed(6);
+      $(`${prefix}K`).textContent=x.k.toFixed(6);
+      $(`${prefix}THz`).textContent=x.thz.toFixed(6);
+      $(`${prefix}Temp`).textContent=x.temp.toFixed(3);
+      $(`${prefix}Cm`).textContent=x.cm.toFixed(3);
+      $(`${prefix}Velocity`).textContent=x.velocity.toFixed(1);
+    }
+  }finally{ toolboxUpdating=false; }
+}
+
+// ==================== Powder Q / hw / 2theta helper ====================
+let powderRelationDriver='powderTwoTheta';
+function powderWavevectors(hw){
+  const E=num('energy');
+  const mode=checkedValue('energyMode');
+  const Ei=mode==='Ef fixed' ? E+hw : E;
+  const Ef=mode==='Ef fixed' ? E : E-hw;
+  if(!(Ei>0) || !(Ef>0)) return null;
+  return {ki:Math.sqrt(Ei/2.072),kf:Math.sqrt(Ef/2.072)};
+}
+function updatePowderRelation(driver=powderRelationDriver){
+  if(!$('powderQ') || !$('powderHW') || !$('powderTwoTheta')) return;
+  powderRelationDriver=driver;
+  const hw=Number($('powderHW').value);
+  if(!Number.isFinite(hw)) return;
+  const wv=powderWavevectors(hw);
+  const note=$('powderRelationNote');
+  if(!wv){ note.textContent='This ħω is outside the positive Ei/Ef range.'; return; }
+  const {ki,kf}=wv;
+  if(driver==='powderQ'){
+    const q=Number($('powderQ').value);
+    if(!Number.isFinite(q) || q<0) return;
+    const c=(ki*ki+kf*kf-q*q)/(2*ki*kf);
+    if(c < -1-1e-10 || c > 1+1e-10){ note.textContent='The entered Q is not accessible at this ħω.'; return; }
+    $('powderTwoTheta').value=rad2deg(Math.acos(clamp(c,-1,1))).toFixed(4);
+  }else{
+    const tt=Number($('powderTwoTheta').value);
+    if(!Number.isFinite(tt)) return;
+    const t=deg2rad(tt);
+    const q=Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(t)));
+    $('powderQ').value=q.toFixed(6);
+  }
+  note.textContent=`Ei=${(ki*ki*2.072).toFixed(4)} meV, Ef=${(kf*kf*2.072).toFixed(4)} meV`;
+}
+
 function resizeVisiblePlots(){
   if(typeof Plotly === "undefined" || !Plotly.Plots) return;
-  const panel = $("qePanel").classList.contains("hidden") ? $("resolutionPanel") : $("qePanel");
+  const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel")].find(p=>p && !p.classList.contains("hidden"));
+  if(!panel) return;
   panel.querySelectorAll(".js-plotly-plot").forEach(el=>{
     try{ Plotly.Plots.resize(el); }catch(_err){}
   });
 }
 
 function setActiveTab(name){
-  const isQE = name !== "resolution";
-  const sampleMode=$("sampleMode");
-  if(!isQE){
-    // Resolution & Angle is defined only for a single-crystal scattering plane.
-    // Force the shared Sample Type to Single crystal and prevent powder choice
-    // while this tab is active.
+  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox';
+  const sampleMode=$('sampleMode');
+  if(isResolution){
     if(sampleMode.value!=="single"){
       sampleMode.value="single";
       updateModeVisibility();
       scheduleRecalc();
     }
     sampleMode.disabled=true;
-    // Resolution canonicalizes U/V only in its internal calculation state.
-    // The shared left-side Scattering Plane inputs remain exactly as entered
-    // so Q-E Range is not silently modified when switching tabs.
     try{ buildResolutionLattice(true); }catch(_err){}
   }else{
     sampleMode.disabled=false;
   }
-  $("qePanel").classList.toggle("hidden", !isQE);
-  $("resolutionPanel").classList.toggle("hidden", isQE);
-  $("tabQe").classList.toggle("active", isQE);
-  $("tabResolution").classList.toggle("active", !isQE);
-  $("tabQe").setAttribute("aria-selected", String(isQE));
-  $("tabResolution").setAttribute("aria-selected", String(!isQE));
+  $('qePanel').classList.toggle('hidden',!isQE);
+  $('resolutionPanel').classList.toggle('hidden',!isResolution);
+  $('toolboxPanel').classList.toggle('hidden',!isToolbox);
+  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox]]){
+    $(id).classList.toggle('active',on);
+    $(id).setAttribute('aria-selected',String(on));
+  }
   requestAnimationFrame(()=>requestAnimationFrame(resizeVisiblePlots));
 }
 function updateCalcMode(){const scan=$('calcMode').value==='scan';$('singleInputs').classList.toggle('hidden',scan);$('scanInputs').classList.toggle('hidden',!scan);}
@@ -1477,6 +1631,19 @@ function restoreLeftPanelState(){
     // Migrate the v57 single background selection into BG1 once, if present.
     if(v.backgroundSelect1===undefined && v.sampleSelect!==undefined) v.backgroundSelect1=v.sampleSelect;
 
+    // Migrate v71/v72 q_h1 naming (and the older single-vector controls)
+    // into the q1_h/q1_k/q1_l convention.
+    if(v.q_enable1===undefined && v.showK!==undefined) v.q_enable1=!!v.showK;
+    for(let i=1;i<=3;i++){
+      for(const c of ["h","k","l"]){
+        const newId=`q${i}_${c}`, oldId=`q_${c}${i}`;
+        if(v[newId]===undefined && v[oldId]!==undefined) v[newId]=v[oldId];
+      }
+    }
+    if(v.q1_h===undefined && v.kh!==undefined) v.q1_h=v.kh;
+    if(v.q1_k===undefined && v.kk!==undefined) v.q1_k=v.kk;
+    if(v.q1_l===undefined && v.kl!==undefined) v.q1_l=v.kl;
+
     // 3) Restore every left-side parameter.  For crystal selectors, run their
     //    existing UI handler first; dMono/dAna are restored afterwards in DOM order.
     for(const el of leftPanelControls()){
@@ -1514,7 +1681,12 @@ async function initialize(){
   // JSON configuration is now fully loaded.  Only at this point is it safe to
   // overlay browser-local user parameters (including the selected instrument).
   const restoredLocalState=restoreLeftPanelState();
-  $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));
+  // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
+  setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
+  $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));$('tabToolbox').addEventListener('click',()=>setActiveTab('toolbox'));
+  for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity']) $(id).addEventListener('input',()=>setToolboxFrom(id));
+  $('powderQ').addEventListener('input',()=>updatePowderRelation('powderQ'));$('powderTwoTheta').addEventListener('input',()=>updatePowderRelation('powderTwoTheta'));$('powderHW').addEventListener('input',()=>updatePowderRelation(powderRelationDriver));
+  setToolboxFrom('toolLambda'); updatePowderRelation('powderTwoTheta');
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
   setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${restoredLocalState ? ' / local parameters restored' : ''}`);recalculate();
