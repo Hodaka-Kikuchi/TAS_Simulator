@@ -301,26 +301,33 @@ function applyInstrumentDefaults(){
   updateEnergyLabel();updateSupermirrorUI();updateAutoW();setStatus(`${inst.name || $("instrument").value} loaded`);
 }
 
-function applySampleEnvironmentDefaults(){
-  const key=$("seSelect").value;
+function darkAssetIds(slot){
+  const suffix=slot===1?"":String(slot);
+  return {
+    enable:`darkEnable${slot}`, se:`seSelect${suffix}`, ref:`darkRef${suffix}`, rotation:`darkRotation${suffix}`,
+    from:i=>`darkFrom${suffix}${i}`, to:i=>`darkTo${suffix}${i}`, offset:i=>`darkOffset${suffix}${i}`
+  };
+}
+
+function applySampleEnvironmentDefaults(slot=1){
+  const ids=darkAssetIds(slot);
+  const key=$(ids.se).value;
   if(!key || !sampleEnvironments.has(key)){
-    setRadio("darkRef","Reference Q");
+    setRadio(ids.ref,"Reference Q");
     for(let i=0;i<4;i++){
-      $(`darkFrom${i}`).value=0;
-      $(`darkTo${i}`).value=0;
-      $(`darkOffset${i}`).value=0;
+      $(ids.from(i)).value=0; $(ids.to(i)).value=0; $(ids.offset(i)).value=0;
     }
     scheduleRecalc();
     return;
   }
   const se=sampleEnvironments.get(key);
-  setRadio("darkRef",se.dark_angle_reference || "Reference Q");
+  setRadio(ids.ref,se.dark_angle_reference || "Reference Q");
   const ranges=Array.isArray(se.dark_angle_ranges)?se.dark_angle_ranges:[];
   for(let i=0;i<4;i++){
     const r=ranges[i] || {from:0,to:0,offset:0};
-    $(`darkFrom${i}`).value=Number(r.from||0);
-    $(`darkTo${i}`).value=Number(r.to||0);
-    $(`darkOffset${i}`).value=Number(r.offset||0);
+    $(ids.from(i)).value=Number(r.from||0);
+    $(ids.to(i)).value=Number(r.to||0);
+    $(ids.offset(i)).value=Number(r.offset||0);
   }
   scheduleRecalc();
 }
@@ -352,13 +359,17 @@ function latticeParams(){
   };
 }
 
-function getDarkRanges(){
-  const rotation=num("darkRotation");
-  const out=[];
-  for(let i=0;i<4;i++){
-    out.push([num(`darkFrom${i}`),num(`darkTo${i}`),num(`darkOffset${i}`)+rotation]);
+function getDarkAssets(){
+  const assets=[];
+  for(let slot=1;slot<=3;slot++){
+    const ids=darkAssetIds(slot);
+    if(!$(ids.enable)?.checked) continue;
+    const rotation=num(ids.rotation);
+    const ranges=[];
+    for(let i=0;i<4;i++) ranges.push([num(ids.from(i)),num(ids.to(i)),num(ids.offset(i))+rotation]);
+    assets.push({slot,key:$(ids.se)?.value||"",ref:checkedValue(ids.ref)||"Reference Q",ranges});
   }
-  return out;
+  return assets;
 }
 
 function calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY,sense){
@@ -442,11 +453,9 @@ function calculateSingleCrystal(){
     if(arg>1+1e-12) throw new Error("Reference Q is not accessible at the selected reference energy.");
     thetaRef=rad2deg(Math.asin(clamp(arg,-1,1)));
   }
-  const darkRef=checkedValue("darkRef");
-  // Q-E Range dark-angle calculation is intentionally kept on the previously
-  // validated convention.  Direct-beam display corrections belong only to
-  // the TAS geometry schematic below and must not alter these regions.
-  const Qoffset=darkRef==="Reference Q"?90+thetaRef:2*thetaRef;
+  const darkAssets=getDarkAssets();
+  // Each enabled asset keeps its own reference convention. Existing single-asset
+  // formulas are reused independently, then their blocked regions are overlaid.
   const s1Offset=-thetaRef+180-phiRef;
 
   const S2min=num("S2min"), S1min=num("S1min"), S1max=num("S1max");
@@ -463,12 +472,8 @@ function calculateSingleCrystal(){
 
   const regions=[], S2list=[], QmaxList=[];
   const darkKF=[],darkKI=[],darkFixed=[];
-  // Fixed obstacles (e.g. a direct-beam stopper) are laboratory-fixed and do
-  // not require Reference Q. Reference-Q / Direct-beam dark angles retain the
-  // previously validated Reference-Q requirement.
-  const addDark=$("addDark").checked && (darkRef==="Fixed" || QrefNorm>1e-10);
+  const addDark=$("addDark").checked && darkAssets.length>0;
   const sense=checkedValue("sense");
-  const darkRanges=getDarkRanges();
 
   for(const hw of hwList){
     let EiHw,EfHw;
@@ -493,64 +498,45 @@ function calculateSingleCrystal(){
     QmaxList.push(Math.max(...boundary.map(norm)));
 
     const hwKF=[],hwKI=[],hwFixed=[];
-    if(addDark && darkRef==="Fixed"){
-      // A laboratory-fixed angular obstruction blocks detector scattering angles
-      // independent of S1. Sweeping S1 therefore produces an annulus in Q space.
-      // The JSON angles are signed about the direct beam; the TAS range stores the
-      // positive |S2| magnitude, so convert each fixed interval to |S2| first.
-      for(const rawRange of darkRanges){
-        let [from,to,offset]=rawRange;
-        if(from===0 && to===0) continue;
-        let a=offset+from, b=offset+to;
-        while(b<a) b+=360;
-        // Fixed beam-stop JSONs are normally local around 0 deg. For intervals
-        // crossing the direct beam, the blocked magnitude starts at zero.
-        let lo,hi;
-        if(a<=0 && b>=0){ lo=0; hi=Math.max(Math.abs(a),Math.abs(b)); }
-        else { lo=Math.min(Math.abs(a),Math.abs(b)); hi=Math.max(Math.abs(a),Math.abs(b)); }
-        lo=Math.max(lo,S2min); hi=Math.min(hi,S2max);
-        if(!(hi>lo)) continue;
-        const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
-        const r0=qRadius(lo), r1=qRadius(hi);
-        const aa=linspace(0,2*Math.PI,241);
-        const outer=aa.map(t=>[r1*Math.cos(t),r1*Math.sin(t)]);
-        const inner=[...aa].reverse().map(t=>[r0*Math.cos(t),r0*Math.sin(t)]);
-        hwFixed.push([...outer,...inner]);
-      }
-    }else if(addDark){
-      const s2dark=linspace(S2min,S2max,200);
-      for(const rawRange of darkRanges){
-        const [from,to,offset]=rawRange;
-        if(from===0 && to===0) continue;
-
-        // Dark-angle entries are geometric angles: counter-clockwise is always
-        // positive.  calcQDark() already mirrors the calculated Q trajectory for
-        // the +-+ instrument sense about the Reference-Q axis.  Therefore the
-        // dark-angle limits themselves must NOT be sign-flipped for +-+; doing
-        // both operations mirrors the geometry twice.  Use the same geometric
-        // S1 parameterization for both sign conventions and let calcQDark()
-        // perform the instrument-handedness mapping.
-        const s1from=offset+from-Qoffset;
-        const s1to=offset+to-Qoffset;
-
-        const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        const topKF=linspace(s1from,s1to,100).map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
-
-        // The ki-blocking boundary is displaced from the kf-blocking boundary
-        // by (180 - S2) in this geometric parameterization.  As above, the +-+
-        // handedness is applied inside calcQDark(), so this displacement must
-        // not receive an additional sign flip here.
-        const kiShift=s2=>(180-s2);
-        const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100)
-          .map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100)
-          .map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
-        hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
+    if(addDark){
+      for(const asset of darkAssets){
+        const darkRef=asset.ref;
+        if(darkRef!=="Fixed" && QrefNorm<=1e-10) continue;
+        const Qoffset=darkRef==="Reference Q" ? 90+thetaRef : 2*thetaRef;
+        if(darkRef==="Fixed"){
+          // Laboratory-fixed obstacle: S1 sweep turns a blocked detector-angle
+          // interval into an annulus in Q space.
+          for(const rawRange of asset.ranges){
+            let [from,to,offset]=rawRange;
+            if(from===0 && to===0) continue;
+            let a=offset+from, b=offset+to; while(b<a) b+=360;
+            let lo,hi;
+            if(a<=0 && b>=0){ lo=0; hi=Math.max(Math.abs(a),Math.abs(b)); }
+            else { lo=Math.min(Math.abs(a),Math.abs(b)); hi=Math.max(Math.abs(a),Math.abs(b)); }
+            lo=Math.max(lo,S2min); hi=Math.min(hi,S2max);
+            if(!(hi>lo)) continue;
+            const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
+            const r0=qRadius(lo), r1=qRadius(hi), aa=linspace(0,2*Math.PI,241);
+            hwFixed.push([...aa.map(t=>[r1*Math.cos(t),r1*Math.sin(t)]),...[...aa].reverse().map(t=>[r0*Math.cos(t),r0*Math.sin(t)])]);
+          }
+          continue;
+        }
+        const s2dark=linspace(S2min,S2max,200);
+        for(const rawRange of asset.ranges){
+          const [from,to,offset]=rawRange; if(from===0 && to===0) continue;
+          const s1from=offset+from-Qoffset, s1to=offset+to-Qoffset;
+          const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const topKF=linspace(s1from,s1to,100).map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
+          const kiShift=s2=>(180-s2);
+          const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100).map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
+        }
       }
     }
     darkKF.push(hwKF); darkKI.push(hwKI); darkFixed.push(hwFixed);
@@ -628,7 +614,7 @@ function calculateSingleCrystal(){
     inst,lc,latticeCentering,U,V,rl,ex,ey,ez,
     energyMode,Ei,Ef,lambdaHalf,hwList,
     regions,S2list,QmaxList,darkKF,darkKI,darkFixed,addDark,
-    Gpoints,magPoints,ringData,darkRanges,darkRef,QrefXY,sense
+    Gpoints,magPoints,ringData,darkAssets,QrefXY,sense
   };
 }
 
@@ -705,17 +691,18 @@ function renderSingle(cache,index=0){
     });
   }
   if(cache.addDark){
-    if(cache.darkRef==="Fixed"){
-      for(const [j,r] of (cache.darkFixed[i]||[]).entries()){
-        traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:j===0?"Fixed blocked range":undefined,showlegend:j===0,mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)",hoverinfo:"skip"});
-      }
-    }else{
-      for(const r of cache.darkKF[i]){
-        traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)"});
-      }
-      for(const r of cache.darkKI[i]){
-        traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
-      }
+    let fixedLegend=false, kfLegend=false, kiLegend=false;
+    for(const r of (cache.darkFixed[i]||[])){
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Fixed blocked range",showlegend:!fixedLegend,legendgroup:"dark-fixed",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)",hoverinfo:"skip"});
+      fixedLegend=true;
+    }
+    for(const r of (cache.darkKF[i]||[])){
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)"});
+      kfLegend=true;
+    }
+    for(const r of (cache.darkKI[i]||[])){
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
+      kiLegend=true;
     }
   }
   traces.push({x:[null],y:[null],mode:"markers",name:`S2 range = ${num("S2min").toFixed(1)} - ${cache.S2list[i].toFixed(1)}°`});
@@ -870,82 +857,46 @@ function renderGeometry(cache,index=0){
     traces.push({x:circle.map(t=>sample[0]+darkRadius*Math.cos(t)),y:circle.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"#d9d9d9",width:1},hoverinfo:"skip",showlegend:false});
   }
 
-  // Dark-angle arcs are centered on the sample.  Use exactly one origin:
-  // the Reference-Q direction carried by the current sample orientation.
-  //
-  // Direct-beam mode is not anchored to the *current* ki.  Its zero direction
-  // is the ki direction at the Reference-Q condition.  Convert that direction
-  // to a fixed offset from Reference Q, then let the same sample orientation
-  // carry both origins as S1 changes.  This makes, e.g., a 90-deg sample move
-  // from (100) to (010) rotate a ki-referenced block by the same 90 deg.
-  let base=qAngle;
-  let deltaS1=0;
-  let darkReferenceOffset=0;
+  // Draw every enabled dark-angle asset independently. Reference-Q assets
+  // rotate with the sample about Q; Direct-beam assets use the ki direction at
+  // the Reference-Q condition; Fixed assets remain laboratory-fixed.
+  let referenceBase=qAngle, deltaS1=0;
   if(target){
     try{
-      const U=[num("Uh"),num("Uk"),num("Ul")];
-      const V=[num("Vh"),num("Vk"),num("Vl")];
+      const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
       const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
-      const qPlaneAngle=(hkl)=>{
-        const q=hklToQ(cache.rl,hkl);
-        const x=dot(q,ex), y=dot(q,ey);
-        if(Math.hypot(x,y)<1e-12) return 0;
-        return Math.atan2(y,x);
-      };
+      const qPlaneAngle=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.hypot(x,y)<1e-12?0:Math.atan2(y,x);};
       const phiTarget=qPlaneAngle([target.calc.h,target.calc.k,target.calc.l]);
       const phiRef=qPlaneAngle([num("refh"),num("refk"),num("refl")]);
       const crystalDelta=phiRef-phiTarget;
-      base=qAngle+(sense==="-+-" ? -crystalDelta : crystalDelta);
-
+      referenceBase=qAngle+(sense==="-+-" ? -crystalDelta : crystalDelta);
       const refS1=num("refs1");
-      if(Number.isFinite(target.angles?.s1) && Number.isFinite(refS1)){
-        deltaS1=angleDiffDeg(target.angles.s1,refS1); // display/hover only
-      }
+      if(Number.isFinite(target.angles?.s1)&&Number.isFinite(refS1)) deltaS1=angleDiffDeg(target.angles.s1,refS1);
+    }catch(_err){ referenceBase=qAngle; }
+  }
 
-      if(cache.darkRef==="Direct beam"){
-        // Elastic Reference-Q geometry: angle(Q -> ki) = 90deg-thetaRef.
-        // The Q-E calculation uses the equivalent Qoffset correction
-        // darkReferenceOffset = thetaRef-90deg.  Here we use the actual
-        // screen-space Q->ki angle, with the TAS sense handled by the same
-        // mirrored display convention as the Reference-Q geometry.
+  if(showDarkGeometry) for(const asset of (cache.darkAssets||[])){
+    let base=referenceBase, darkReferenceOffset=0;
+    if(asset.ref==="Direct beam"){
+      try{
         const qRef=hklToQ(cache.rl,[num("refh"),num("refk"),num("refl")]);
-        const qRefNorm=norm(qRef);
-        const refEnergy=(cache.energyMode==="Ei fixed") ? cache.Ei : cache.Ef;
-        if(qRefNorm>1e-12 && Number.isFinite(refEnergy) && refEnergy>0){
-          const kRef=Math.sqrt(refEnergy/2.072);
-          const thetaRef=Math.asin(clamp(qRefNorm/(2*kRef),-1,1));
-          const qToKi=Math.PI/2-thetaRef;
-          // base is the current Reference-Q direction.  Move its zero to the
-          // incident-beam direction that existed when Reference Q was observed.
-          base += -qToKi;
-          darkReferenceOffset=(sense==="+-+" ? -1 : +1)*rad2deg(qToKi);
+        const qRefNorm=norm(qRef), refEnergy=(cache.energyMode==="Ei fixed")?cache.Ei:cache.Ef;
+        if(qRefNorm>1e-12&&Number.isFinite(refEnergy)&&refEnergy>0){
+          const kRef=Math.sqrt(refEnergy/2.072), thetaRef=Math.asin(clamp(qRefNorm/(2*kRef),-1,1));
+          const qToKi=Math.PI/2-thetaRef; base+=-qToKi;
+          darkReferenceOffset=(sense==="+-+"?-1:+1)*rad2deg(qToKi);
         }
-      }
-    }catch(_err){
-      base=qAngle;
+      }catch(_err){}
+    }else if(asset.ref==="Fixed"){
+      base=thetaKi; darkReferenceOffset=0;
     }
+    asset.ranges.forEach((r,j)=>{
+      const [from,to,offset]=r; if(from===0&&to===0) return;
+      let a0=offset+from,a1=offset+to; if(a1<a0)a1+=360;
+      const aa=linspace(a0,a1,120).map(d=>base-deg2rad(d));
+      traces.push({x:aa.map(t=>sample[0]+darkRadius*Math.cos(t)),y:aa.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"red",width:4},name:`Dark ${asset.slot}-${j+1}`,hovertemplate:`Dark angle ${asset.slot}-${j+1}<br>Reference=${asset.ref}<br>ΔS1=${deltaS1.toFixed(2)}°<br>Ref offset=${darkReferenceOffset.toFixed(2)}°<extra></extra>`,showlegend:false});
+    });
   }
-
-  if(cache.darkRef==="Fixed"){
-    // Laboratory-fixed obstacle: zero angle is the direct-beam continuation.
-    // It must not rotate with the sample / Reference Q.
-    base=thetaKi;
-    darkReferenceOffset=0;
-  }
-
-  if(showDarkGeometry) cache.darkRanges.forEach((r,j)=>{
-    const [from,to,offset]=r; if(from===0 && to===0) return;
-    let a0=offset+from,a1=offset+to; if(a1<a0)a1+=360;
-    // TAS-geometry-only convention: the dark/black sector must rotate around Q
-    // in opposite senses for +-+ and -+-, matching the already-validated Q-E
-    // Range block definition.  Q-E Range calculations are intentionally untouched.
-    // Geometry-only display convention after the inelastic Q-E handedness fix:
-    // +-+ must sweep the dark sector in the opposite plot-coordinate direction.
-    // -+- is already validated, so leave it unchanged.
-    const sign=-1;
-    const aa=linspace(a0,a1,120).map(d=>base+sign*deg2rad(d));
-    traces.push({x:aa.map(t=>sample[0]+darkRadius*Math.cos(t)),y:aa.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"red",width:4},name:`Dark ${j+1}`,hovertemplate:`Dark angle ${j+1}<br>ΔS1=${deltaS1.toFixed(2)}°<br>Ref offset=${darkReferenceOffset.toFixed(2)}°<extra></extra>`,showlegend:false});
-  });
 
   const crystal=(c,ang,len=0.58)=>{const dx=.5*len*Math.cos(ang),dy=.5*len*Math.sin(ang);addLine([c[0]-dx,c[1]-dy],[c[0]+dx,c[1]+dy],"black",3);};
   crystal(mono,monoPlaneAngle); crystal(analyzer,anaPlaneAngle);
@@ -975,7 +926,7 @@ function renderGeometry(cache,index=0){
   // on the right for -+- and on the left for +-+.
   const monoLabel=[mono[0]-1.15,mono[1]];
   const anaLabel=[analyzer[0],analyzer[1]-0.48];
-  const sampleLabelRadius=1.25;
+  const sampleLabelRadius=1.35;
   const sampleLabel=[
     sample[0]-sampleLabelRadius*Math.cos(qAngle),
     sample[1]-sampleLabelRadius*Math.sin(qAngle)
@@ -1191,7 +1142,7 @@ $("instrument").addEventListener("change",()=>{
   scheduleRecalc();
 });
 
-$("seSelect").addEventListener("change",applySampleEnvironmentDefaults);
+for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.se).addEventListener("change",()=>applySampleEnvironmentDefaults(slot)); }
 BACKGROUND_SLOTS.forEach(slot=>$(slot.id).addEventListener("change",scheduleRecalc));
 
 $("hwSlider").addEventListener("input",()=>{
@@ -1218,7 +1169,7 @@ $("geomSetRef").addEventListener("click",setGeometryTargetFromReference);
 document.querySelectorAll("input,select").forEach(el=>{
   if([
     "instrument",
-    "seSelect",
+    "seSelect","seSelect2","seSelect3",
     ...BACKGROUND_SLOTS.map(slot=>slot.id),
     "hwSlider",
     "geomHWSlider"
@@ -1666,7 +1617,7 @@ function restoreLeftPanelState(){
 
     // 2) The sample-environment JSON can populate dark-angle fields, so apply it
     //    before restoring the user's individual left-panel values.
-    if(setSavedControl('seSelect',v.seSelect)) applySampleEnvironmentDefaults();
+    for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); if(setSavedControl(ids.se,v[ids.se])) applySampleEnvironmentDefaults(slot); }
 
     // Migrate the v57 single background selection into BG1 once, if present.
     if(v.backgroundSelect1===undefined && v.sampleSelect!==undefined) v.backgroundSelect1=v.sampleSelect;
@@ -1687,7 +1638,7 @@ function restoreLeftPanelState(){
     // 3) Restore every left-side parameter.  For crystal selectors, run their
     //    existing UI handler first; dMono/dAna are restored afterwards in DOM order.
     for(const el of leftPanelControls()){
-      if(el.id==='instrument'||el.id==='seSelect') continue;
+      if(el.id==='instrument'||['seSelect','seSelect2','seSelect3'].includes(el.id)) continue;
       setSavedControl(el.id,v[el.id],{dispatchChange:el.id==='monoCrystal'||el.id==='anaCrystal'});
     }
 
@@ -1715,9 +1666,9 @@ async function initialize(){
   const [nSample,nSE]=await Promise.all([tryLoadDir('sample',samples),tryLoadDir('sample_environments',sampleEnvironments)]);
   await tryLoadDir('instruments',legacyRangeInstruments); // migration compatibility only
   mergeLegacyRangeData();
-  refreshSelect(instruments,$('instrument'),null);BACKGROUND_SLOTS.forEach(slot=>refreshSelect(samples,$(slot.id),'None'));refreshSelect(sampleEnvironments,$('seSelect'),'Standard');
+  refreshSelect(instruments,$('instrument'),null);BACKGROUND_SLOTS.forEach(slot=>refreshSelect(samples,$(slot.id),'None'));for(let slot=1;slot<=3;slot++) refreshSelect(sampleEnvironments,$(darkAssetIds(slot).se),'Standard');
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
-  $('instrument').selectedIndex=0;BACKGROUND_SLOTS.forEach(slot=>$(slot.id).value='');$('seSelect').value='';applyInstrumentDefaults();applySampleEnvironmentDefaults();
+  $('instrument').selectedIndex=0;BACKGROUND_SLOTS.forEach(slot=>$(slot.id).value='');for(let slot=1;slot<=3;slot++) $(darkAssetIds(slot).se).value='';applyInstrumentDefaults();for(let slot=1;slot<=3;slot++) applySampleEnvironmentDefaults(slot);
   // JSON configuration is now fully loaded.  Only at this point is it safe to
   // overlay browser-local user parameters (including the selected instrument).
   const restoredLocalState=restoreLeftPanelState();

@@ -115,3 +115,8 @@
 .geometry-target-buttons{display:flex;gap:5px;align-items:end;white-space:nowrap}
 .geometry-target-buttons button{padding:4px 8px;font-size:12px}
 @media(max-width:1250px){.geometry-target-row{grid-template-columns:1fr}.geometry-target-buttons{justify-content:flex-start;flex-wrap:wrap}}
+
+/* v79: up to three independent dark-angle assets */
+.dark-asset{border:1px solid #e2e2e2;border-radius:6px;padding:7px;margin-top:7px}
+.dark-asset-head{display:grid;grid-template-columns:minmax(105px,.75fr) minmax(150px,1.25fr);gap:6px;align-items:end;margin-bottom:5px}
+.dark-asset .dark-table{margin-top:5px}
