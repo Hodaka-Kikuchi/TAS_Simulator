@@ -462,8 +462,11 @@ function calculateSingleCrystal(){
   if(hwList.length===0) hwList=[0];
 
   const regions=[], S2list=[], QmaxList=[];
-  const darkKF=[],darkKI=[];
-  const addDark=$("addDark").checked && QrefNorm>1e-10;
+  const darkKF=[],darkKI=[],darkFixed=[];
+  // Fixed obstacles (e.g. a direct-beam stopper) are laboratory-fixed and do
+  // not require Reference Q. Reference-Q / Direct-beam dark angles retain the
+  // previously validated Reference-Q requirement.
+  const addDark=$("addDark").checked && (darkRef==="Fixed" || QrefNorm>1e-10);
   const sense=checkedValue("sense");
   const darkRanges=getDarkRanges();
 
@@ -489,8 +492,32 @@ function calculateSingleCrystal(){
     regions.push(boundary); S2list.push(S2max);
     QmaxList.push(Math.max(...boundary.map(norm)));
 
-    const hwKF=[],hwKI=[];
-    if(addDark){
+    const hwKF=[],hwKI=[],hwFixed=[];
+    if(addDark && darkRef==="Fixed"){
+      // A laboratory-fixed angular obstruction blocks detector scattering angles
+      // independent of S1. Sweeping S1 therefore produces an annulus in Q space.
+      // The JSON angles are signed about the direct beam; the TAS range stores the
+      // positive |S2| magnitude, so convert each fixed interval to |S2| first.
+      for(const rawRange of darkRanges){
+        let [from,to,offset]=rawRange;
+        if(from===0 && to===0) continue;
+        let a=offset+from, b=offset+to;
+        while(b<a) b+=360;
+        // Fixed beam-stop JSONs are normally local around 0 deg. For intervals
+        // crossing the direct beam, the blocked magnitude starts at zero.
+        let lo,hi;
+        if(a<=0 && b>=0){ lo=0; hi=Math.max(Math.abs(a),Math.abs(b)); }
+        else { lo=Math.min(Math.abs(a),Math.abs(b)); hi=Math.max(Math.abs(a),Math.abs(b)); }
+        lo=Math.max(lo,S2min); hi=Math.min(hi,S2max);
+        if(!(hi>lo)) continue;
+        const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
+        const r0=qRadius(lo), r1=qRadius(hi);
+        const aa=linspace(0,2*Math.PI,241);
+        const outer=aa.map(t=>[r1*Math.cos(t),r1*Math.sin(t)]);
+        const inner=[...aa].reverse().map(t=>[r0*Math.cos(t),r0*Math.sin(t)]);
+        hwFixed.push([...outer,...inner]);
+      }
+    }else if(addDark){
       const s2dark=linspace(S2min,S2max,200);
       for(const rawRange of darkRanges){
         const [from,to,offset]=rawRange;
@@ -526,7 +553,7 @@ function calculateSingleCrystal(){
         hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
       }
     }
-    darkKF.push(hwKF); darkKI.push(hwKI);
+    darkKF.push(hwKF); darkKI.push(hwKI); darkFixed.push(hwFixed);
   }
 
   if(regions.length===0) throw new Error("No accessible energy-transfer points were generated.");
@@ -600,7 +627,7 @@ function calculateSingleCrystal(){
   return {
     inst,lc,latticeCentering,U,V,rl,ex,ey,ez,
     energyMode,Ei,Ef,lambdaHalf,hwList,
-    regions,S2list,QmaxList,darkKF,darkKI,addDark,
+    regions,S2list,QmaxList,darkKF,darkKI,darkFixed,addDark,
     Gpoints,magPoints,ringData,darkRanges,darkRef,QrefXY,sense
   };
 }
@@ -655,7 +682,7 @@ function renderSingle(cache,index=0){
     const pts=cache.magPoints.filter(p=>p.qIndex===qIndex);
     if(!pts.length) continue;
     traces.push({
-      x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",name:`Magnetic Bragg peaks: q${qIndex}`,
+      x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",name:`q${qIndex}`,
       marker:{color:"red",size:qIndex===3?9:7,symbol:magneticSymbols[qIndex]},
       hovertext:pts.map(p=>p.label),hovertemplate:"%{hovertext}<extra></extra>"
     });
@@ -678,11 +705,17 @@ function renderSingle(cache,index=0){
     });
   }
   if(cache.addDark){
-    for(const r of cache.darkKF[i]){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)"});
-    }
-    for(const r of cache.darkKI[i]){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
+    if(cache.darkRef==="Fixed"){
+      for(const [j,r] of (cache.darkFixed[i]||[]).entries()){
+        traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:j===0?"Fixed blocked range":undefined,showlegend:j===0,mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)",hoverinfo:"skip"});
+      }
+    }else{
+      for(const r of cache.darkKF[i]){
+        traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)"});
+      }
+      for(const r of cache.darkKI[i]){
+        traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
+      }
     }
   }
   traces.push({x:[null],y:[null],mode:"markers",name:`S2 range = ${num("S2min").toFixed(1)} - ${cache.S2list[i].toFixed(1)}°`});
@@ -891,6 +924,13 @@ function renderGeometry(cache,index=0){
     }catch(_err){
       base=qAngle;
     }
+  }
+
+  if(cache.darkRef==="Fixed"){
+    // Laboratory-fixed obstacle: zero angle is the direct-beam continuation.
+    // It must not rotate with the sample / Reference Q.
+    base=thetaKi;
+    darkReferenceOffset=0;
   }
 
   if(showDarkGeometry) cache.darkRanges.forEach((r,j)=>{

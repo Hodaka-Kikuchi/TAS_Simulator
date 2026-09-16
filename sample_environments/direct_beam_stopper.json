@@ -1,0 +1,11 @@
+{
+  "name": "Direct beam stopper",
+  "dark_angle_reference": "Fixed",
+  "dark_angle_ranges": [
+    {
+      "from": -15,
+      "to": 15,
+      "offset": 0
+    }
+  ]
+}
