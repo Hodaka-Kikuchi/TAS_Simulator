@@ -595,7 +595,7 @@ function calculateSingleCrystal(){
               x:dot(Gm,ex),
               y:dot(Gm,ey),
               qIndex:q.index,
-              label:`q${q.index}: (${hm.map(x=>x.toFixed(2)).join(",")})`
+              label:`k${q.index}: (${hm.map(x=>x.toFixed(2)).join(",")})`
             });
           }
         }
@@ -638,11 +638,18 @@ function renderSingle(cache,index=0){
   );
 
   const labelOffset = 0.03 * qMax;
+  const s2Min = num("S2min");
+  const s2Max = cache.S2list[i];
+
   const traces=[
     {
-      x:boundary.map(p=>p[0]), y:boundary.map(p=>p[1]),
-      fill:"toself", name:"Accessible Q", mode:"lines",
-      line:{width:0}, fillcolor:"rgba(255,0,0,0.15)"
+      x:boundary.map(p=>p[0]),
+      y:boundary.map(p=>p[1]),
+      fill:"toself",
+      name:`Accessible Q (${s2Min.toFixed(0)}° ≤ S2 ≤ ${s2Max.toFixed(0)}°)`,
+      mode:"lines",
+      line:{width:0},
+      fillcolor:"rgba(255,0,0,0.15)"
     },
     {
       x:cache.Gpoints.map(p=>p.x),
@@ -674,13 +681,13 @@ function renderSingle(cache,index=0){
       hoverinfo:"skip"
     },
   ];
-  // Keep q1/q2/q3 visually distinct while retaining one magnetic-peak color.
+  // Keep k1/k2/k3 visually distinct while retaining one magnetic-peak color.
   const magneticSymbols={1:"circle",2:"x",3:"star"};
   for(let qIndex=1;qIndex<=3;qIndex++){
     const pts=cache.magPoints.filter(p=>p.qIndex===qIndex);
     if(!pts.length) continue;
     traces.push({
-      x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",name:`q${qIndex}`,
+      x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",name:`Magnetic Bragg peaks: k${qIndex}`,
       marker:{color:"red",size:qIndex===3?9:7,symbol:magneticSymbols[qIndex]},
       hovertext:pts.map(p=>p.label),hovertemplate:"%{hovertext}<extra></extra>"
     });
@@ -717,7 +724,6 @@ function renderSingle(cache,index=0){
       kiLegend=true;
     }
   }
-  traces.push({x:[null],y:[null],mode:"markers",name:`S2 range = ${num("S2min").toFixed(1)} - ${cache.S2list[i].toFixed(1)}°`});
 
   const energyText=cache.energyMode==="Ef fixed"?`Ef=${cache.Ef.toFixed(2)} meV`:`Ei=${cache.Ei.toFixed(2)} meV`;
   const lam=cache.lambdaHalf?" | λ/2":"";
@@ -729,11 +735,11 @@ function renderSingle(cache,index=0){
 
   Plotly.react("singlePlot",traces,{
     title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
-    xaxis:{title:"Qx (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true,constrain:"domain"},
+    xaxis:{title:"Qx (Å⁻¹)",range:[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,constrain:"domain"},
     // Keep the reciprocal-space plotting box square: identical numerical Qx/Qy
     // ranges and a 1:1 data-unit aspect ratio.  `constrain: domain` makes Plotly
     // shrink the axis domain rather than silently expanding one numerical range.
-    yaxis:{title:"Qy (Å⁻¹)",range:[-Qplot,Qplot],dtick:1,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1,constrain:"domain"},
+    yaxis:{title:"Qy (Å⁻¹)",range:[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1,constrain:"domain"},
     // UI-only spacing: reclaim a little space above the plot, while reserving
     // more room below so the x-axis title and horizontal legend do not crowd.
     margin:{l:60,r:20,t:92,b:96},
@@ -1469,16 +1475,91 @@ function doScanResolution(){clearError();try{const n=Math.max(2,Math.round(num('
 function renderResolutionScan(i){i=Math.max(1,Math.min(scanResults.length,Number(i)));$('scanSlider').value=i;$('scanIndex').textContent=`${i} / ${scanResults.length}`;renderResolution(scanResults[i-1],`| scan ${i}/${scanResults.length}`);}
 
 
+// Display-only terminology: magnetic propagation vectors are k1/k2/k3.
+function updatePropagationVectorLabels(){
+  for(let i=1;i<=3;i++){
+    const enable=$( `q_enable${i}` );
+    const row=enable?.closest('.propagation-row');
+    if(!row) continue;
+    const span=enable.closest('label')?.querySelector('span');
+    if(span) span.textContent=`k${i}`;
+    const labels=[...row.querySelectorAll('label')].filter(x=>x!==enable.closest('label'));
+    ['h','k','l'].forEach((c,j)=>{
+      if(labels[j] && labels[j].firstChild) labels[j].firstChild.nodeValue=`k${i}_${c}`;
+    });
+  }
+}
+
 // ==================== Toolbox: neutron unit conversion ====================
 const NEUTRON_E_LAMBDA=81.8042;       // E[meV] = 81.8042 / lambda[Å]^2
 const MEV_PER_THz=4.135667696;        // E[meV] = h * f[THz]
 const K_PER_MEV=11.60451812;          // equivalent temperature E/kB
 const CM1_PER_MEV=8.065543937;        // spectroscopic wavenumber
 const NEUTRON_V_LAMBDA=3956.034;      // v[m/s] = 3956.034 / lambda[Å]
+const J_PER_MEV=1.602176634e-22;      // exact SI conversion
+const J_PER_CAL=4.184;                // thermochemical calorie
+const C_LIGHT=299792458;              // m/s
+const MEV_PER_TESLA=5.78838e-2;       // user convention: 1 T = 5.78838e-5 eV = 0.0578838 meV
 let toolboxUpdating=false;
+
+function ensureExtendedToolboxUI(){
+  const grid=document.querySelector('#toolboxPanel .toolbox-grid');
+  if(!grid) return;
+  const fields=[
+    ['toolMass','Mass equivalent (kg)','any'],
+    ['toolField','Magnetic field (T)','any'],
+    ['toolJ','Energy (J)','any'],
+    ['toolCal','Heat (cal)','any']
+  ];
+  for(const [id,labelText] of fields){
+    if($(id)) continue;
+    const label=document.createElement('label');
+    label.append(document.createTextNode(labelText));
+    const input=document.createElement('input');
+    input.id=id; input.type='number'; input.step='any'; input.min='0';
+    label.appendChild(input); grid.appendChild(label);
+  }
+  // Keep all 11 entry boxes on one row on a wide screen; allow horizontal scrolling
+  // instead of squeezing the fields until they become unusable on a narrow screen.
+  if(!document.getElementById('toolboxExtendedStyle')){
+    const style=document.createElement('style'); style.id='toolboxExtendedStyle';
+    style.textContent=`#toolboxPanel .toolbox-grid{grid-template-columns:repeat(11,minmax(105px,1fr))!important;overflow-x:auto;align-items:end} #toolboxPanel .toolbox-grid label{min-width:105px}`;
+    document.head.appendChild(style);
+  }
+  // Extend the wavelength-multiple table with the same four quantities.
+  const table=document.querySelector('#toolboxPanel .harmonic-table');
+  if(table && !document.getElementById('harmBaseMass')){
+    const old=[...table.children];
+    const oldCols=8; // row label + 7 original quantities
+    const prefixes=['harmThird','harmHalf','harmBase','harmDouble','harmTriple'];
+    const extraHeaders=['Mass equivalent (kg)','Magnetic field (T)','Energy (J)','Heat (cal)'];
+    const suffixes=['Mass','Field','J','Cal'];
+    const frag=document.createDocumentFragment();
+    for(let row=0;row<6;row++){
+      for(let col=0;col<oldCols;col++) frag.appendChild(old[row*oldCols+col]);
+      if(row===0){
+        for(const text of extraHeaders){ const d=document.createElement('div'); d.textContent=text; frag.appendChild(d); }
+      }else{
+        const prefix=prefixes[row-1];
+        for(const suffix of suffixes){ const out=document.createElement('output'); out.id=`${prefix}${suffix}`; frag.appendChild(out); }
+      }
+    }
+    table.replaceChildren(frag);
+    table.style.gridTemplateColumns='max-content repeat(11,minmax(105px,1fr))';
+    table.style.minWidth='1450px';
+  }
+  const note=document.querySelector('#toolboxPanel .tool-note');
+  if(note) note.textContent='Editing any one of λ, E, k, THz, K, cm⁻¹, velocity, mass equivalent, magnetic field, J, or cal updates all other values and the wavelength-multiple table.';
+}
+
 function toolboxValues(lambda){
   const E=NEUTRON_E_LAMBDA/(lambda*lambda);
-  return {lambda,E,k:2*Math.PI/lambda,thz:E/MEV_PER_THz,temp:E*K_PER_MEV,cm:E*CM1_PER_MEV,velocity:NEUTRON_V_LAMBDA/lambda};
+  const joule=E*J_PER_MEV;
+  return {
+    lambda,E,k:2*Math.PI/lambda,thz:E/MEV_PER_THz,temp:E*K_PER_MEV,
+    cm:E*CM1_PER_MEV,velocity:NEUTRON_V_LAMBDA/lambda,
+    mass:joule/(C_LIGHT*C_LIGHT),field:E/MEV_PER_TESLA,joule,cal:joule/J_PER_CAL
+  };
 }
 function setToolboxFrom(kind){
   if(toolboxUpdating) return;
@@ -1494,21 +1575,18 @@ function setToolboxFrom(kind){
     else if(kind==='toolTemp') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value/K_PER_MEV));
     else if(kind==='toolCm') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value/CM1_PER_MEV));
     else if(kind==='toolVelocity') lambda=NEUTRON_V_LAMBDA/value;
+    else if(kind==='toolMass') lambda=Math.sqrt(NEUTRON_E_LAMBDA/((value*C_LIGHT*C_LIGHT)/J_PER_MEV));
+    else if(kind==='toolField') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value*MEV_PER_TESLA));
+    else if(kind==='toolJ') lambda=Math.sqrt(NEUTRON_E_LAMBDA/(value/J_PER_MEV));
+    else if(kind==='toolCal') lambda=Math.sqrt(NEUTRON_E_LAMBDA/((value*J_PER_CAL)/J_PER_MEV));
     const v=toolboxValues(lambda);
-    // Keep the field currently being edited untouched so multi-digit/decimal
-    // input is not replaced after every keystroke. Only update the other fields.
     const formatted={
-      toolLambda:v.lambda.toFixed(6),
-      toolEnergy:v.E.toFixed(6),
-      toolK:v.k.toFixed(6),
-      toolTHz:v.thz.toFixed(6),
-      toolTemp:v.temp.toFixed(6),
-      toolCm:v.cm.toFixed(6),
-      toolVelocity:v.velocity.toFixed(3)
+      toolLambda:v.lambda.toFixed(6), toolEnergy:v.E.toFixed(6), toolK:v.k.toFixed(6),
+      toolTHz:v.thz.toFixed(6), toolTemp:v.temp.toFixed(6), toolCm:v.cm.toFixed(6),
+      toolVelocity:v.velocity.toFixed(3), toolMass:v.mass.toExponential(6),
+      toolField:v.field.toExponential(6), toolJ:v.joule.toExponential(6), toolCal:v.cal.toExponential(6)
     };
-    for(const [id,text] of Object.entries(formatted)){
-      if(id!==kind) $(id).value=text;
-    }
+    for(const [id,text] of Object.entries(formatted)){ if(id!==kind && $(id)) $(id).value=text; }
     for(const [factor,prefix] of [[1/3,'harmThird'],[1/2,'harmHalf'],[1,'harmBase'],[2,'harmDouble'],[3,'harmTriple']]){
       const x=toolboxValues(lambda*factor);
       $(`${prefix}Lambda`).textContent=x.lambda.toFixed(6);
@@ -1518,6 +1596,10 @@ function setToolboxFrom(kind){
       $(`${prefix}Temp`).textContent=x.temp.toFixed(3);
       $(`${prefix}Cm`).textContent=x.cm.toFixed(3);
       $(`${prefix}Velocity`).textContent=x.velocity.toFixed(1);
+      $(`${prefix}Mass`).textContent=x.mass.toExponential(6);
+      $(`${prefix}Field`).textContent=x.field.toExponential(6);
+      $(`${prefix}J`).textContent=x.joule.toExponential(6);
+      $(`${prefix}Cal`).textContent=x.cal.toExponential(6);
     }
   }finally{ toolboxUpdating=false; }
 }
@@ -1587,9 +1669,96 @@ function setActiveTab(name){
     $(id).classList.toggle('active',on);
     $(id).setAttribute('aria-selected',String(on));
   }
+  try{ localStorage.setItem(ACTIVE_TAB_STORAGE_KEY,name); }catch(_e){}
   requestAnimationFrame(()=>requestAnimationFrame(resizeVisiblePlots));
 }
 function updateCalcMode(){const scan=$('calcMode').value==='scan';$('singleInputs').classList.toggle('hidden',scan);$('scanInputs').classList.toggle('hidden',!scan);}
+
+// ==================== App chrome + right-panel persistence ====================
+const RIGHT_PANEL_STORAGE_KEY='tas-simulator-right-panel-v1';
+const ACTIVE_TAB_STORAGE_KEY='tas-simulator-active-tab-v1';
+let restoringRightPanel=false;
+
+function setupAppHeader(){
+  document.title='TAS Simulator';
+  const header=document.querySelector('header');
+  const h1=header?.querySelector('h1');
+  if(h1) h1.textContent='TAS Simulator';
+  if(!header || document.getElementById('githubLink')) return;
+
+  // Project repository: fixed URL so the GitHub link works identically on
+  // localhost, GitHub Pages, and custom-domain deployments.
+  const repoUrl='https://github.com/Hodaka-Kikuchi/TAS_Simulator';
+
+  const a=document.createElement('a');
+  a.id='githubLink';
+  a.href=repoUrl;
+  a.target='_blank';
+  a.rel='noopener noreferrer';
+  a.textContent='GitHub';
+  a.title='Open this project on GitHub';
+  Object.assign(a.style,{marginLeft:'auto',whiteSpace:'nowrap',fontWeight:'600'});
+  header.appendChild(a);
+  // Keep the link at the far right without requiring a styles.css change.
+  header.style.display='flex';
+  header.style.alignItems='center';
+  header.style.gap='14px';
+  const status=header.querySelector('#status');
+  if(status) status.style.marginLeft='auto';
+  a.style.marginLeft='0';
+}
+
+function rightPanelControls(){
+  return [...document.querySelectorAll('#qePanel input[id], #qePanel select[id], #resolutionPanel input[id], #resolutionPanel select[id], #toolboxPanel input[id], #toolboxPanel select[id]')]
+    .filter(el=>el.type!=='button' && el.type!=='submit');
+}
+
+function saveRightPanelState(){
+  if(restoringRightPanel) return;
+  try{
+    const values={};
+    for(const el of rightPanelControls()){
+      values[el.id]=(el.type==='checkbox'||el.type==='radio') ? !!el.checked : el.value;
+    }
+    localStorage.setItem(RIGHT_PANEL_STORAGE_KEY,JSON.stringify({version:1,values}));
+  }catch(_e){ /* localStorage may be unavailable in a restricted browser context. */ }
+}
+
+function restoreRightPanelState(){
+  let saved;
+  try{saved=JSON.parse(localStorage.getItem(RIGHT_PANEL_STORAGE_KEY)||'null');}catch(_e){return false;}
+  if(!saved || !saved.values || typeof saved.values!=='object') return false;
+  restoringRightPanel=true;
+  try{
+    for(const el of rightPanelControls()){
+      const value=saved.values[el.id];
+      if(value===undefined) continue;
+      if(el.type==='checkbox'||el.type==='radio') el.checked=!!value;
+      else if(el.tagName==='SELECT'){
+        if([...el.options].some(o=>o.value===String(value))) el.value=String(value);
+      }else el.value=String(value);
+    }
+    updateCalcMode();
+    return true;
+  }finally{restoringRightPanel=false;}
+}
+
+function savedActiveTab(){
+  try{
+    const name=localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    return ['qe','resolution','toolbox'].includes(name) ? name : 'qe';
+  }catch(_e){ return 'qe'; }
+}
+
+function enableRightPanelPersistence(){
+  for(const panelId of ['qePanel','resolutionPanel','toolboxPanel']){
+    const panel=$(panelId); if(!panel) continue;
+    panel.addEventListener('input',saveRightPanelState);
+    panel.addEventListener('change',saveRightPanelState);
+  }
+}
+
+setupAppHeader();
 
 // ==================== Local left-panel persistence ====================
 // Instrument/sample JSON files are the source of available choices and defaults.
@@ -1693,12 +1862,18 @@ async function initialize(){
   const restoredLocalState=restoreLeftPanelState();
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
+  updatePropagationVectorLabels(); ensureExtendedToolboxUI();
+  // Right-side controls are restored only after dynamic Toolbox controls exist and
+  // after the default geometry target has been initialized, so saved values win.
+  const restoredRightState=restoreRightPanelState();
+  enableRightPanelPersistence();
   $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));$('tabToolbox').addEventListener('click',()=>setActiveTab('toolbox'));
-  for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity']) $(id).addEventListener('input',()=>setToolboxFrom(id));
+  for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity','toolMass','toolField','toolJ','toolCal']) $(id).addEventListener('input',()=>setToolboxFrom(id));
   $('powderQ').addEventListener('input',()=>updatePowderRelation('powderQ'));$('powderTwoTheta').addEventListener('input',()=>updatePowderRelation('powderTwoTheta'));$('powderHW').addEventListener('input',()=>updatePowderRelation(powderRelationDriver));
   setToolboxFrom('toolLambda'); updatePowderRelation('powderTwoTheta');
+  setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
-  setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${restoredLocalState ? ' / local parameters restored' : ''}`);recalculate();
+  setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
 }
 initialize().catch(err=>{showError(err);setStatus('Configuration loading failed. Open the project through an HTTP server.');});
