@@ -14,7 +14,7 @@ const sampleEnvironments = new Map();
 // Four fixed background-scattering slots keep the sidebar compact.  Each slot
 // reuses the existing sample JSON data and is assigned a stable display color.
 const BACKGROUND_SLOTS=[
-  {id:"backgroundSelect1",rgb:[31,119,180]},   // blue
+  {id:"backgroundSelect1",rgb:[0,0,128]},      // navy
   {id:"backgroundSelect2",rgb:[165,42,42]},    // brown
   {id:"backgroundSelect3",rgb:[44,160,44]},    // green
   {id:"backgroundSelect4",rgb:[148,103,189]}   // purple
@@ -522,6 +522,24 @@ function calculateSingleCrystal(){
             // Treat the fixed direction periodically, but intersect only with the
             // actually scanned signed S2 interval.  This also handles ranges that
             // cross 0 deg without mirroring the negative side onto the positive side.
+            // A laboratory-fixed obstacle can intercept either the outgoing kf
+            // arm or the incident ki beam.  The fixed-angle drawing uses the
+            // sample as the origin: rotation = 0 deg points along the direct
+            // (outgoing) beam, while the incident ki source direction is the
+            // opposite ray, 180 deg.  Therefore a range around 0 deg is handled
+            // below as an ordinary kf/S2 block; only a range containing 180 deg
+            // (modulo 360 deg) blocks ki and makes every Q geometry inaccessible.
+            const blocksKi=[-360,0,360].some(shift=>{
+              const aa=a+shift, bb=b+shift;
+              return aa<=180 && 180<=bb;
+            });
+            if(blocksKi){
+              hwFixed.push(boundary.slice());
+              continue;
+            }
+
+            // Otherwise the obstacle only blocks the outgoing kf arm.  Intersect
+            // its signed angular interval with the actually scanned S2 range.
             for(const shift of [-360,0,360]){
               const lo=Math.max(a+shift,S2min);
               const hi=Math.min(b+shift,S2max);
@@ -755,7 +773,7 @@ function renderSingle(cache,index=0){
       name:`Accessible Q (${s2Min.toFixed(0)}° ≤ S2 ≤ ${s2Max.toFixed(0)}°)`,
       mode:"lines",
       line:{width:0},
-      fillcolor:"rgba(255,215,0,0.25)"
+      fillcolor:"rgba(255,215,0,0.20)"
     },
     {
       x:cache.Gpoints.map(p=>p.x),
@@ -819,11 +837,11 @@ function renderSingle(cache,index=0){
   if(cache.addDark){
     let fixedLegend=false, kfLegend=false, kiLegend=false;
     for(const r of (cache.darkFixed[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Fixed blocked range",showlegend:!fixedLegend,legendgroup:"dark-fixed",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)",hoverinfo:"skip"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Fixed blocked range",showlegend:!fixedLegend,legendgroup:"dark-fixed",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)",hoverinfo:"skip"});
       fixedLegend=true;
     }
     for(const r of (cache.darkKF[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)"});
       kfLegend=true;
     }
     for(const r of (cache.darkKI[i]||[])){
@@ -1139,7 +1157,7 @@ function calculatePowder(){
   const traces=[{
     x:[...qmin,...[...qmax].reverse()],
     y:[...hw,...[...hw].reverse()],
-    fill:"toself",fillcolor:"rgba(255,215,0,0.28)",
+    fill:"toself",fillcolor:"rgba(255,215,0,0.20)",
     line:{width:0},name:"Accessible QE range"
   }];
   const shapes=[],annotations=[];
