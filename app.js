@@ -467,9 +467,9 @@ function calculateSingleCrystal(){
   if(lambdaHalf) hwList=[0];
   else if(energyMode==="Ef fixed"){
     const EiMax=maxArray(rangeTable(inst).map(x=>Number(x.Ei)));
-    hwList=arange(0,EiMax-Ef,0.2);
+    hwList=arange(0,EiMax-Ef,0.1);
   } else {
-    hwList=arange(0,Ei,0.2);
+    hwList=arange(0,Ei,0.1);
   }
   if(hwList.length===0) hwList=[0];
 
@@ -691,6 +691,12 @@ function renderSingle(cache,index=0){
       marker:{color:"red",size:qIndex===3?9:7,symbol:magneticSymbols[qIndex]},
       hovertext:pts.map(p=>p.label),hovertemplate:"%{hovertext}<extra></extra>"
     });
+  }
+  const selectedS2=syncSingleNavigation(cache,i);
+  const selectedQ=selectedQAtS2(cache,i,selectedS2);
+  if(Number.isFinite(selectedQ)){
+    const phi=linspace(0,2*PI,361);
+    traces.push({x:phi.map(t=>selectedQ*Math.cos(t)),y:phi.map(t=>selectedQ*Math.sin(t)),mode:"lines",name:`S2 = ${selectedS2.toFixed(1)}°`,line:{color:"black",width:2,dash:"solid"},hovertemplate:`S2 = ${selectedS2.toFixed(1)}°<br>Q = ${selectedQ.toFixed(3)} Å⁻¹<extra></extra>`});
   }
   for(const ring of cache.ringData){
     traces.push({
@@ -1040,25 +1046,26 @@ function calculatePowder(){
     for(let n=1;n<20;n++){
       const q=n*base;
       if(q>Qlim) break;
-      shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color,dash:"dot",width:1}});
+      shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color,dash:"dot",width:2}});
       annotations.push({x:q,y:hwmax,text:`${n}${label}`,showarrow:false,xshift:15,yshift:20,font:{color}});
     }
   });
 
-  for(const [qIndex,kv] of enabledPropagationVectors().entries()){
+  const powderMagStyles={1:{dash:"dash",symbol:"circle"},2:{dash:"dash",symbol:"x"},3:{dash:"dash",symbol:"star"}};
+  for(const kv of enabledPropagationVectors()){
     const vals=new Set();
+    const K=hklToQ({astar:rv.astar,bstar:rv.bstar,cstar:rv.cstar},kv.hkl);
     for(let h=-20;h<=20;h++) for(let k=-20;k<=20;k++) for(let l=-20;l<=20;l++){
       const G=add(add(scale(rv.astar,h),scale(rv.bstar,k)),scale(rv.cstar,l));
-      const K=add(add(scale(rv.astar,kv[0]),scale(rv.bstar,kv[1])),scale(rv.cstar,kv[2]));
-      for(const s of [1,-1]){
-        const q=norm(add(G,scale(K,s)));
+      for(const sign of [1,-1]){
+        const q=norm(add(G,scale(K,sign)));
         if(q>=1e-6&&q<=Qlim) vals.add(q.toFixed(6));
       }
     }
-    [...vals].map(Number).sort((a,b)=>a-b).forEach(q=>{
-      shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color:"black",dash:"dot",width:1}});
-      annotations.push({x:q,y:hwmax,text:`q${qIndex+1}*`,showarrow:false,xshift:15,yshift:10+10*qIndex,font:{color:"black"}});
-    });
+    const qs=[...vals].map(Number).sort((a,b)=>a-b), style=powderMagStyles[kv.index];
+    qs.forEach((q,j)=>traces.push({x:[q,q],y:[0,hwmax],mode:"lines",name:`Magnetic Bragg peaks: k${kv.index}`,legendgroup:`powder-k${kv.index}`,showlegend:j===0,line:{color:"red",dash:style.dash,width:1},hovertemplate:`k${kv.index}<br>Q = ${q.toFixed(3)} Å⁻¹<extra></extra>`}));
+    // Keep the circle/x/star visual key at the top of each magnetic line.
+    if(qs.length) traces.push({x:qs,y:qs.map(()=>hwmax),mode:"markers",showlegend:false,legendgroup:`powder-k${kv.index}`,marker:{color:"red",size:kv.index===3?9:7,symbol:style.symbol},hoverinfo:"skip"});
   }
 
   for(const bg of selectedBackgrounds()){
@@ -1087,6 +1094,28 @@ function calculatePowder(){
     });
   }
 
+  // Selected S2 guide: Q changes with energy transfer, so draw the full
+  // constant-S2 trajectory Q(hw) rather than a vertical line fixed at hw=0.
+  let pS2=Number($('powderS2Entry')?.value);
+  if(!Number.isFinite(pS2)) pS2=Math.max(0,S2min);
+  pS2=Math.max(0,Math.min(180,pS2));
+  if($('powderS2Slider')){$('powderS2Slider').min=0;$('powderS2Slider').max=180;$('powderS2Slider').step=0.1;$('powderS2Slider').value=pS2;}
+  if($('powderS2Entry')) $('powderS2Entry').value=pS2.toFixed(1);
+  if($('powderS2Value')) $('powderS2Value').textContent=`${pS2.toFixed(1)}°`;
+  const s2CurveQ=[], s2CurveHW=[];
+  for(const w of hw){
+    let Ei,Ef;
+    if(energyMode==='Ef fixed'){ Ef=E; Ei=E+w; }
+    else { Ei=E; Ef=E-w; }
+    if(!(Ei>0&&Ef>0)) continue;
+    const ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
+    const q=Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(pS2))));
+    s2CurveQ.push(q); s2CurveHW.push(w);
+  }
+  if(s2CurveQ.length){
+    traces.push({x:s2CurveQ,y:s2CurveHW,mode:'lines',name:`S2 = ${pS2.toFixed(1)}°`,line:{color:'black',width:2,dash:'solid'},hovertemplate:`S2 = ${pS2.toFixed(1)}°<br>Q = %{x:.3f} Å⁻¹<br>ħω = %{y:.1f} meV<extra></extra>`});
+  }
+
   const qMargin=0.1*Qlim;
   const title=`${inst.name||"Instrument"} | ${energyMode==="Ef fixed"?"Ef":"Ei"}=${E.toFixed(2)} meV | `+
     `a=${lc.a.toFixed(3)}, b=${lc.b.toFixed(3)}, c=${lc.c.toFixed(3)} Å<br>`+
@@ -1096,8 +1125,8 @@ function calculatePowder(){
     title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
     xaxis:{title:"Q (Å⁻¹)",range:[0,Qlim+qMargin],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
     yaxis:{title:"ħω (meV)",range:[0,hwmax*1.1||1],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
-    plot_bgcolor:"white",paper_bgcolor:"white",legend:{x:0.02,y:0.98},
-    shapes,annotations,margin:{l:66,r:34,t:80,b:70}
+    plot_bgcolor:"white",paper_bgcolor:"white",legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"},
+    shapes,annotations,margin:{l:66,r:34,t:80,b:110}
   },{responsive:true});
 }
 
@@ -1132,6 +1161,51 @@ function syncGeometryHWSlider(cache){
   output.textContent=`${Number(entry.value||0).toFixed(1)} meV`;
 }
 
+
+function ensureQESliderControls(){
+  if(!$('hwEntry')){
+    const row=$('hwSlider')?.closest('.energy-slider-row');
+    if(row){
+      row.style.display='grid'; row.style.gridTemplateColumns='1fr auto auto'; row.style.gap='10px'; row.style.alignItems='end';
+      const wrap=document.createElement('label'); wrap.textContent='ħω (meV)';
+      const input=document.createElement('input'); input.id='hwEntry'; input.type='number'; input.step='0.1'; input.value='0.0'; input.style.width='88px'; wrap.appendChild(input); row.appendChild(wrap);
+      const srow=document.createElement('div'); srow.className='energy-slider-row'; srow.style.display='grid'; srow.style.gridTemplateColumns='1fr auto auto'; srow.style.gap='10px'; srow.style.alignItems='end';
+      srow.innerHTML='<label>S2<input id="s2Slider" type="range" min="0" max="180" step="0.1" value="0"></label><output id="s2Value">0.0°</output><label>S2 (deg)<input id="s2Entry" type="number" step="0.1" value="0.0" style="width:88px"></label>';
+      row.insertAdjacentElement('afterend',srow);
+    }
+  }
+  if(!$('powderS2Slider')){
+    const card=$('powderPlot')?.closest('.powder-plot-card');
+    if(card){
+      const row=document.createElement('div'); row.className='energy-slider-row'; row.style.display='grid'; row.style.gridTemplateColumns='1fr auto auto'; row.style.gap='10px'; row.style.alignItems='end'; row.style.marginBottom='8px';
+      row.innerHTML='<label>S2<input id="powderS2Slider" type="range" min="0" max="180" step="0.1" value="0"></label><output id="powderS2Value">0.0°</output><label>S2 (deg)<input id="powderS2Entry" type="number" step="0.1" value="0.0" style="width:88px"></label>';
+      card.insertBefore(row,$('powderPlot'));
+    }
+  }
+}
+function nearestHWIndex(cache,value){
+  let best=0, d=Infinity; cache.hwList.forEach((x,i)=>{const di=Math.abs(x-value); if(di<d){d=di;best=i;}}); return best;
+}
+function syncSingleNavigation(cache,index){
+  const i=Math.max(0,Math.min(index,cache.hwList.length-1));
+  if($('hwSlider')) $('hwSlider').value=i;
+  if($('hwEntry')) $('hwEntry').value=cache.hwList[i].toFixed(1);
+  if($('hwValue')) $('hwValue').textContent=`${cache.hwList[i].toFixed(1)} meV`;
+  const lo=0, hi=180;
+  const slider=$('s2Slider'), entry=$('s2Entry');
+  if(slider){ slider.min=lo; slider.max=hi; slider.step=0.1; }
+  let v=Number(entry?.value); if(!Number.isFinite(v)) v=Math.max(0,num('S2min')); v=Math.max(lo,Math.min(hi,v));
+  if(slider) slider.value=v; if(entry) entry.value=v.toFixed(1); if($('s2Value')) $('s2Value').textContent=`${v.toFixed(1)}°`;
+  return v;
+}
+function selectedQAtS2(cache,index,s2){
+  const hw=cache.hwList[index]; let Ei,Ef;
+  if(cache.energyMode==='Ef fixed'){Ef=cache.Ef;Ei=Ef+hw;} else {Ei=cache.Ei;Ef=Ei-hw;}
+  if(!(Ei>0&&Ef>0)) return NaN;
+  const ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
+  return Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
+}
+function updatePowderS2Line(){ calculatePowder(); }
 function recalculate(){
   clearError();
   updateEnergyLabel();
@@ -1163,11 +1237,7 @@ $("instrument").addEventListener("change",()=>{
 for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.se).addEventListener("change",()=>applySampleEnvironmentDefaults(slot)); }
 BACKGROUND_SLOTS.forEach(slot=>$(slot.id).addEventListener("change",scheduleRecalc));
 
-$("hwSlider").addEventListener("input",()=>{
-  if(singleCache){
-    renderSingle(singleCache,Number($("hwSlider").value));
-  }
-});
+$("hwSlider").addEventListener("input",()=>{ if(singleCache) renderSingle(singleCache,Number($("hwSlider").value)); });
 
 $("geomHWSlider").addEventListener("input",()=>{
   const v=Number($("geomHWSlider").value);
@@ -1862,7 +1932,7 @@ async function initialize(){
   const restoredLocalState=restoreLeftPanelState();
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
-  updatePropagationVectorLabels(); ensureExtendedToolboxUI();
+  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureQESliderControls();
   // Right-side controls are restored only after dynamic Toolbox controls exist and
   // after the default geometry target has been initialized, so saved values win.
   const restoredRightState=restoreRightPanelState();
@@ -1870,6 +1940,11 @@ async function initialize(){
   $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));$('tabToolbox').addEventListener('click',()=>setActiveTab('toolbox'));
   for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity','toolMass','toolField','toolJ','toolCal']) $(id).addEventListener('input',()=>setToolboxFrom(id));
   $('powderQ').addEventListener('input',()=>updatePowderRelation('powderQ'));$('powderTwoTheta').addEventListener('input',()=>updatePowderRelation('powderTwoTheta'));$('powderHW').addEventListener('input',()=>updatePowderRelation(powderRelationDriver));
+  $('hwEntry').addEventListener('change',()=>{if(singleCache){const i=nearestHWIndex(singleCache,Number($('hwEntry').value));renderSingle(singleCache,i);saveRightPanelState();}});
+  $('s2Slider').addEventListener('input',()=>{$('s2Entry').value=Number($('s2Slider').value).toFixed(1);if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
+  $('s2Entry').addEventListener('change',()=>{if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
+  $('powderS2Slider').addEventListener('input',()=>{$('powderS2Entry').value=Number($('powderS2Slider').value).toFixed(1);updatePowderS2Line();});
+  $('powderS2Entry').addEventListener('change',updatePowderS2Line);
   setToolboxFrom('toolLambda'); updatePowderRelation('powderTwoTheta');
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
