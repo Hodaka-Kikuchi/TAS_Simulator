@@ -120,3 +120,7 @@
 .dark-asset{border:1px solid #e2e2e2;border-radius:6px;padding:7px;margin-top:7px}
 .dark-asset-head{display:grid;grid-template-columns:minmax(105px,.75fr) minmax(150px,1.25fr);gap:6px;align-items:end;margin-bottom:5px}
 .dark-asset .dark-table{margin-top:5px}
+
+/* v90: optional nuclear Bragg-peak labels, between legend/plot and Q-E sliders. */
+.nuclear-label-control{padding:2px 20px 4px;display:flex;align-items:center}
+.nuclear-label-control .checkbox-label{min-height:24px;margin:0}

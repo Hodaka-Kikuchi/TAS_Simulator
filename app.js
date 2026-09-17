@@ -643,6 +643,53 @@ function singleMarkerSizes(fullSpan,visibleSpan,peakCount){
   return {nuclear:Math.max(2.5,6*scale),magnetic:Math.max(3.0,7*scale),star:Math.max(3.5,9*scale)};
 }
 
+function singleNuclearLabelStyle(fullSpan,visibleSpan){
+  // Scale both font size and marker-to-label clearance with zoom.  A fixed
+  // fraction of the visible Q span looks progressively tighter in screen pixels
+  // once the text/markers grow, so increase that fraction as we zoom in.
+  const span=Math.min(fullSpan,Math.max(1e-9,Number(visibleSpan)||fullSpan));
+  const zoom=Math.max(1,fullSpan/span);
+  const logZoom=Math.max(0,Math.log2(zoom));
+  const fontSize=Math.min(16,8+2.5*logZoom);
+  const offsetFraction=Math.min(0.055,0.022+0.006*logZoom);
+  const offset=Math.max(span*offsetFraction,fullSpan*0.0015);
+  return {offset,fontSize};
+}
+
+function bindSingleZoomLabelScaling(cache,Qplot){
+  const gd=$("singlePlot");
+  if(!gd || typeof gd.on!=="function") return;
+  if(gd.__tasLabelRelayoutHandler && typeof gd.removeListener==="function")
+    gd.removeListener("plotly_relayout",gd.__tasLabelRelayoutHandler);
+  const fullSpan=2*Qplot;
+  const applyOffset=span=>{
+    const idx=(gd.data||[]).findIndex(tr=>tr.meta==="nuclear-labels");
+    if(idx<0) return;
+    const style=singleNuclearLabelStyle(fullSpan,span);
+    const pts=cache.Gpoints.filter(p=>p.label!=="");
+    Plotly.restyle(gd,{
+      x:[pts.map(p=>p.x)],
+      y:[pts.map(p=>p.y+style.offset)],
+      "textfont.size":style.fontSize
+    },[idx]);
+  };
+  const handler=ev=>{
+    if(ev?.["xaxis.autorange"]===true || ev?.["yaxis.autorange"]===true){ applyOffset(fullSpan); return; }
+    const x0=Number(ev?.["xaxis.range[0]"]),x1=Number(ev?.["xaxis.range[1]"]);
+    const y0=Number(ev?.["yaxis.range[0]"]),y1=Number(ev?.["yaxis.range[1]"]);
+    if(Number.isFinite(x0)&&Number.isFinite(x1)){ applyOffset(Math.abs(x1-x0)); return; }
+    if(Number.isFinite(y0)&&Number.isFinite(y1)){ applyOffset(Math.abs(y1-y0)); return; }
+    requestAnimationFrame(()=>{
+      const xr=gd?._fullLayout?.xaxis?.range, yr=gd?._fullLayout?.yaxis?.range;
+      if(Array.isArray(xr)&&xr.length===2&&xr.every(Number.isFinite)) applyOffset(Math.abs(xr[1]-xr[0]));
+      else if(Array.isArray(yr)&&yr.length===2&&yr.every(Number.isFinite)) applyOffset(Math.abs(yr[1]-yr[0]));
+      else applyOffset(fullSpan);
+    });
+  };
+  gd.__tasLabelRelayoutHandler=handler;
+  gd.on("plotly_relayout",handler);
+}
+
 function bindSingleZoomMarkerScaling(cache,Qplot){
   const gd=$("singlePlot");
   if(!gd || typeof gd.on!=="function") return;
@@ -695,7 +742,6 @@ function renderSingle(cache,index=0){
     ...cache.Gpoints.map(p => Math.hypot(p.x, p.y))
   );
 
-  const labelOffset = 0.03 * qMax;
   const s2Min = num("S2min");
   const s2Max = cache.S2list[i];
   const Qplot=1.2*Math.max(...cache.QmaxList);
@@ -720,27 +766,22 @@ function renderSingle(cache,index=0){
       hovertext:cache.Gpoints.map(p=>p.label),
       hovertemplate:"%{hovertext}<extra></extra>"
     },
-    {
-      x:cache.Gpoints
-        .filter(p=>p.label !== "")
-        .map(p=>p.x),
-
-      y:cache.Gpoints
-        .filter(p=>p.label !== "")
-        .map(p=>p.y + labelOffset),
-
-      mode:"text",
-
-      text:cache.Gpoints
-        .filter(p=>p.label !== "")
-        .map(p=>p.label),
-
-      textposition:"middle center",
-      textfont:{color:"black",size:8},
-      showlegend:false,
-      hoverinfo:"skip"
-    },
   ];
+  if($("displayNuclearLabels")?.checked){
+    const labelPts=cache.Gpoints.filter(p=>p.label!=="");
+    const labelStyle=singleNuclearLabelStyle(2*Qplot,2*Qplot);
+    traces.push({
+      x:labelPts.map(p=>p.x),
+      y:labelPts.map(p=>p.y+labelStyle.offset),
+      mode:"text",
+      text:labelPts.map(p=>p.label),
+      textposition:"middle center",
+      textfont:{color:"black",size:labelStyle.fontSize},
+      showlegend:false,
+      hoverinfo:"skip",
+      meta:"nuclear-labels"
+    });
+  }
   // Keep k1/k2/k3 visually distinct while retaining one magnetic-peak color.
   const magneticSymbols={1:"circle",2:"x",3:"star"};
   for(let qIndex=1;qIndex<=3;qIndex++){
@@ -811,6 +852,7 @@ function renderSingle(cache,index=0){
     legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"}
   },{responsive:true});
   bindSingleZoomMarkerScaling(cache,Qplot);
+  bindSingleZoomLabelScaling(cache,Qplot);
 
   $("hwValue").textContent=`${cache.hwList[i].toFixed(1)} meV`;
   renderGeometry(cache,i);
@@ -1221,6 +1263,17 @@ function syncGeometryHWSlider(cache){
   output.textContent=`${Number(entry.value||0).toFixed(1)} meV`;
 }
 
+
+function ensureNuclearLabelControl(){
+  if($("displayNuclearLabels")) return;
+  const plot=$("singlePlot");
+  const sliderRow=$("hwSlider")?.closest(".energy-slider-row");
+  if(!plot || !sliderRow) return;
+  const row=document.createElement("div");
+  row.className="nuclear-label-control";
+  row.innerHTML='<label class="checkbox-label"><input id="displayNuclearLabels" type="checkbox" checked><span>Display labels of nuclear Bragg peaks</span></label>';
+  sliderRow.parentNode.insertBefore(row,sliderRow);
+}
 
 function ensureQESliderControls(){
   if(!$('hwEntry')){
@@ -1992,7 +2045,7 @@ async function initialize(){
   const restoredLocalState=restoreLeftPanelState();
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
-  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureQESliderControls();
+  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls();
   // Right-side controls are restored only after dynamic Toolbox controls exist and
   // after the default geometry target has been initialized, so saved values win.
   const restoredRightState=restoreRightPanelState();
@@ -2005,6 +2058,7 @@ async function initialize(){
   $('s2Entry').addEventListener('change',()=>{if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
   $('powderS2Slider').addEventListener('input',()=>{$('powderS2Entry').value=Number($('powderS2Slider').value).toFixed(1);updatePowderS2Line();});
   $('powderS2Entry').addEventListener('change',updatePowderS2Line);
+  $('displayNuclearLabels').addEventListener('change',()=>{if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));saveRightPanelState();});
   setToolboxFrom('toolLambda'); updatePowderRelation('powderTwoTheta');
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
