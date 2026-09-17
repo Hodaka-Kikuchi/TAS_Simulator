@@ -78,8 +78,8 @@
 .background-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
 .background-label{display:flex;align-items:center;gap:4px}
 .bg-swatch{display:inline-block;width:14px;height:3px;border-radius:2px;flex:0 0 auto}
-.bg-swatch.bg1{background:rgb(214,39,40)}
-.bg-swatch.bg2{background:rgb(31,119,180)}
+.bg-swatch.bg1{background:rgb(31,119,180)}
+.bg-swatch.bg2{background:rgb(165,42,42)}
 .bg-swatch.bg3{background:rgb(44,160,44)}
 .bg-swatch.bg4{background:rgb(148,103,189)}
 

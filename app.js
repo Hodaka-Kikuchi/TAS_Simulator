@@ -14,10 +14,10 @@ const sampleEnvironments = new Map();
 // Four fixed background-scattering slots keep the sidebar compact.  Each slot
 // reuses the existing sample JSON data and is assigned a stable display color.
 const BACKGROUND_SLOTS=[
-  {id:"backgroundSelect1",rgb:[214,39,40]},
-  {id:"backgroundSelect2",rgb:[31,119,180]},
-  {id:"backgroundSelect3",rgb:[44,160,44]},
-  {id:"backgroundSelect4",rgb:[148,103,189]}
+  {id:"backgroundSelect1",rgb:[31,119,180]},   // blue
+  {id:"backgroundSelect2",rgb:[165,42,42]},    // brown
+  {id:"backgroundSelect3",rgb:[44,160,44]},    // green
+  {id:"backgroundSelect4",rgb:[148,103,189]}   // purple
 ];
 function selectedBackgrounds(){
   return BACKGROUND_SLOTS.map((slot,index)=>({slot,index,key:$(slot.id)?.value||""}))
@@ -556,12 +556,16 @@ function calculateSingleCrystal(){
 
   if(regions.length===0) throw new Error("No accessible energy-transfer points were generated.");
 
-  const Qmax0=QmaxList[0];
+  // Generate Bragg peaks over the same radial range shown by the Single Crystal plot.
+  // Using QmaxList[0] here made the index search depend on the first energy point
+  // and could truncate one reciprocal-space direction.  Search out to 1.2 times
+  // the instrument's maximum reachable Q over the full calculated energy range.
+  const instrumentQmax=Math.max(...QmaxList);
+  const QplotLattice=1.2*instrumentQmax;
   const Uq=hklToQ(rl,U), Vq=hklToQ(rl,V);
   const Ulen=norm(Uq), Vlen=norm(Vq);
-  const Mmax=Math.ceil(Qmax0/Ulen)+1, Nmax=Math.ceil(Qmax0/Vlen)+1;
+  const Mmax=Math.ceil(QplotLattice/Ulen)+2, Nmax=Math.ceil(QplotLattice/Vlen)+2;
   const Gpoints=[], magPoints=[];
-  const QplotLattice=2*Qmax0;
   // Magnetic satellites are observable in this 2D TAS view only when their
   // propagation vector itself lies in the selected scattering plane.
   const propagationVectors=enabledPropagationVectors().filter(q=>{
@@ -630,6 +634,60 @@ function calculateSingleCrystal(){
   };
 }
 
+function singleMarkerSizes(fullSpan,visibleSpan,peakCount){
+  // Keep dense thermal maps readable at the full view, then grow markers smoothly
+  // as the user zooms in. Sizes remain bounded so neither view becomes extreme.
+  const density=Math.max(0.50,Math.min(1,Math.sqrt(90/Math.max(90,peakCount||0))));
+  const zoom=Math.max(1,Math.sqrt(Math.max(1,fullSpan/Math.max(visibleSpan,1e-9))));
+  const scale=Math.min(1.55,density*zoom);
+  return {nuclear:Math.max(2.5,6*scale),magnetic:Math.max(3.0,7*scale),star:Math.max(3.5,9*scale)};
+}
+
+function bindSingleZoomMarkerScaling(cache,Qplot){
+  const gd=$("singlePlot");
+  if(!gd || typeof gd.on!=="function") return;
+  if(gd.__tasMarkerRelayoutHandler && typeof gd.removeListener==="function")
+    gd.removeListener("plotly_relayout",gd.__tasMarkerRelayoutHandler);
+  const fullSpan=2*Qplot, peakCount=cache.Gpoints.length+cache.magPoints.length;
+  const applySizes=span=>{
+    // Never let a zoom-out span larger than the original view make markers smaller
+    // than their initial density-scaled size.
+    span=Math.min(fullSpan,Math.max(1e-9,Number(span)||fullSpan));
+    const sizes=singleMarkerSizes(fullSpan,span,peakCount);
+    const updates=[],indices=[];
+    (gd.data||[]).forEach((tr,j)=>{
+      if(tr.name==="Nuclear Bragg peaks"){updates.push(sizes.nuclear);indices.push(j);}
+      else if(/^Magnetic Bragg peaks: k[123]$/.test(tr.name||"")){
+        const k=Number((tr.name||"").match(/k([123])$/)?.[1]||1);
+        updates.push(k===3?sizes.star:sizes.magnetic);indices.push(j);
+      }
+    });
+    indices.forEach((idx,n)=>Plotly.restyle(gd,{"marker.size":updates[n]},[idx]));
+  };
+  const handler=ev=>{
+    // Reset/Autoscale events do not always contain explicit range[0]/range[1].
+    // Handle them explicitly, otherwise the enlarged zoom-in marker size can remain.
+    if(ev?.["xaxis.autorange"]===true || ev?.["yaxis.autorange"]===true){
+      applySizes(fullSpan);
+      return;
+    }
+    const x0=Number(ev?.["xaxis.range[0]"]),x1=Number(ev?.["xaxis.range[1]"]);
+    const y0=Number(ev?.["yaxis.range[0]"]),y1=Number(ev?.["yaxis.range[1]"]);
+    if(Number.isFinite(x0)&&Number.isFinite(x1)){ applySizes(Math.abs(x1-x0)); return; }
+    if(Number.isFinite(y0)&&Number.isFinite(y1)){ applySizes(Math.abs(y1-y0)); return; }
+
+    // Some Plotly zoom-out/reset paths only expose the final range through _fullLayout.
+    // Read it after Plotly has finished applying the relayout event.
+    requestAnimationFrame(()=>{
+      const xr=gd?._fullLayout?.xaxis?.range, yr=gd?._fullLayout?.yaxis?.range;
+      if(Array.isArray(xr)&&xr.length===2&&xr.every(Number.isFinite)) applySizes(Math.abs(xr[1]-xr[0]));
+      else if(Array.isArray(yr)&&yr.length===2&&yr.every(Number.isFinite)) applySizes(Math.abs(yr[1]-yr[0]));
+      else applySizes(fullSpan);
+    });
+  };
+  gd.__tasMarkerRelayoutHandler=handler; gd.on("plotly_relayout",handler);
+}
+
 function renderSingle(cache,index=0){
   const i=Math.max(0,Math.min(index,cache.regions.length-1));
   const boundary=cache.regions[i];
@@ -640,6 +698,8 @@ function renderSingle(cache,index=0){
   const labelOffset = 0.03 * qMax;
   const s2Min = num("S2min");
   const s2Max = cache.S2list[i];
+  const Qplot=1.2*Math.max(...cache.QmaxList);
+  const initialMarkerSizes=singleMarkerSizes(2*Qplot,2*Qplot,cache.Gpoints.length+cache.magPoints.length);
 
   const traces=[
     {
@@ -649,14 +709,14 @@ function renderSingle(cache,index=0){
       name:`Accessible Q (${s2Min.toFixed(0)}° ≤ S2 ≤ ${s2Max.toFixed(0)}°)`,
       mode:"lines",
       line:{width:0},
-      fillcolor:"rgba(255,0,0,0.15)"
+      fillcolor:"rgba(255,215,0,0.25)"
     },
     {
       x:cache.Gpoints.map(p=>p.x),
       y:cache.Gpoints.map(p=>p.y),
       mode:"markers",
       name:"Nuclear Bragg peaks",
-      marker:{color:"black",size:6},
+      marker:{color:"black",size:initialMarkerSizes.nuclear},
       hovertext:cache.Gpoints.map(p=>p.label),
       hovertemplate:"%{hovertext}<extra></extra>"
     },
@@ -688,7 +748,7 @@ function renderSingle(cache,index=0){
     if(!pts.length) continue;
     traces.push({
       x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",name:`Magnetic Bragg peaks: k${qIndex}`,
-      marker:{color:"red",size:qIndex===3?9:7,symbol:magneticSymbols[qIndex]},
+      marker:{color:"red",size:qIndex===3?initialMarkerSizes.star:initialMarkerSizes.magnetic,symbol:magneticSymbols[qIndex]},
       hovertext:pts.map(p=>p.label),hovertemplate:"%{hovertext}<extra></extra>"
     });
   }
@@ -696,12 +756,12 @@ function renderSingle(cache,index=0){
   const selectedQ=selectedQAtS2(cache,i,selectedS2);
   if(Number.isFinite(selectedQ)){
     const phi=linspace(0,2*PI,361);
-    traces.push({x:phi.map(t=>selectedQ*Math.cos(t)),y:phi.map(t=>selectedQ*Math.sin(t)),mode:"lines",name:`S2 = ${selectedS2.toFixed(1)}°`,line:{color:"black",width:2,dash:"solid"},hovertemplate:`S2 = ${selectedS2.toFixed(1)}°<br>Q = ${selectedQ.toFixed(3)} Å⁻¹<extra></extra>`});
+    traces.push({x:phi.map(t=>selectedQ*Math.cos(t)),y:phi.map(t=>selectedQ*Math.sin(t)),mode:"lines",name:`S2 = ${selectedS2.toFixed(1)}°`,line:{color:"black",width:1.2,dash:"solid"},hovertemplate:`S2 = ${selectedS2.toFixed(1)}°<br>Q = ${selectedQ.toFixed(3)} Å⁻¹<extra></extra>`});
   }
   for(const ring of cache.ringData){
     traces.push({
       x:ring.x,y:ring.y,mode:"lines",showlegend:false,
-      line:{color:ring.color,width:3},hovertemplate:ring.hover+"<extra></extra>"
+      line:{color:ring.color,width:1.5},hovertemplate:ring.hover+"<extra></extra>"
     });
   }
   // Match the Powder view: show one legend entry for each selected BG slot
@@ -711,7 +771,7 @@ function renderSingle(cache,index=0){
     traces.push({
       x:[null],y:[null],mode:"lines",
       name:`BG${bg.index+1}: ${sample.name||bg.key}`,
-      line:{color:backgroundColor(bg.slot,1),width:3},
+      line:{color:backgroundColor(bg.slot,1),width:1.5},
       hoverinfo:"skip",showlegend:true
     });
   }
@@ -733,7 +793,6 @@ function renderSingle(cache,index=0){
 
   const energyText=cache.energyMode==="Ef fixed"?`Ef=${cache.Ef.toFixed(2)} meV`:`Ei=${cache.Ei.toFixed(2)} meV`;
   const lam=cache.lambdaHalf?" | λ/2":"";
-  const Qplot=1.2*Math.max(...cache.QmaxList);
   const title=`${cache.inst.name||"Instrument"} | ${energyText}${lam}<br>`+
     `a=${cache.lc.a.toFixed(3)}, b=${cache.lc.b.toFixed(3)}, c=${cache.lc.c.toFixed(3)} Å<br>`+
     `α=${cache.lc.alpha.toFixed(1)}, β=${cache.lc.beta.toFixed(1)}, γ=${cache.lc.gamma.toFixed(1)}° | `+
@@ -751,6 +810,7 @@ function renderSingle(cache,index=0){
     margin:{l:60,r:20,t:92,b:96},
     legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"}
   },{responsive:true});
+  bindSingleZoomMarkerScaling(cache,Qplot);
 
   $("hwValue").textContent=`${cache.hwList[i].toFixed(1)} meV`;
   renderGeometry(cache,i);
@@ -1037,7 +1097,7 @@ function calculatePowder(){
   const traces=[{
     x:[...qmin,...[...qmax].reverse()],
     y:[...hw,...[...hw].reverse()],
-    fill:"toself",fillcolor:"rgba(255,150,150,0.35)",
+    fill:"toself",fillcolor:"rgba(255,215,0,0.28)",
     line:{width:0},name:"Accessible QE range"
   }];
   const shapes=[],annotations=[];
@@ -1088,7 +1148,7 @@ function calculatePowder(){
         x:[p.q,p.q],y:[0,hwmax],mode:"lines",
         name:`BG${bg.index+1}: ${sample.name||bg.key}`,
         legendgroup:`background-scattering-${bg.index}`,showlegend:index===0,
-        line:{color:backgroundColor(bg.slot,0.20+0.75*ratio),width:3},
+        line:{color:backgroundColor(bg.slot,0.20+0.75*ratio),width:1.5},
         hovertemplate:`BG${bg.index+1}: ${sample.name||bg.key}${hkl}<br>Q = ${p.q.toFixed(3)} Å⁻¹<br>I = ${intensity.toFixed(1)}<extra></extra>`
       });
     });
@@ -1113,7 +1173,7 @@ function calculatePowder(){
     s2CurveQ.push(q); s2CurveHW.push(w);
   }
   if(s2CurveQ.length){
-    traces.push({x:s2CurveQ,y:s2CurveHW,mode:'lines',name:`S2 = ${pS2.toFixed(1)}°`,line:{color:'black',width:2,dash:'solid'},hovertemplate:`S2 = ${pS2.toFixed(1)}°<br>Q = %{x:.3f} Å⁻¹<br>ħω = %{y:.1f} meV<extra></extra>`});
+    traces.push({x:s2CurveQ,y:s2CurveHW,mode:'lines',name:`S2 = ${pS2.toFixed(1)}°`,line:{color:'black',width:1.2,dash:'solid'},hovertemplate:`S2 = ${pS2.toFixed(1)}°<br>Q = %{x:.3f} Å⁻¹<br>ħω = %{y:.1f} meV<extra></extra>`});
   }
 
   const qMargin=0.1*Qlim;
