@@ -836,17 +836,17 @@ function renderSingle(cache,index=0){
   }
   if(cache.addDark){
     let fixedLegend=false, kfLegend=false, kiLegend=false;
-    for(const r of (cache.darkFixed[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Fixed blocked range",showlegend:!fixedLegend,legendgroup:"dark-fixed",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)",hoverinfo:"skip"});
-      fixedLegend=true;
+    for(const r of (cache.darkKI[i]||[])){
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
+      kiLegend=true;
     }
     for(const r of (cache.darkKF[i]||[])){
       traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)"});
       kfLegend=true;
     }
-    for(const r of (cache.darkKI[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
-      kiLegend=true;
+    for(const r of (cache.darkFixed[i]||[])){
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (fixed)",showlegend:!fixedLegend,legendgroup:"dark-fixed",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)",hoverinfo:"skip"});
+      fixedLegend=true;
     }
   }
 
