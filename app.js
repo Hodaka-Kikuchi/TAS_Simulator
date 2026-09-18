@@ -98,6 +98,21 @@ function updateOrientationReferenceUI(){
   const mode=$('orientationReference')?.value || 'bragg';
   $('braggReferenceInputs')?.classList.toggle('hidden',mode!=='bragg');
 }
+
+function updateGeometryQuickTargetButtons(){
+  const mode=$('orientationReference')?.value || 'perpU';
+  const bragg=mode==='bragg';
+  $('geomPerpU')?.classList.toggle('hidden',bragg);
+  $('geomPerpV')?.classList.toggle('hidden',bragg);
+  $('geomSetBragg')?.classList.toggle('hidden',!bragg);
+
+  const showDark=!!$('addDark')?.checked;
+  for(let slot=1;slot<=3;slot++){
+    const ids=darkAssetIds(slot);
+    const visible=showDark && !!$(ids.enable)?.checked && checkedValue(ids.ref)==='Reference Q';
+    $(`geomSetRefQ${slot}`)?.classList.toggle('hidden',!visible);
+  }
+}
 function formatHKL(v){
   return v.map(x=>Math.abs(x-Math.round(x))<1e-10?String(Math.round(x)):x.toFixed(3)).join(",");
 }
@@ -355,6 +370,7 @@ function updateDarkReferenceUI(slot){
   // UI state cannot leave the row in the wrong visibility state.
   row.classList.toggle("hidden",!show);
   row.hidden=!show;
+  updateGeometryQuickTargetButtons();
 }
 
 function applySampleEnvironmentDefaults(slot=1){
@@ -1504,11 +1520,16 @@ function setGeometryPerpendicularCondition(mode){
     const phiTarget=deg2rad(phiTargetDeg), qx=qNorm*Math.cos(phiTarget), qy=qNorm*Math.sin(phiTarget);
     const det=ux*vy-uy*vx; if(Math.abs(det)<=1e-12) throw new Error("U and V do not define an independent scattering plane.");
     const aa=(qx*vy-qy*vx)/det, bb=(ux*qy-uy*qx)/det;
-    setGeometryTargetHKL([aa*U[0]+bb*V[0],aa*U[1]+bb*V[1],aa*U[2]+bb*V[2]]);
+    setGeometryTargetHKL([aa*U[0]+bb*V[0],aa*U[1]+bb*V[1],aa*U[2]+bb*V[2]].map(x=>Number(x.toFixed(3))));
   }catch(err){ console.error(err); alert(err?.message||String(err)); }
 }
 function setGeometryKiPerpU(){ setGeometryPerpendicularCondition("perpU"); }
 function setGeometryKiPerpV(){ setGeometryPerpendicularCondition("perpV"); }
+function setGeometryTargetFromBragg(){ setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]); }
+function setGeometryTargetFromDarkRef(slot){
+  const ids=darkAssetIds(slot);
+  setGeometryTargetHKL([num(ids.refH),num(ids.refK),num(ids.refL)]);
+}
 
 function syncGeometryHWSlider(cache){
   const slider=$("geomHWSlider"), output=$("geomHWValue"), entry=$("geomHW");
@@ -1626,6 +1647,8 @@ $("geomSetU").addEventListener("click",setGeometryTargetFromU);
 $("geomSetV").addEventListener("click",setGeometryTargetFromV);
 $("geomPerpU").addEventListener("click",setGeometryKiPerpU);
 $("geomPerpV").addEventListener("click",setGeometryKiPerpV);
+$("geomSetBragg").addEventListener("click",setGeometryTargetFromBragg);
+for(let slot=1;slot<=3;slot++) $(`geomSetRefQ${slot}`).addEventListener("click",()=>setGeometryTargetFromDarkRef(slot));
 
 document.querySelectorAll("input,select").forEach(el=>{
   if([
@@ -2332,7 +2355,9 @@ async function initialize(){
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
-  updateOrientationReferenceUI(); $('orientationReference')?.addEventListener('change',()=>{updateOrientationReferenceUI();recalculate();});
+  updateOrientationReferenceUI(); updateGeometryQuickTargetButtons(); $('orientationReference')?.addEventListener('change',()=>{updateOrientationReferenceUI();updateGeometryQuickTargetButtons();recalculate();});
+  $('addDark')?.addEventListener('change',updateGeometryQuickTargetButtons);
+  for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.enable)?.addEventListener('change',updateGeometryQuickTargetButtons); $(ids.ref)?.addEventListener('change',updateGeometryQuickTargetButtons); }
   setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
 }
 initialize().catch(err=>{showError(err);setStatus('Configuration loading failed. Open the project through an HTTP server.');});
