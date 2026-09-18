@@ -1,0 +1,135 @@
+{
+  "name": "HER/HODACA@JRR3",
+  "approximation": {
+    "method": "Cooper-Nathans"
+  },
+  "supermirror": {
+    "enabled": true,
+    "m_value": 1.2
+  },
+  "collimator": {
+    "1st_h": 80,
+    "1st_v": 240,
+    "2nd_h": 120,
+    "2nd_v": 240,
+    "3rd_h": 80,
+    "3rd_v": 240,
+    "4th_h": 120,
+    "4th_v": 240
+  },
+  "monochromator": {
+    "crystal": "PG002",
+    "mosaic_h": 30,
+    "mosaic_v": 30,
+    "width": 0.08,
+    "height": 0.02,
+    "thickness": 0.002,
+    "vfocus": true,
+    "hfocus": false,
+    "blade_h": 1,
+    "blade_v": 7
+  },
+  "analyzer": {
+    "crystal": "PG002",
+    "mosaic_h": 30,
+    "mosaic_v": 30,
+    "width": 0.02,
+    "height": 0.02,
+    "thickness": 0.002,
+    "vfocus": true,
+    "hfocus": false,
+    "blade_h": 7,
+    "blade_v": 7
+  },
+  "detector": {
+    "width": 0.032,
+    "height": 0.12
+  },
+  "configuration": {
+    "energy_mode": "Ef fixed",
+    "Ef": 3.635,
+    "geometry": "W",
+    "sign": "+-+"
+  },
+  "distance": {
+    "L0": 30,
+    "L1": 1.68,
+    "L2": 0.8,
+    "L3": 0.6
+  },
+  "beam": {
+    "width": 0.08,
+    "height": 0.15
+  },
+  "S2_min": 3.0,
+  "S2_limits": [
+      {
+          "S2limit": 58,
+          "Ei": 11.0
+      },
+      {
+          "S2limit": 60,
+          "Ei": 10.5
+      },
+      {
+          "S2limit": 66,
+          "Ei": 10.0
+      },
+      {
+          "S2limit": 70,
+          "Ei": 9.5
+      },
+      {
+          "S2limit": 78,
+          "Ei": 9.0
+      },
+      {
+          "S2limit": 88,
+          "Ei": 8.5
+      },
+      {
+          "S2limit": 92,
+          "Ei": 8.0
+      },
+      {
+          "S2limit": 96,
+          "Ei": 7.5
+      },
+      {
+          "S2limit": 100,
+          "Ei": 7.0
+      },
+      {
+          "S2limit": 106,
+          "Ei": 6.5
+      },
+      {
+          "S2limit": 110,
+          "Ei": 6.0
+      },
+      {
+          "S2limit": 114,
+          "Ei": 5.5
+      },
+      {
+          "S2limit": 118,
+          "Ei": 5.0
+      },
+      {
+          "S2limit": 124,
+          "Ei": 4.5
+      },
+      {
+          "S2limit": 125,
+          "Ei": 4.0
+      },
+      {
+          "S2limit": 129,
+          "Ei": 3.635
+      },
+      {
+          "S2limit": 131,
+          "Ei": 3.2
+      }
+  ]
+}

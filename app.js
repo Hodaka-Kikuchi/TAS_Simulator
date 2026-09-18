@@ -1653,11 +1653,16 @@ function renderResolution(entry,indexInfo=''){
     {responsive:true}
   );
 
-  // r.l.u. scaling is already included in projUV/sliceUV and r.lim.
-  // Do NOT multiply the display range by two.
-  const uvLim=Math.max(r.lim.U,r.lim.V);
-  const uline={x:[-uvLim,uvLim],y:[0,0],mode:'lines',line:{width:1},hoverinfo:'skip'};
-  const vline={x:[0,0],y:[-uvLim,uvLim],mode:'lines',line:{width:1},hoverinfo:'skip'};
+  // Scattering-plane display scaling:
+  // - r.l.u.: U and V are different reciprocal-lattice coordinates, so give
+  //   each axis its own resolution range and do not force a 1:1 plot aspect.
+  // - Å^-1: both axes are physical reciprocal-space lengths, so keep a common
+  //   range and a 1:1 aspect ratio.
+  const uvEqual=(unitMode!=='rlu');
+  const uLim=uvEqual ? Math.max(r.lim.U,r.lim.V) : r.lim.U;
+  const vLim=uvEqual ? uLim : r.lim.V;
+  const uline={x:[-uLim,uLim],y:[0,0],mode:'lines',line:{width:1},hoverinfo:'skip'};
+  const vline={x:[0,0],y:[-vLim,vLim],mode:'lines',line:{width:1},hoverinfo:'skip'};
 
   Plotly.react(
     'plotUV',
@@ -1666,7 +1671,7 @@ function renderResolution(entry,indexInfo=''){
       'Scattering-plane resolution ellipse',
       `δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,
       `δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,
-      uvLim,uvLim,true
+      uLim,vLim,uvEqual
     ),
     {responsive:true}
   );
