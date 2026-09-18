@@ -1193,14 +1193,36 @@ function renderGeometry(cache,index=0){
     const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
     uArrowAngle=qAngle+(phiU-phiT);
     vArrowAngle=qAngle+(phiV-phiT);
-    // The -+- TAS schematic is mirrored in laboratory display coordinates.
-    // Flip only the displayed V guide so U/V retain the intended right-handed
-    // visual relationship.  This does not alter UB, HKL, or any TAS calculation.
-    if(sense==="-+-") vArrowAngle+=Math.PI;
+
+    // DISPLAY ONLY: the -+- TAS drawing is a left/right mirror of the canonical
+    // +-+ instrument geometry, while the crystallographic U/V frame itself must
+    // keep the same handed relationship.  Do not touch UB, HKL, S1/S2, Q, or any
+    // numerical calculation here.  Instead, for the two ki-perpendicular
+    // orientation modes, keep the selected reference axis fixed and reflect only
+    // the other crystallographic guide about it.  This works for arbitrary U-V
+    // angles (including hexagonal planes), unlike a hard-coded V -> -V operation.
+    if(sense==="-+-") {
+      const orientationMode=$("orientationReference")?.value || "perpU";
+      if(orientationMode==="perpU") {
+        // U is the reference: put V on the right-handed side of U.
+        vArrowAngle=2*uArrowAngle-vArrowAngle;
+      } else if(orientationMode==="perpV") {
+        // V is the reference: put U on the right-handed side of V.
+        uArrowAngle=2*vArrowAngle-uArrowAngle;
+      }
+    }
   }catch(_err){}
-  const uvArrowLen=1.15;
-  const uEnd=[sample[0]+uvArrowLen*Math.cos(uArrowAngle),sample[1]+uvArrowLen*Math.sin(uArrowAngle)];
-  const vEnd=[sample[0]+uvArrowLen*Math.cos(vArrowAngle),sample[1]+uvArrowLen*Math.sin(vArrowAngle)];
+  const uvAxisLen=darkRadius*1.08;
+  const axisEnds=ang=>({
+    neg:[sample[0]-uvAxisLen*Math.cos(ang),sample[1]-uvAxisLen*Math.sin(ang)],
+    pos:[sample[0]+uvAxisLen*Math.cos(ang),sample[1]+uvAxisLen*Math.sin(ang)]
+  });
+  const uAxis=axisEnds(uArrowAngle), vAxis=axisEnds(vArrowAngle);
+  const uColor="#58c7e8", vColor="#e6a23c";
+  // Draw the crystallographic axes as two straight lines crossing the guide circle.
+  // They are traces (not annotations), so ki/kf/Q arrows remain visually on top.
+  addLine(uAxis.neg,uAxis.pos,uColor,2.2);
+  addLine(vAxis.neg,vAxis.pos,vColor,2.2);
 
   // Component-label placement only; the TAS geometry/calculation is untouched.
   // Put the monochromator label below the component.  Put the sample label
@@ -1219,12 +1241,9 @@ function renderGeometry(cache,index=0){
   const detLabel=[detector[0],detector[1]-0.58];
   const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5);
 
-  const uColor="#58c7e8", vColor="#e6a23c";
   const annotations=[
-    {x:uEnd[0],y:uEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:uColor},
-    {x:uEnd[0]+0.14*Math.cos(uArrowAngle),y:uEnd[1]+0.14*Math.sin(uArrowAngle),text:"U",showarrow:false,font:{color:uColor,size:14}},
-    {x:vEnd[0],y:vEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:vColor},
-    {x:vEnd[0]+0.14*Math.cos(vArrowAngle),y:vEnd[1]+0.14*Math.sin(vArrowAngle),text:"V",showarrow:false,font:{color:vColor,size:14}},
+    {x:uAxis.pos[0]+0.14*Math.cos(uArrowAngle),y:uAxis.pos[1]+0.14*Math.sin(uArrowAngle),text:"U",showarrow:false,font:{color:uColor,size:14}},
+    {x:vAxis.pos[0]+0.14*Math.cos(vArrowAngle),y:vAxis.pos[1]+0.14*Math.sin(vArrowAngle),text:"V",showarrow:false,font:{color:vColor,size:14}},
     {x:monoLabel[0],y:monoLabel[1],text:"Monochromator",showarrow:false},
     {x:sampleLabel[0],y:sampleLabel[1],text:"Sample",showarrow:false},
     {x:anaLabel[0],y:anaLabel[1],text:"Analyzer",showarrow:false},
