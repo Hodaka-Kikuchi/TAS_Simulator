@@ -1229,7 +1229,7 @@ function renderGeometry(cache,index=0){
       }
     }
   }catch(_err){}
-  const uvAxisLen=darkRadius*1.08;
+  const uvAxisLen=darkRadius; // U/V guide length equals the guide-circle diameter (2 * darkRadius).
   const axisEnds=ang=>({
     neg:[sample[0]-uvAxisLen*Math.cos(ang),sample[1]-uvAxisLen*Math.sin(ang)],
     pos:[sample[0]+uvAxisLen*Math.cos(ang),sample[1]+uvAxisLen*Math.sin(ang)]
@@ -1242,15 +1242,15 @@ function renderGeometry(cache,index=0){
   addLine(vAxis.neg,vAxis.pos,vColor,2.2);
 
   // Component-label placement only; the TAS geometry/calculation is untouched.
-  // Put the monochromator label below the component.  Put the sample label
-  // outside the sample marker on the side opposite to Q, so it stays clear of
-  // the Q arrow for every target geometry.
+  // Place Monochromator and Analyzer labels beside their components rather than
+  // directly underneath them. Put the Sample label farther outside the guide
+  // circle on the side opposite to Q so the text does not overlap the circle.
   // Display Monochromator label on the requested screen side.
   // The x-axis is reversed for -+-, so the same data-space x offset appears
   // on the right for -+- and on the left for +-+.
   const monoLabel=[mono[0]-1.15,mono[1]];
-  const anaLabel=[analyzer[0],analyzer[1]-0.48];
-  const sampleLabelRadius=1.25;
+  const anaLabel=[analyzer[0]-1.05,analyzer[1]];
+  const sampleLabelRadius=1.55;
   const sampleLabel=[
     sample[0]-sampleLabelRadius*Math.cos(qAngle),
     sample[1]-sampleLabelRadius*Math.sin(qAngle)
