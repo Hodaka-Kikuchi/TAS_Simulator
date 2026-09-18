@@ -124,3 +124,8 @@
 /* v90: optional nuclear Bragg-peak labels, between legend/plot and Q-E sliders. */
 .nuclear-label-control{padding:2px 20px 4px;display:flex;align-items:center}
 .nuclear-label-control .checkbox-label{min-height:24px;margin:0}
+
+/* Dark-angle slot colors: match the TAS Geometry arcs (Dark 1/2/3 = red/blue/green). */
+.dark-asset:has(#darkEnable1){border:2px solid #d62728}
+.dark-asset:has(#darkEnable2){border:2px solid #1f77b4}
+.dark-asset:has(#darkEnable3){border:2px solid #2ca02c}

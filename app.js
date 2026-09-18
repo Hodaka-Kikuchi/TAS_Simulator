@@ -99,6 +99,15 @@ function updateOrientationReferenceUI(){
   $('braggReferenceInputs')?.classList.toggle('hidden',mode!=='bragg');
 }
 
+function applyDarkAngleSlotColors(){
+  const colors={1:"#d62728",2:"#1f77b4",3:"#2ca02c"};
+  for(let slot=1;slot<=3;slot++){
+    const label=$(darkAssetIds(slot).enable)?.closest("label");
+    const caption=label?.querySelector("span");
+    if(caption){ caption.style.color=colors[slot]; caption.style.fontWeight="700"; }
+  }
+}
+
 function updateGeometryQuickTargetButtons(){
   const mode=$('orientationReference')?.value || 'perpU';
   const bragg=mode==='bragg';
@@ -1193,7 +1202,13 @@ function renderGeometry(cache,index=0){
         ? directBeamPerpUCorrection(cache.rl,cache.energyMode,cache.Ei,cache.Ef,sense) : 0;
       let a0=offset+from+directBeamCorrection,a1=offset+to+directBeamCorrection; if(a1<a0)a1+=360;
       const aa=linspace(a0,a1,120).map(d=>base-deg2rad(d));
-      traces.push({x:aa.map(t=>sample[0]+darkRadius*Math.cos(t)),y:aa.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"red",width:4},name:`Dark ${asset.slot}-${j+1}`,hovertemplate:`Dark angle ${asset.slot}-${j+1}<br>Reference=${asset.ref}<br>ΔS1=${deltaS1.toFixed(2)}°<br>Ref offset=${darkReferenceOffset.toFixed(2)}°<extra></extra>`,showlegend:false});
+      // Display-only differentiation: Dark 1/2/3 use 1.0/1.1/1.2 x radius
+      // and red/blue/green respectively. Numerical dark-angle calculations are unchanged.
+      const slotIndex=Math.max(1,Math.min(3,Number(asset.slot)||1));
+      const assetRadius=darkRadius*(1+0.1*(slotIndex-1));
+      const darkColors={1:"#d62728",2:"#1f77b4",3:"#2ca02c"};
+      const assetColor=darkColors[slotIndex];
+      traces.push({x:aa.map(t=>sample[0]+assetRadius*Math.cos(t)),y:aa.map(t=>sample[1]+assetRadius*Math.sin(t)),mode:"lines",line:{color:assetColor,width:4},name:`Dark ${asset.slot}-${j+1}`,hovertemplate:`Dark angle ${asset.slot}-${j+1}<br>Reference=${asset.ref}<br>ΔS1=${deltaS1.toFixed(2)}°<br>Ref offset=${darkReferenceOffset.toFixed(2)}°<extra></extra>`,showlegend:false});
     });
   }
 
@@ -1251,7 +1266,7 @@ function renderGeometry(cache,index=0){
     pos:[sample[0]+uvAxisLen*Math.cos(ang),sample[1]+uvAxisLen*Math.sin(ang)]
   });
   const uAxis=axisEnds(uArrowAngle), vAxis=axisEnds(vArrowAngle);
-  const uColor="#58c7e8", vColor="#e6a23c";
+  const uColor="#f2b6a0", vColor="#e377c2";
   // Draw the crystallographic axes as two straight lines crossing the guide circle.
   // They are traces (not annotations), so ki/kf/Q arrows remain visually on top.
   addLine(uAxis.neg,uAxis.pos,uColor,2.2);
@@ -1281,10 +1296,10 @@ function renderGeometry(cache,index=0){
     {x:sampleLabel[0],y:sampleLabel[1],text:"Sample",showarrow:false},
     {x:anaLabel[0],y:anaLabel[1],text:"Analyzer",showarrow:false},
     {x:detLabel[0],y:detLabel[1],text:"Detector",showarrow:false},
-    {x:kiArrow.head[0],y:kiArrow.head[1],ax:kiArrow.tail[0],ay:kiArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#2e9b50"},
-    {x:kfArrow.head[0],y:kfArrow.head[1],ax:kfArrow.tail[0],ay:kfArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#7b2cbf"},
-    {x:kiMid[0]-0.18*Math.sin(thetaKi),y:kiMid[1]+0.18*Math.cos(thetaKi),text:"ki",showarrow:false,font:{color:"#2e9b50"}},
-    {x:kfMid[0]+0.18*Math.sin(thetaKf),y:kfMid[1]-0.18*Math.cos(thetaKf),text:"kf",showarrow:false,font:{color:"#7b2cbf"}},
+    {x:kiArrow.head[0],y:kiArrow.head[1],ax:kiArrow.tail[0],ay:kiArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#7ac943"},
+    {x:kfArrow.head[0],y:kfArrow.head[1],ax:kfArrow.tail[0],ay:kfArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#58c7e8"},
+    {x:kiMid[0]-0.18*Math.sin(thetaKi),y:kiMid[1]+0.18*Math.cos(thetaKi),text:"ki",showarrow:false,font:{color:"#7ac943"}},
+    {x:kfMid[0]+0.18*Math.sin(thetaKf),y:kfMid[1]-0.18*Math.cos(thetaKf),text:"kf",showarrow:false,font:{color:"#58c7e8"}},
     {x:qEnd[0],y:qEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#000"},
     {x:qEnd[0]+.12*Math.cos(qAngle),y:qEnd[1]+.12*Math.sin(qAngle),text:"Q",showarrow:false,font:{color:"#000"}}
   ];
@@ -2355,7 +2370,7 @@ async function initialize(){
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
-  updateOrientationReferenceUI(); updateGeometryQuickTargetButtons(); $('orientationReference')?.addEventListener('change',()=>{updateOrientationReferenceUI();updateGeometryQuickTargetButtons();recalculate();});
+  updateOrientationReferenceUI(); applyDarkAngleSlotColors(); updateGeometryQuickTargetButtons(); $('orientationReference')?.addEventListener('change',()=>{updateOrientationReferenceUI();updateGeometryQuickTargetButtons();recalculate();});
   $('addDark')?.addEventListener('change',updateGeometryQuickTargetButtons);
   for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.enable)?.addEventListener('change',updateGeometryQuickTargetButtons); $(ids.ref)?.addEventListener('change',updateGeometryQuickTargetButtons); }
   setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
