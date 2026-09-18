@@ -861,7 +861,22 @@ function bindSingleZoomMarkerScaling(cache,Qplot){
   gd.__tasMarkerRelayoutHandler=handler; gd.on("plotly_relayout",handler);
 }
 
+// Preserve the actual Plotly viewport across data recalculations.
+// uirevision alone is not sufficient here because these layouts explicitly
+// provide fresh axis ranges on every Plotly.react() call.
+function currentPlotRanges(id){
+  const gd=$(id);
+  const xr=gd?._fullLayout?.xaxis?.range;
+  const yr=gd?._fullLayout?.yaxis?.range;
+  const valid=r=>Array.isArray(r)&&r.length===2&&r.every(v=>Number.isFinite(Number(v)));
+  return {
+    x:valid(xr)?xr.map(Number):null,
+    y:valid(yr)?yr.map(Number):null
+  };
+}
+
 function renderSingle(cache,index=0){
+  const keptView=currentPlotRanges("singlePlot");
   const i=Math.max(0,Math.min(index,cache.regions.length-1));
   const boundary=cache.regions[i];
   const qMax = Math.max(
@@ -966,12 +981,14 @@ function renderSingle(cache,index=0){
     `Centering: ${cache.latticeCentering} | Plane: (${cache.U.join(",")})-(${cache.V.join(",")})`;
 
   Plotly.react("singlePlot",traces,{
+    // Preserve user zoom/pan when controls trigger a recalculation.
+    uirevision:"singlePlot",
     title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
-    xaxis:{title:"Qx (Å⁻¹)",range:[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,constrain:"domain"},
+    xaxis:{title:"Qx (Å⁻¹)",range:keptView.x||[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,constrain:"domain"},
     // Keep the reciprocal-space plotting box square: identical numerical Qx/Qy
     // ranges and a 1:1 data-unit aspect ratio.  `constrain: domain` makes Plotly
     // shrink the axis domain rather than silently expanding one numerical range.
-    yaxis:{title:"Qy (Å⁻¹)",range:[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1,constrain:"domain"},
+    yaxis:{title:"Qy (Å⁻¹)",range:keptView.y||[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1,constrain:"domain"},
     // UI-only spacing: reclaim a little space above the plot, while reserving
     // more room below so the x-axis title and horizontal legend do not crowd.
     margin:{l:60,r:20,t:92,b:96},
@@ -1406,10 +1423,13 @@ function calculatePowder(){
     `a=${lc.a.toFixed(3)}, b=${lc.b.toFixed(3)}, c=${lc.c.toFixed(3)} Å<br>`+
     `α=${lc.alpha.toFixed(1)}, β=${lc.beta.toFixed(1)}, γ=${lc.gamma.toFixed(1)}°`;
 
+  const keptPowderView=currentPlotRanges("powderPlot");
   Plotly.react("powderPlot",traces,{
+    // Preserve user zoom/pan when controls trigger a recalculation.
+    uirevision:"powderPlot",
     title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
-    xaxis:{title:"Q (Å⁻¹)",range:[0,Qlim+qMargin],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
-    yaxis:{title:"ħω (meV)",range:[0,hwmax*1.1||1],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
+    xaxis:{title:"Q (Å⁻¹)",range:keptPowderView.x||[0,Qlim+qMargin],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
+    yaxis:{title:"ħω (meV)",range:keptPowderView.y||[0,hwmax*1.1||1],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
     plot_bgcolor:"white",paper_bgcolor:"white",legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"},
     shapes,annotations,margin:{l:66,r:34,t:80,b:110}
   },{responsive:true});
@@ -1815,7 +1835,7 @@ function calcOne(calc){
 }
 function matrixText(M){return M.map(r=>'[ '+r.map(x=>Number(x).toExponential(6).padStart(14)).join('  ')+' ]').join('\n');}
 function traceEllipse(p,name,dash='solid'){return{x:p.x,y:p.y,mode:'lines',name,line:{dash},hoverinfo:'skip'};}
-function baseLayout(title,xlabel,ylabel,xlim,ylim,equal=false){return{title:{text:title,font:{size:14}},margin:{l:60,r:20,t:45,b:55},xaxis:{title:xlabel,range:[-xlim,xlim],zeroline:true,showgrid:true},yaxis:{title:ylabel,range:[-ylim,ylim],zeroline:true,showgrid:true,...(equal?{scaleanchor:'x',scaleratio:1}:{})},showlegend:false};}
+function baseLayout(title,xlabel,ylabel,xlim,ylim,equal=false,plotId=null){const kept=plotId?currentPlotRanges(plotId):{x:null,y:null};return{uirevision:plotId||'resolutionPlots',title:{text:title,font:{size:14}},margin:{l:60,r:20,t:45,b:55},xaxis:{title:xlabel,range:kept.x||[-xlim,xlim],zeroline:true,showgrid:true},yaxis:{title:ylabel,range:kept.y||[-ylim,ylim],zeroline:true,showgrid:true,...(equal?{scaleanchor:'x',scaleratio:1}:{})},showlegend:false};}
 function formatAngle(value,absolute=false){
   if(value===null || value===undefined || !Number.isFinite(Number(value))) return '';
   const v=absolute ? Math.abs(Number(value)) : Number(value);
@@ -1858,21 +1878,21 @@ function renderResolution(entry,indexInfo=''){
   Plotly.react(
     'plotUE',
     [traceEllipse(r.ellipses.projUE,'projection'),traceEllipse(r.ellipses.sliceUE,'slice','dash')],
-    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,'δℏω (meV)',r.lim.U,r.lim.E),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,'δℏω (meV)',r.lim.U,r.lim.E,false,'plotUE'),
     {responsive:true}
   );
 
   Plotly.react(
     'plotVE',
     [traceEllipse(r.ellipses.projVE,'projection'),traceEllipse(r.ellipses.sliceVE,'slice','dash')],
-    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,'δℏω (meV)',r.lim.V,r.lim.E),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,'δℏω (meV)',r.lim.V,r.lim.E,false,'plotVE'),
     {responsive:true}
   );
 
   Plotly.react(
     'plotWE',
     [traceEllipse(r.ellipses.projWE,'projection'),traceEllipse(r.ellipses.sliceWE,'slice','dash')],
-    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.W)} (${qUnit})`,'δℏω (meV)',r.lim.W,r.lim.E),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.W)} (${qUnit})`,'δℏω (meV)',r.lim.W,r.lim.E,false,'plotWE'),
     {responsive:true}
   );
 
@@ -1894,7 +1914,7 @@ function renderResolution(entry,indexInfo=''){
       'Scattering-plane resolution ellipse',
       `δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,
       `δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,
-      uLim,vLim,uvEqual
+      uLim,vLim,uvEqual,'plotUV'
     ),
     {responsive:true}
   );
