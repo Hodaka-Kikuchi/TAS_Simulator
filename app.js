@@ -66,6 +66,38 @@ function setStatus(text){ $("status").textContent=text; }
 function hklToQ(rl,hkl){
   return add(add(scale(rl.astar,hkl[0]),scale(rl.bstar,hkl[1])),scale(rl.cstar,hkl[2]));
 }
+
+// Convert every orientation-reference mode into the original Reference-Q
+// calibration pair {HKL, S1}.  Downstream geometry intentionally stays on the
+// validated Reference-Q pipeline.
+//
+// For ki perpendicular U/V, imagine observing the elastic U/V Bragg peak.  In
+// the usual theta--2theta geometry the sample is theta=S2/2 away from the
+// ki-perpendicular condition.  Therefore, if ki perpendicular U/V is defined as
+// the new S1=0, that virtual Bragg observation has S1_ref = -S2_ref/2.
+function effectiveOrientationReference(rl, fixedEnergyMeV=null){
+  const mode=$('orientationReference')?.value || 'bragg';
+  if(mode==='bragg'){
+    return {mode,hkl:[num('refh'),num('refk'),num('refl')],s1:num('refs1')};
+  }
+  const hkl=mode==='perpV'
+    ? [num('Vh'),num('Vk'),num('Vl')]
+    : [num('Uh'),num('Uk'),num('Ul')];
+  const qNorm=norm(hklToQ(rl,hkl));
+  const E=Number(fixedEnergyMeV);
+  if(!(qNorm>1e-12)) throw new Error(`${mode==='perpV'?'V':'U'} must define a non-zero reciprocal-space vector.`);
+  if(!(E>0)) throw new Error('A positive reference energy is required for ki perpendicular U/V orientation.');
+  const k=Math.sqrt(E/2.072);
+  const arg=qNorm/(2*k);
+  if(arg>1+1e-10) throw new Error(`${mode==='perpV'?'V':'U'} Bragg peak is inaccessible at the selected reference energy.`);
+  const s2Ref=2*rad2deg(Math.asin(clamp(arg,-1,1)));
+  return {mode,hkl,s1:-0.5*s2Ref,s2Ref};
+}
+
+function updateOrientationReferenceUI(){
+  const mode=$('orientationReference')?.value || 'bragg';
+  $('braggReferenceInputs')?.classList.toggle('hidden',mode!=='bragg');
+}
 function formatHKL(v){
   return v.map(x=>Math.abs(x-Math.round(x))<1e-10?String(Math.round(x)):x.toFixed(3)).join(",");
 }
@@ -308,8 +340,21 @@ function darkAssetIds(slot){
   const suffix=slot===1?"":String(slot);
   return {
     enable:`darkEnable${slot}`, se:`seSelect${suffix}`, ref:`darkRef${suffix}`, rotation:`darkRotation${suffix}`,
+    refH:`darkRefH${slot}`, refK:`darkRefK${slot}`, refL:`darkRefL${slot}`, refRow:`darkRefQRow${slot}`,
     from:i=>`darkFrom${suffix}${i}`, to:i=>`darkTo${suffix}${i}`, offset:i=>`darkOffset${suffix}${i}`
   };
+}
+
+function updateDarkReferenceUI(slot){
+  const ids=darkAssetIds(slot);
+  const row=$(ids.refRow);
+  if(!row) return;
+  const show=checkedValue(ids.ref)==="Reference Q";
+  // Keep the dedicated h/k/l controls visible whenever Reference Q is selected.
+  // Use both the existing CSS class and the native hidden flag so restored/local
+  // UI state cannot leave the row in the wrong visibility state.
+  row.classList.toggle("hidden",!show);
+  row.hidden=!show;
 }
 
 function applySampleEnvironmentDefaults(slot=1){
@@ -317,6 +362,7 @@ function applySampleEnvironmentDefaults(slot=1){
   const key=$(ids.se).value;
   if(!key || !sampleEnvironments.has(key)){
     setRadio(ids.ref,"Reference Q");
+    updateDarkReferenceUI(slot);
     for(let i=0;i<4;i++){
       $(ids.from(i)).value=0; $(ids.to(i)).value=0; $(ids.offset(i)).value=0;
     }
@@ -325,6 +371,9 @@ function applySampleEnvironmentDefaults(slot=1){
   }
   const se=sampleEnvironments.get(key);
   setRadio(ids.ref,se.dark_angle_reference || "Reference Q");
+  const rq=Array.isArray(se.dark_angle_reference_q)?se.dark_angle_reference_q:(Array.isArray(se.reference_q)?se.reference_q:null);
+  if(rq&&rq.length>=3){ $(ids.refH).value=rq[0]; $(ids.refK).value=rq[1]; $(ids.refL).value=rq[2]; }
+  updateDarkReferenceUI(slot);
   const ranges=Array.isArray(se.dark_angle_ranges)?se.dark_angle_ranges:[];
   for(let i=0;i<4;i++){
     const r=ranges[i] || {from:0,to:0,offset:0};
@@ -370,7 +419,7 @@ function getDarkAssets(){
     const rotation=num(ids.rotation);
     const ranges=[];
     for(let i=0;i<4;i++) ranges.push([num(ids.from(i)),num(ids.to(i)),num(ids.offset(i))+rotation]);
-    assets.push({slot,key:$(ids.se)?.value||"",ref:checkedValue(ids.ref)||"Reference Q",ranges});
+    assets.push({slot,key:$(ids.se)?.value||"",ref:checkedValue(ids.ref)||"Reference Q",refHkl:[num(ids.refH),num(ids.refK),num(ids.refL)],ranges});
   }
   return assets;
 }
@@ -423,6 +472,51 @@ function calcQDark(s1,s2,ki,kf,s1Offset,QrefXY,sense,energyMode=null){
   return q;
 }
 
+// Direct-beam dark-angle zero is defined at the sample orientation where
+// ki is perpendicular to U.  The orientation calibration itself remains the
+// validated Reference-Q pipeline.  Observing the elastic U Bragg peak puts the
+// sample theta=S2/2 away from ki-perpendicular-U, so compensate the dark-angle
+// rotation by that amount.  The laboratory mirror between +-+ and -+- reverses
+// only the sign of this display/range correction.
+function directBeamPerpUCorrection(rl,energyMode,Ei,Ef,sense){
+  // Bragg-peak-position orientation already carries the original Reference-Q
+  // calibration, so no extra S2(U)/2 rebasing is needed there.  The direct-beam
+  // correction is only for the ki-perpendicular U/V orientation modes.
+  if(($('orientationReference')?.value || 'bragg') === 'bragg') return 0;
+  const Uhkl=[num("Uh"),num("Uk"),num("Ul")];
+  const qU=norm(hklToQ(rl,Uhkl));
+  const E0=energyMode==="Ef fixed"?Ef:Ei;
+  if(!(qU>1e-12) || !(E0>0)) return 0;
+  const k0=Math.sqrt(E0/2.072);
+  const arg=qU/(2*k0);
+  if(arg>1+1e-10) return 0;
+  const halfS2=rad2deg(Math.asin(clamp(arg,-1,1)));
+  return sense==="+-+" ? +halfS2 : -halfS2;
+}
+
+function darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef){
+  // Dark-angle Reference Q uses the original Reference-Q convention: the
+  // entered (h,k,l) defines the crystal-space direction about which the
+  // accessible dark-angle region is symmetric.  It is NOT a second S1
+  // calibration and therefore must not inherit or solve an S1 value from the
+  // Orientation reference.  The Bragg-peak-position S1 remains relevant only
+  // to the orientation / angle-calculation calibration.
+  const qhkl=asset.refHkl||[0,0,0], q=hklToQ(rl,qhkl), qn=norm(q);
+  if(qn<=1e-10) return null;
+  const qxy=[dot(q,ex),dot(q,ey)];
+  const phi=rad2deg(Math.atan2(qxy[1],qxy[0]));
+  const wavelength=9.044/Math.sqrt(energyMode==="Ef fixed"?Ef:Ei);
+  const arg=wavelength*qn/(4*PI);
+  if(arg>1+1e-12) return null;
+  const theta=rad2deg(Math.asin(clamp(arg,-1,1)));
+
+  // Reproduce the original Reference-Q Q-E mapping, but using the Dark-angle
+  // Reference-Q HKL as its own independent reference.  No Orientation-reference
+  // HKL, S1, or orientation offset enters this calibration.
+  const s1Offset=-theta+180-phi;
+  return {qxy,theta,Qoffset:90+theta,s1Offset};
+}
+
 function calculateSingleCrystal(){
   const inst=currentInstrument();
   const lc=latticeParams();
@@ -442,8 +536,10 @@ function calculateSingleCrystal(){
   if(energyMode==="Ef fixed") Ef=lambdaHalf?4*energyInput:energyInput;
   else Ei=lambdaHalf?4*energyInput:energyInput;
 
-  const ref=[num("refh"),num("refk"),num("refl")];
-  const refS1=num("refs1");
+  const fixedReferenceEnergy=(energyMode==="Ef fixed"?Ef:Ei);
+  const orientationRef=effectiveOrientationReference(rl,fixedReferenceEnergy);
+  const ref=orientationRef.hkl;
+  const refS1=orientationRef.s1;
   const Qref=hklToQ(rl,ref);
   const QrefNorm=norm(Qref);
   const QrefXY=[dot(Qref,ex),dot(Qref,ey)];
@@ -504,8 +600,10 @@ function calculateSingleCrystal(){
     if(addDark){
       for(const asset of darkAssets){
         const darkRef=asset.ref;
-        if(darkRef!=="Fixed" && QrefNorm<=1e-10) continue;
-        const Qoffset=darkRef==="Reference Q" ? 90+thetaRef : 2*thetaRef;
+        const darkCal=darkRef==="Reference Q" ? darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef) : null;
+        if(darkRef==="Reference Q" && !darkCal) continue;
+        if(darkRef!=="Fixed" && darkRef!=="Reference Q" && QrefNorm<=1e-10) continue;
+        const Qoffset=darkRef==="Reference Q" ? darkCal.Qoffset : 2*thetaRef;
         if(darkRef==="Fixed"){
           // Laboratory-fixed obstacle: compare the SIGNED physical S2 motor angle
           // directly with the fixed angular interval.  Do not use abs(S2): a
@@ -554,17 +652,27 @@ function calculateSingleCrystal(){
         const s2dark=linspace(S2min,S2max,200);
         for(const rawRange of asset.ranges){
           const [from,to,offset]=rawRange; if(from===0 && to===0) continue;
-          const s1from=offset+from-Qoffset, s1to=offset+to-Qoffset;
-          const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-          const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-          const topKF=linspace(s1from,s1to,100).map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
-          const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const directBeamCorrection=darkRef==="Direct beam"
+            ? directBeamPerpUCorrection(rl,energyMode,Ei,Ef,sense) : 0;
+          const correctedOffset=offset+directBeamCorrection;
+          const s1from=correctedOffset+from-Qoffset, s1to=correctedOffset+to-Qoffset;
+
+          // Reference-Q dark angles use exactly the old Reference-Q Q-E mapping,
+          // rebased on the HKL entered in this dark-angle slot.  In particular,
+          // Orientation reference (including Bragg-position S1) is deliberately
+          // excluded.  Direct-beam keeps the existing orientation-based mapping.
+          const darkS1Offset=darkRef==="Reference Q" ? darkCal.s1Offset : s1Offset;
+          const darkQrefXY=darkRef==="Reference Q" ? darkCal.qxy : QrefXY;
+          const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
+          const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
+          const topKF=linspace(s1from,s1to,100).map(s1=>calcQDark(s1,S2max,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
+          const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
           hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
           const kiShift=s2=>(180-s2);
-          const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-          const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,s1Offset,QrefXY,sense,energyMode));
-          const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100).map(s1=>calcQDark(s1,S2max,ki,kf,s1Offset,QrefXY,sense,energyMode));
-          const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100).map(s1=>calcQDark(s1,S2min,ki,kf,s1Offset,QrefXY,sense,energyMode));
+          const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
+          const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
+          const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100).map(s1=>calcQDark(s1,S2max,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
+          const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100).map(s1=>calcQDark(s1,S2min,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
           hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
         }
       }
@@ -1011,19 +1119,31 @@ function renderGeometry(cache,index=0){
       const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
       const qPlaneAngle=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.hypot(x,y)<1e-12?0:Math.atan2(y,x);};
       const phiTarget=qPlaneAngle([target.calc.h,target.calc.k,target.calc.l]);
-      const phiRef=qPlaneAngle([num("refh"),num("refk"),num("refl")]);
+      const effectiveRef=effectiveOrientationReference(cache.rl,(cache.energyMode==="Ei fixed")?cache.Ei:cache.Ef);
+      const phiRef=qPlaneAngle(effectiveRef.hkl);
       const crystalDelta=phiRef-phiTarget;
       referenceBase=qAngle+(sense==="-+-" ? -crystalDelta : crystalDelta);
-      const refS1=num("refs1");
+      const refS1=effectiveRef.s1;
       if(Number.isFinite(target.angles?.s1)&&Number.isFinite(refS1)) deltaS1=angleDiffDeg(target.angles.s1,refS1);
     }catch(_err){ referenceBase=qAngle; }
   }
 
   if(showDarkGeometry) for(const asset of (cache.darkAssets||[])){
     let base=referenceBase, darkReferenceOffset=0;
-    if(asset.ref==="Direct beam"){
+    if(asset.ref==="Reference Q" && target){
       try{
-        const qRef=hklToQ(cache.rl,[num("refh"),num("refk"),num("refl")]);
+        const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
+        const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
+        const qPlaneAngle=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.hypot(x,y)<1e-12?0:Math.atan2(y,x);};
+        const phiTarget=qPlaneAngle([target.calc.h,target.calc.k,target.calc.l]);
+        const phiDark=qPlaneAngle(asset.refHkl||[1,0,0]);
+        const crystalDelta=phiDark-phiTarget;
+        base=qAngle+(sense==="-+-" ? -crystalDelta : crystalDelta);
+      }catch(_err){}
+    }else if(asset.ref==="Direct beam"){
+      try{
+        const effectiveRef=effectiveOrientationReference(cache.rl,(cache.energyMode==="Ei fixed")?cache.Ei:cache.Ef);
+        const qRef=hklToQ(cache.rl,effectiveRef.hkl);
         const qRefNorm=norm(qRef), refEnergy=(cache.energyMode==="Ei fixed")?cache.Ei:cache.Ef;
         if(qRefNorm>1e-12&&Number.isFinite(refEnergy)&&refEnergy>0){
           const kRef=Math.sqrt(refEnergy/2.072), thetaRef=Math.asin(clamp(qRefNorm/(2*kRef),-1,1));
@@ -1036,7 +1156,9 @@ function renderGeometry(cache,index=0){
     }
     asset.ranges.forEach((r,j)=>{
       const [from,to,offset]=r; if(from===0&&to===0) return;
-      let a0=offset+from,a1=offset+to; if(a1<a0)a1+=360;
+      const directBeamCorrection=asset.ref==="Direct beam"
+        ? directBeamPerpUCorrection(cache.rl,cache.energyMode,cache.Ei,cache.Ef,sense) : 0;
+      let a0=offset+from+directBeamCorrection,a1=offset+to+directBeamCorrection; if(a1<a0)a1+=360;
       const aa=linspace(a0,a1,120).map(d=>base-deg2rad(d));
       traces.push({x:aa.map(t=>sample[0]+darkRadius*Math.cos(t)),y:aa.map(t=>sample[1]+darkRadius*Math.sin(t)),mode:"lines",line:{color:"red",width:4},name:`Dark ${asset.slot}-${j+1}`,hovertemplate:`Dark angle ${asset.slot}-${j+1}<br>Reference=${asset.ref}<br>ΔS1=${deltaS1.toFixed(2)}°<br>Ref offset=${darkReferenceOffset.toFixed(2)}°<extra></extra>`,showlegend:false});
     });
@@ -1061,6 +1183,25 @@ function renderGeometry(cache,index=0){
   };
   const qEnd=[sample[0]+qVectorLen*Math.cos(qAngle),sample[1]+qVectorLen*Math.sin(qAngle)];
 
+  // Display-only crystallographic U/V guides. Numerical TAS calculations are unchanged.
+  let uArrowAngle=qAngle, vArrowAngle=qAngle;
+  try{
+    const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
+    const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
+    const planePhi=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.atan2(y,x);};
+    const targetHKL=target ? [target.calc.h,target.calc.k,target.calc.l] : U;
+    const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
+    uArrowAngle=qAngle+(phiU-phiT);
+    vArrowAngle=qAngle+(phiV-phiT);
+    // The -+- TAS schematic is mirrored in laboratory display coordinates.
+    // Flip only the displayed V guide so U/V retain the intended right-handed
+    // visual relationship.  This does not alter UB, HKL, or any TAS calculation.
+    if(sense==="-+-") vArrowAngle+=Math.PI;
+  }catch(_err){}
+  const uvArrowLen=1.15;
+  const uEnd=[sample[0]+uvArrowLen*Math.cos(uArrowAngle),sample[1]+uvArrowLen*Math.sin(uArrowAngle)];
+  const vEnd=[sample[0]+uvArrowLen*Math.cos(vArrowAngle),sample[1]+uvArrowLen*Math.sin(vArrowAngle)];
+
   // Component-label placement only; the TAS geometry/calculation is untouched.
   // Put the monochromator label below the component.  Put the sample label
   // outside the sample marker on the side opposite to Q, so it stays clear of
@@ -1078,7 +1219,12 @@ function renderGeometry(cache,index=0){
   const detLabel=[detector[0],detector[1]-0.58];
   const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5);
 
+  const uColor="#58c7e8", vColor="#e6a23c";
   const annotations=[
+    {x:uEnd[0],y:uEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:uColor},
+    {x:uEnd[0]+0.14*Math.cos(uArrowAngle),y:uEnd[1]+0.14*Math.sin(uArrowAngle),text:"U",showarrow:false,font:{color:uColor,size:14}},
+    {x:vEnd[0],y:vEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:vColor},
+    {x:vEnd[0]+0.14*Math.cos(vArrowAngle),y:vEnd[1]+0.14*Math.sin(vArrowAngle),text:"V",showarrow:false,font:{color:vColor,size:14}},
     {x:monoLabel[0],y:monoLabel[1],text:"Monochromator",showarrow:false},
     {x:sampleLabel[0],y:sampleLabel[1],text:"Sample",showarrow:false},
     {x:anaLabel[0],y:anaLabel[1],text:"Analyzer",showarrow:false},
@@ -1267,7 +1413,63 @@ function setGeometryTargetHKL(hkl){
 }
 function setGeometryTargetFromU(){ setGeometryTargetHKL([num("Uh"),num("Uk"),num("Ul")]); }
 function setGeometryTargetFromV(){ setGeometryTargetHKL([num("Vh"),num("Vk"),num("Vl")]); }
-function setGeometryTargetFromReference(){ setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]); }
+function setGeometryPerpendicularCondition(mode){
+  try{
+    const b=collectResolutionBase();
+    const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
+    const {ex,ey}=makeSpiceScatteringPlaneBasis(b.rl,U,V);
+    const qU=hklToQ(b.rl,U), qV=hklToQ(b.rl,V);
+    const ux=dot(qU,ex), uy=dot(qU,ey), vx=dot(qV,ex), vy=dot(qV,ey);
+    const phiU=rad2deg(Math.atan2(uy,ux)), phiV=rad2deg(Math.atan2(vy,vx));
+    const phiAxis=mode==="perpV"?phiV:phiU;
+
+    // Perpendicular-condition buttons are absolute quick targets, not operations
+    // on the previously entered Q.  Start from the corresponding fundamental
+    // U/V Bragg position at elastic transfer so a previous high-Q target cannot
+    // select a higher-|Q| solution.
+    const currentHKL=(mode==="perpV"?V:U).slice();
+    const hw=0;
+    $("geomH").value=currentHKL[0];
+    $("geomK").value=currentHKL[1];
+    $("geomL").value=currentHKL[2];
+    $("geomHW").value=0;
+    const qCurrent=hklToQ(b.rl,currentHKL), qNorm=norm(qCurrent);
+    if(!(qNorm>1e-12)) throw new Error(`${mode==="perpV"?"V":"U"} must be non-zero.`);
+    const em=b.config.energy_mode;
+    const Ei=em==="Ei fixed"?Number(b.config.Ei):Number(b.config.Ef)+hw;
+    const Ef=em==="Ei fixed"?Number(b.config.Ei)-hw:Number(b.config.Ef);
+    if(!(Ei>0) || !(Ef>0)) throw new Error("Ei and Ef must be positive.");
+    const ki=Math.sqrt(Ei/2.072), kf=Math.sqrt(Ef/2.072);
+    const cosS2=(ki*ki+kf*kf-qNorm*qNorm)/(2*ki*kf);
+    if(cosS2<-1-1e-10||cosS2>1+1e-10) throw new Error("Current |Q| is not accessible at this energy transfer.");
+    const s2Geom=rad2deg(Math.acos(clamp(cosS2,-1,1))), t=deg2rad(s2Geom);
+    const phiQlab=rad2deg(Math.atan2(-kf*Math.sin(t),ki-kf*Math.cos(t)));
+    const orient=$('orientationReference')?.value||'perpU';
+    let s1Perp;
+    if(orient==='perpU') s1Perp=wrap180(-(phiAxis-phiU));
+    else if(orient==='perpV') s1Perp=wrap180(-(phiAxis-phiV));
+    else{
+      const tx=dot(qCurrent,ex),ty=dot(qCurrent,ey),phi0=rad2deg(Math.atan2(ty,tx));
+      const a0=tasMotorAngles({h:currentHKL[0],k:currentHKL[1],l:currentHKL[2],hw},b);
+      const phiTargetPerp=wrap180(phiQlab+phiAxis-90);
+      s1Perp=wrap180(a0.s1-angleDiffDeg(phiTargetPerp,phi0));
+    }
+    let phiTargetDeg;
+    if(orient==='perpU') phiTargetDeg=wrap180(-90+phiU-phiQlab-s1Perp);
+    else if(orient==='perpV') phiTargetDeg=wrap180(-90+phiV-phiQlab-s1Perp);
+    else{
+      const tx=dot(qCurrent,ex),ty=dot(qCurrent,ey),phi0=rad2deg(Math.atan2(ty,tx));
+      const a0=tasMotorAngles({h:currentHKL[0],k:currentHKL[1],l:currentHKL[2],hw},b);
+      phiTargetDeg=wrap180(phi0-angleDiffDeg(s1Perp,a0.s1));
+    }
+    const phiTarget=deg2rad(phiTargetDeg), qx=qNorm*Math.cos(phiTarget), qy=qNorm*Math.sin(phiTarget);
+    const det=ux*vy-uy*vx; if(Math.abs(det)<=1e-12) throw new Error("U and V do not define an independent scattering plane.");
+    const aa=(qx*vy-qy*vx)/det, bb=(ux*qy-uy*qx)/det;
+    setGeometryTargetHKL([aa*U[0]+bb*V[0],aa*U[1]+bb*V[1],aa*U[2]+bb*V[2]]);
+  }catch(err){ console.error(err); alert(err?.message||String(err)); }
+}
+function setGeometryKiPerpU(){ setGeometryPerpendicularCondition("perpU"); }
+function setGeometryKiPerpV(){ setGeometryPerpendicularCondition("perpV"); }
 
 function syncGeometryHWSlider(cache){
   const slider=$("geomHWSlider"), output=$("geomHWValue"), entry=$("geomHW");
@@ -1365,7 +1567,7 @@ $("instrument").addEventListener("change",()=>{
   scheduleRecalc();
 });
 
-for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.se).addEventListener("change",()=>applySampleEnvironmentDefaults(slot)); }
+for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.se).addEventListener("change",()=>applySampleEnvironmentDefaults(slot)); $(ids.ref).addEventListener("change",()=>{updateDarkReferenceUI(slot);scheduleRecalc();}); }
 BACKGROUND_SLOTS.forEach(slot=>$(slot.id).addEventListener("change",scheduleRecalc));
 
 $("hwSlider").addEventListener("input",()=>{ if(singleCache) renderSingle(singleCache,Number($("hwSlider").value)); });
@@ -1383,7 +1585,8 @@ $("geomHW").addEventListener("input",()=>{
 
 $("geomSetU").addEventListener("click",setGeometryTargetFromU);
 $("geomSetV").addEventListener("click",setGeometryTargetFromV);
-$("geomSetRef").addEventListener("click",setGeometryTargetFromReference);
+$("geomPerpU").addEventListener("click",setGeometryKiPerpU);
+$("geomPerpV").addEventListener("click",setGeometryKiPerpV);
 
 document.querySelectorAll("input,select").forEach(el=>{
   if([
@@ -1511,7 +1714,9 @@ function tasMotorAngles(calc,b){
 
   // Reference Q is needed only for the optional S1/S2 angle calibration.
   // A bad Reference Q must never suppress an otherwise valid resolution result.
-  const ref=[num('refh'),num('refk'),num('refl')];
+  const fixedE=em==='Ei fixed' ? Number(b.config.Ei) : Number(b.config.Ef);
+  const orientationRef=effectiveOrientationReference(b.rl,fixedE);
+  const ref=orientationRef.hkl;
   const Qr=hklToQ(b.rl,ref);
   const QrNorm=norm(Qr);
 
@@ -1520,7 +1725,6 @@ function tasMotorAngles(calc,b){
       warning:'Reference Q is zero; S1 is unavailable.'};
   }
 
-  const fixedE=em==='Ei fixed' ? Number(b.config.Ei) : Number(b.config.Ef);
   const k0=Math.sqrt(fixedE/2.072);
   const cosRef=(2*k0*k0-QrNorm*QrNorm)/(2*k0*k0);
   if(cosRef<-1-1e-10 || cosRef>1+1e-10){
@@ -1571,7 +1775,7 @@ function tasMotorAngles(calc,b){
   //
   // Keep +-+ as the already validated result and mirror only -+-.
   const c2Sign=(b.config.sign_config==='+-+') ? +1 : -1;
-  const s1=num('refs1') + angleDiffDeg(omegaTarget,omegaRef)/c2Sign;
+  const s1=orientationRef.s1 + angleDiffDeg(omegaTarget,omegaRef)/c2Sign;
 
   return {Ei,Ef,m1,m2,s1,s2,a1,a2,warning:''};
 }
@@ -2066,6 +2270,9 @@ async function initialize(){
   // JSON configuration is now fully loaded.  Only at this point is it safe to
   // overlay browser-local user parameters (including the selected instrument).
   const restoredLocalState=restoreLeftPanelState();
+  // Restoring sidebar values can change Dark-angle Reference after the sample-
+  // environment defaults were applied.  Re-sync the h/k/l row explicitly.
+  for(let slot=1;slot<=3;slot++) updateDarkReferenceUI(slot);
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
   updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls();
@@ -2086,6 +2293,7 @@ async function initialize(){
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
+  updateOrientationReferenceUI(); $('orientationReference')?.addEventListener('change',()=>{updateOrientationReferenceUI();recalculate();});
   setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
 }
 initialize().catch(err=>{showError(err);setStatus('Configuration loading failed. Open the project through an HTTP server.');});
