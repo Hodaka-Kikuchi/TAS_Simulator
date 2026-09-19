@@ -963,7 +963,7 @@ function renderSingle(cache,index=0){
   const selectedQ=selectedQAtS2(cache,i,selectedS2);
   if(Number.isFinite(selectedQ)){
     const phi=linspace(0,2*PI,361);
-    traces.push({x:phi.map(t=>selectedQ*Math.cos(t)),y:phi.map(t=>selectedQ*Math.sin(t)),mode:"lines",name:`S2 = ${selectedS2.toFixed(1)}°`,line:{color:"black",width:1.2,dash:"solid"},hovertemplate:`S2 = ${selectedS2.toFixed(1)}°<br>Q = ${selectedQ.toFixed(3)} Å⁻¹<extra></extra>`});
+    traces.push({x:phi.map(t=>selectedQ*Math.cos(t)),y:phi.map(t=>selectedQ*Math.sin(t)),mode:"lines",name:`S2 = ${selectedS2.toFixed(1)}°`,showlegend:false,line:{color:"black",width:1.2,dash:"solid"},hovertemplate:`S2 = ${selectedS2.toFixed(1)}°<br>Q = ${selectedQ.toFixed(3)} Å⁻¹<extra></extra>`});
   }
   for(const ring of cache.ringData){
     traces.push({
