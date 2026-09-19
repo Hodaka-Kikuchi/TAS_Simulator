@@ -1375,16 +1375,27 @@ function calculatePowder(){
   }];
   const shapes=[],annotations=[];
   const Qlim=Math.max(...qmax), hwmax=Math.max(...hw);
-  [[al,"red","a*"],[bl,"blue","b*"],[cl,"green","c*"]].forEach(([base,color,label])=>{
+  // Powder nuclear reciprocal-lattice guides: keep all harmonics as thin solid
+  // lines, but use one compact legend item per reciprocal axis (a*, b*, c*).
+  [[al,"#ff69b4","a*"],[bl,"#66ccff","b*"],[cl,"#7CFC00","c*"]].forEach(([base,color,label])=>{
+    traces.push({x:[null],y:[null],mode:"lines",name:`Nuclear ${label}`,line:{color,width:1,dash:"solid"},hoverinfo:"skip",showlegend:true});
     for(let n=1;n<20;n++){
       const q=n*base;
       if(q>Qlim) break;
-      shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color,dash:"dot",width:2}});
-      annotations.push({x:q,y:hwmax,text:`${n}${label}`,showarrow:false,xshift:15,yshift:20,font:{color}});
+      shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color,dash:"solid",width:1}});
     }
   });
 
-  const powderMagStyles={1:{dash:"dash",symbol:"circle"},2:{dash:"dash",symbol:"x"},3:{dash:"dash",symbol:"star"}};
+  // Powder-only magnetic peak styling: distinguish k1/k2/k3 with
+  // one-dot / two-dot / three-dot dash-chain patterns.  Keep the same
+  // circle/x/star symbol vocabulary as the Single Crystal view, but place
+  // one symbol only at the top of each vertical magnetic line and stagger
+  // its height to reduce overlap between k1/k2/k3.
+  const powderMagStyles={
+    1:{dash:"10px,4px,2px,4px",symbol:"circle",symbolY:1.02},
+    2:{dash:"10px,4px,2px,4px,2px,4px",symbol:"x",symbolY:1.04},
+    3:{dash:"10px,4px,2px,4px,2px,4px,2px,4px",symbol:"star",symbolY:1.06}
+  };
   for(const kv of enabledPropagationVectors()){
     const vals=new Set();
     const K=hklToQ({astar:rv.astar,bstar:rv.bstar,cstar:rv.cstar},kv.hkl);
@@ -1397,8 +1408,9 @@ function calculatePowder(){
     }
     const qs=[...vals].map(Number).sort((a,b)=>a-b), style=powderMagStyles[kv.index];
     qs.forEach((q,j)=>traces.push({x:[q,q],y:[0,hwmax],mode:"lines",name:`Magnetic Bragg peaks: k${kv.index}`,legendgroup:`powder-k${kv.index}`,showlegend:j===0,line:{color:"red",dash:style.dash,width:1},hovertemplate:`k${kv.index}<br>Q = ${q.toFixed(3)} Å⁻¹<extra></extra>`}));
-    // Keep the circle/x/star visual key at the top of each magnetic line.
-    if(qs.length) traces.push({x:qs,y:qs.map(()=>hwmax),mode:"markers",showlegend:false,legendgroup:`powder-k${kv.index}`,marker:{color:"red",size:kv.index===3?9:7,symbol:style.symbol},hoverinfo:"skip"});
+    // Put a single symbol at the top of each line.  k1/k2/k3 use slightly
+    // different heights so nearby magnetic peaks remain distinguishable.
+    if(qs.length) traces.push({x:qs,y:qs.map(()=>hwmax*style.symbolY),mode:"markers",showlegend:false,legendgroup:`powder-k${kv.index}`,marker:{color:"red",size:kv.index===3?9:7,symbol:style.symbol},hoverinfo:"skip",cliponaxis:false});
   }
 
   for(const bg of selectedBackgrounds()){
@@ -1446,7 +1458,7 @@ function calculatePowder(){
     s2CurveQ.push(q); s2CurveHW.push(w);
   }
   if(s2CurveQ.length){
-    traces.push({x:s2CurveQ,y:s2CurveHW,mode:'lines',name:`S2 = ${pS2.toFixed(1)}°`,line:{color:'black',width:1.2,dash:'solid'},hovertemplate:`S2 = ${pS2.toFixed(1)}°<br>Q = %{x:.3f} Å⁻¹<br>ħω = %{y:.1f} meV<extra></extra>`});
+    traces.push({x:s2CurveQ,y:s2CurveHW,mode:'lines',name:`S2 = ${pS2.toFixed(1)}°`,showlegend:false,line:{color:'black',width:1.2,dash:'solid'},hovertemplate:`S2 = ${pS2.toFixed(1)}°<br>Q = %{x:.3f} Å⁻¹<br>ħω = %{y:.1f} meV<extra></extra>`});
   }
 
   const qMargin=0.1*Qlim;
@@ -1587,7 +1599,8 @@ function ensureQESliderControls(){
     if(card){
       const row=document.createElement('div'); row.className='energy-slider-row'; row.style.display='grid'; row.style.gridTemplateColumns='1fr auto auto'; row.style.gap='10px'; row.style.alignItems='end'; row.style.marginBottom='8px';
       row.innerHTML='<label>S2<input id="powderS2Slider" type="range" min="0" max="180" step="0.1" value="0"></label><output id="powderS2Value">0.0°</output><label>S2 (deg)<input id="powderS2Entry" type="number" step="0.1" value="0.0" style="width:88px"></label>';
-      card.insertBefore(row,$('powderPlot'));
+      // Keep the Powder S2 control below the plot.
+      $('powderPlot').insertAdjacentElement('afterend',row);
     }
   }
 }
@@ -1969,7 +1982,7 @@ function updatePropagationVectorLabels(){
     const row=enable?.closest('.propagation-row');
     if(!row) continue;
     const span=enable.closest('label')?.querySelector('span');
-    if(span) span.textContent=`k${i}`;
+    if(span) span.textContent=`k${i} (${i===1?'●':i===2?'×':'★'})`;
     const labels=[...row.querySelectorAll('label')].filter(x=>x!==enable.closest('label'));
     ['h','k','l'].forEach((c,j)=>{
       if(labels[j] && labels[j].firstChild) labels[j].firstChild.nodeValue=`k${i}_${c}`;
