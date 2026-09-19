@@ -111,10 +111,11 @@
 .propagation-enable{align-self:center;margin:0;padding-top:15px}
 
 /* v76: quick elastic targets for Angle calculation & TAS geometry */
-.geometry-target-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
-.geometry-target-buttons{display:flex;gap:5px;align-items:end;white-space:nowrap}
+.geometry-target-row{display:grid;grid-template-columns:1fr;gap:8px;align-items:end}
+.geometry-target-buttons{display:block;white-space:normal}
+.geometry-target-all-buttons{display:flex;gap:5px;justify-content:flex-start;align-items:center;flex-wrap:nowrap}
 .geometry-target-buttons button{padding:4px 8px;font-size:12px}
-@media(max-width:1250px){.geometry-target-row{grid-template-columns:1fr}.geometry-target-buttons{justify-content:flex-start;flex-wrap:wrap}}
+@media(max-width:1250px){.geometry-target-row{grid-template-columns:1fr}}
 
 /* v79: up to three independent dark-angle assets */
 .dark-asset{border:1px solid #e2e2e2;border-radius:6px;padding:7px;margin-top:7px}
