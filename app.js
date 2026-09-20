@@ -521,7 +521,20 @@ function directBeamPerpUCorrection(rl,energyMode,Ei,Ef,sense){
   const arg=qU/(2*k0);
   if(arg>1+1e-10) return 0;
   const halfS2=rad2deg(Math.asin(clamp(arg,-1,1)));
-  return sense==="+-+" ? +halfS2 : -halfS2;
+
+  // +-+ is already calibrated correctly and must remain unchanged.
+  //
+  // For -+-, the TAS geometry is displayed as the left/right mirror of the
+  // canonical +-+ drawing.  With the old -halfS2 correction, Direct-beam
+  // rotation=0 / offset=0 is displaced from the incident ki ray by exactly
+  // S2(U)=2*halfS2.  Apply that missing mirrored-sense offset here.
+  //
+  // This helper is used by BOTH the Q-E dark-angle calculation and the TAS
+  // geometry overlay, so the numerical blocked region and the drawn sector
+  // remain registered to one another.
+  const baseCorrection=(sense==="+-+") ? +halfS2 : -halfS2;
+  const minusPlusMinusAlignment=(sense==="-+-") ? 2*halfS2 : 0;
+  return baseCorrection+minusPlusMinusAlignment;
 }
 
 function darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef){
@@ -990,11 +1003,11 @@ function renderSingle(cache,index=0){
   if(cache.addDark){
     let fixedLegend=false, kfLegend=false, kiLegend=false;
     for(const r of (cache.darkKI[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)",hoverinfo:"skip"});
       kiLegend=true;
     }
     for(const r of (cache.darkKF[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)",hoverinfo:"skip"});
       kfLegend=true;
     }
     for(const r of (cache.darkFixed[i]||[])){
@@ -1531,7 +1544,15 @@ function setGeometryPerpendicularCondition(mode){
       s1Perp=wrap180(a0.s1-angleDiffDeg(phiTargetPerp,phi0));
     }
     let phiTargetDeg;
-    if(orient==='perpU') phiTargetDeg=wrap180(-90+phiU-phiQlab-s1Perp);
+    // For a ki-perpendicular orientation reference, the elastic Q direction
+    // lies by +/-S2/2 from the referenced crystal axis.  +-+ uses the
+    // already-validated negative branch, while -+- is its left/right mirror.
+    // The previous code always used the +-+ branch, which gives the wrong HKL
+    // for -+- when U and V are not orthogonal.
+    if(orient===mode && (mode==='perpU' || mode==='perpV')){
+      const c2Sign=(b.config.sign_config==='+-+') ? +1 : -1;
+      phiTargetDeg=wrap180(phiAxis-c2Sign*0.5*s2Geom);
+    }else if(orient==='perpU') phiTargetDeg=wrap180(-90+phiU-phiQlab-s1Perp);
     else if(orient==='perpV') phiTargetDeg=wrap180(-90+phiV-phiQlab-s1Perp);
     else{
       const tx=dot(qCurrent,ex),ty=dot(qCurrent,ey),phi0=rad2deg(Math.atan2(ty,tx));
