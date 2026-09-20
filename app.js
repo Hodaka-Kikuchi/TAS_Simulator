@@ -111,8 +111,11 @@ function applyDarkAngleSlotColors(){
 function updateGeometryQuickTargetButtons(){
   const mode=$('orientationReference')?.value || 'perpU';
   const bragg=mode==='bragg';
-  $('geomPerpU')?.classList.toggle('hidden',bragg);
-  $('geomPerpV')?.classList.toggle('hidden',bragg);
+  // Angle-calculation quick target must match the selected orientation reference.
+  // Showing the opposite ki-perpendicular button is ambiguous for non-orthogonal
+  // scattering planes (e.g. hexagonal HK0), so expose only the matching action.
+  $('geomPerpU')?.classList.toggle('hidden',mode!=='perpU');
+  $('geomPerpV')?.classList.toggle('hidden',mode!=='perpV');
   $('geomSetBragg')?.classList.toggle('hidden',!bragg);
 
   const showDark=!!$('addDark')?.checked;
@@ -1251,20 +1254,14 @@ function renderGeometry(cache,index=0){
     uArrowAngle=qAngle+(phiU-phiT);
     vArrowAngle=qAngle+(phiV-phiT);
 
-    // DISPLAY ONLY: the -+- TAS drawing is a left/right mirror of the canonical
-    // +-+ instrument geometry, while the crystallographic U/V frame itself must
-    // keep the same handed relationship.  Do not touch UB, HKL, S1/S2, Q, or any
-    // numerical calculation here.  Instead, for the two ki-perpendicular
-    // orientation modes, keep the selected reference axis fixed and reflect only
-    // the other crystallographic guide about it.  This works for arbitrary U-V
-    // angles (including hexagonal planes), unlike a hard-coded V -> -V operation.
+    // For -+-, keep the displayed crystallographic U/V guides in the same
+    // right-handed convention used by the original TAS-geometry drawing.
+    // Reflect the non-reference guide about the selected orientation axis.
     if(sense==="-+-") {
       const orientationMode=$("orientationReference")?.value || "perpU";
       if(orientationMode==="perpU") {
-        // U is the reference: put V on the right-handed side of U.
         vArrowAngle=2*uArrowAngle-vArrowAngle;
       } else if(orientationMode==="perpV") {
-        // V is the reference: put U on the right-handed side of V.
         uArrowAngle=2*vArrowAngle-uArrowAngle;
       }
     }
@@ -1512,7 +1509,20 @@ function setGeometryPerpendicularCondition(mode){
     const qU=hklToQ(b.rl,U), qV=hklToQ(b.rl,V);
     const ux=dot(qU,ex), uy=dot(qU,ey), vx=dot(qV,ex), vy=dot(qV,ey);
     const phiU=rad2deg(Math.atan2(uy,ux)), phiV=rad2deg(Math.atan2(vy,vx));
-    const phiAxis=mode==="perpV"?phiV:phiU;
+    let phiAxis=mode==="perpV"?phiV:phiU;
+
+    // In the -+- convention the TAS geometry displays U/V as a right-handed
+    // crystallographic frame by reflecting the non-reference axis about the
+    // selected orientation reference.  Apply the same reflection to the quick
+    // ki-perpendicular target calculation.  Previously only the drawing had
+    // this handedness correction, so cross-targeting U -> V or V -> U in a
+    // non-orthogonal plane (e.g. hexagonal HK0) was displaced by 120 degrees.
+    const sense=checkedValue("sense");
+    const orient=$("orientationReference")?.value||"perpU";
+    if(sense==="-+-") {
+      if(orient==="perpU" && mode==="perpV") phiAxis=2*phiU-phiV;
+      else if(orient==="perpV" && mode==="perpU") phiAxis=2*phiV-phiU;
+    }
 
     // Perpendicular-condition buttons are absolute quick targets, not operations
     // on the previously entered Q.  Start from the corresponding fundamental
@@ -1535,7 +1545,6 @@ function setGeometryPerpendicularCondition(mode){
     if(cosS2<-1-1e-10||cosS2>1+1e-10) throw new Error("Current |Q| is not accessible at this energy transfer.");
     const s2Geom=rad2deg(Math.acos(clamp(cosS2,-1,1))), t=deg2rad(s2Geom);
     const phiQlab=rad2deg(Math.atan2(-kf*Math.sin(t),ki-kf*Math.cos(t)));
-    const orient=$('orientationReference')?.value||'perpU';
     let s1Perp;
     if(orient==='perpU') s1Perp=wrap180(-(phiAxis-phiU));
     else if(orient==='perpV') s1Perp=wrap180(-(phiAxis-phiV));
