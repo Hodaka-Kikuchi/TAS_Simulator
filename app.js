@@ -111,12 +111,14 @@ function applyDarkAngleSlotColors(){
 function updateGeometryQuickTargetButtons(){
   const mode=$('orientationReference')?.value || 'perpU';
   const bragg=mode==='bragg';
-  // Angle-calculation quick target must match the selected orientation reference.
-  // Showing the opposite ki-perpendicular button is ambiguous for non-orthogonal
-  // scattering planes (e.g. hexagonal HK0), so expose only the matching action.
+  // Show only the perpendicular quick target that matches the selected
+  // Orientation reference.  This makes the button a direct way to display
+  // the currently selected reference orientation.
   $('geomPerpU')?.classList.toggle('hidden',mode!=='perpU');
   $('geomPerpV')?.classList.toggle('hidden',mode!=='perpV');
   $('geomSetBragg')?.classList.toggle('hidden',!bragg);
+  if($('geomPerpU')) $('geomPerpU').textContent='Set ki ⟂ U';
+  if($('geomPerpV')) $('geomPerpV').textContent='Set ki ⟂ V';
 
   const showDark=!!$('addDark')?.checked;
   for(let slot=1;slot<=3;slot++){
@@ -988,26 +990,17 @@ function renderSingle(cache,index=0){
   if(cache.addDark){
     let fixedLegend=false, kfLegend=false, kiLegend=false;
     for(const r of (cache.darkKI[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",legendrank:2000,meta:"dark-overlay",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)",hoverinfo:"skip"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
       kiLegend=true;
     }
     for(const r of (cache.darkKF[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",legendrank:2000,meta:"dark-overlay",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)",hoverinfo:"skip"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)"});
       kfLegend=true;
     }
     for(const r of (cache.darkFixed[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (fixed)",showlegend:!fixedLegend,legendgroup:"dark-fixed",legendrank:2000,meta:"dark-overlay",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)",hoverinfo:"skip"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (fixed)",showlegend:!fixedLegend,legendgroup:"dark-fixed",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)",hoverinfo:"skip"});
       fixedLegend=true;
     }
-  }
-
-  // Draw dark-angle filled regions below Bragg-peak marker traces so the
-  // transparent overlay cannot intercept hover labels. legendrank keeps the
-  // existing legend order even though the drawing order is changed.
-  const darkOverlayTraces=traces.filter(tr=>tr.meta==="dark-overlay");
-  if(darkOverlayTraces.length){
-    for(let j=traces.length-1;j>=0;j--) if(traces[j].meta==="dark-overlay") traces.splice(j,1);
-    traces.splice(1,0,...darkOverlayTraces);
   }
 
   const energyText=cache.energyMode==="Ef fixed"?`Ef=${cache.Ef.toFixed(2)} meV`:`Ei=${cache.Ei.toFixed(2)} meV`;
@@ -1251,32 +1244,25 @@ function renderGeometry(cache,index=0){
     const planePhi=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.atan2(y,x);};
     const targetHKL=target ? [target.calc.h,target.calc.k,target.calc.l] : U;
     const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
-    uArrowAngle=qAngle+(phiU-phiT);
-    vArrowAngle=qAngle+(phiV-phiT);
-
-    // For -+-, keep the displayed crystallographic U/V guides in the same
-    // right-handed convention used by the original TAS-geometry drawing.
-    // Reflect the non-reference guide about the selected orientation axis.
-    if(sense==="-+-") {
-      const orientationMode=$("orientationReference")?.value || "perpU";
-      if(orientationMode==="perpU") {
-        vArrowAngle=2*uArrowAngle-vArrowAngle;
-      } else if(orientationMode==="perpV") {
-        uArrowAngle=2*vArrowAngle-uArrowAngle;
-      }
-    }
+    // U/V are crystallographic guides only.  Their relative handedness is fixed
+    // by the crystal, but the laboratory rotation sense reverses between +-+ and
+    // -+-.  Therefore the angular displacement from the *current target Q* must
+    // reverse as a whole for -+-.  This makes Set U/Set V place the selected
+    // crystallographic vector exactly on Q, including non-orthogonal hexagonal
+    // planes, without changing any numerical TAS / Q-E / dark-angle calculation.
+    const uvSense = sense==="-+-" ? -1 : 1;
+    uArrowAngle=qAngle+uvSense*(phiU-phiT);
+    vArrowAngle=qAngle+uvSense*(phiV-phiT);
   }catch(_err){}
-  const uvAxisLen=darkRadius; // U/V guide length equals the guide-circle diameter (2 * darkRadius).
-  const axisEnds=ang=>({
-    neg:[sample[0]-uvAxisLen*Math.cos(ang),sample[1]-uvAxisLen*Math.sin(ang)],
-    pos:[sample[0]+uvAxisLen*Math.cos(ang),sample[1]+uvAxisLen*Math.sin(ang)]
-  });
-  const uAxis=axisEnds(uArrowAngle), vAxis=axisEnds(vArrowAngle);
+  // Display U and V as vectors, like ki/kf/Q.  Their length is 1.5 times the
+  // guide-circle radius so the arrowheads and labels sit clear of the circle.
+  const uvVectorLen=1.5*darkRadius;
+  const vectorEnd=ang=>[
+    sample[0]+uvVectorLen*Math.cos(ang),
+    sample[1]+uvVectorLen*Math.sin(ang)
+  ];
+  const uEnd=vectorEnd(uArrowAngle), vEnd=vectorEnd(vArrowAngle);
   const uColor="#f2b6a0", vColor="#e377c2";
-  // Draw the crystallographic axes as two straight lines crossing the guide circle.
-  // They are traces (not annotations), so ki/kf/Q arrows remain visually on top.
-  addLine(uAxis.neg,uAxis.pos,uColor,2.2);
-  addLine(vAxis.neg,vAxis.pos,vColor,2.2);
 
   // Component-label placement only; the TAS geometry/calculation is untouched.
   // Place Monochromator and Analyzer labels beside their components rather than
@@ -1293,21 +1279,23 @@ function renderGeometry(cache,index=0){
     sample[1]-sampleLabelRadius*Math.sin(qAngle)
   ];
   const detLabel=[detector[0],detector[1]-0.58];
-  const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5);
+  const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5),qMid=pointAlong(sample,qEnd,.5);
 
   const annotations=[
-    {x:uAxis.pos[0]+0.14*Math.cos(uArrowAngle),y:uAxis.pos[1]+0.14*Math.sin(uArrowAngle),text:"U",showarrow:false,font:{color:uColor,size:14}},
-    {x:vAxis.pos[0]+0.14*Math.cos(vArrowAngle),y:vAxis.pos[1]+0.14*Math.sin(vArrowAngle),text:"V",showarrow:false,font:{color:vColor,size:14}},
+    {x:uEnd[0],y:uEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.4,arrowcolor:uColor},
+    {x:vEnd[0],y:vEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.4,arrowcolor:vColor},
+    {x:uEnd[0]+0.16*Math.cos(uArrowAngle),y:uEnd[1]+0.16*Math.sin(uArrowAngle),text:"U",showarrow:false,font:{color:uColor,size:14}},
+    {x:vEnd[0]+0.16*Math.cos(vArrowAngle),y:vEnd[1]+0.16*Math.sin(vArrowAngle),text:"V",showarrow:false,font:{color:vColor,size:14}},
     {x:monoLabel[0],y:monoLabel[1],text:"Monochromator",showarrow:false},
     {x:sampleLabel[0],y:sampleLabel[1],text:"Sample",showarrow:false},
     {x:anaLabel[0],y:anaLabel[1],text:"Analyzer",showarrow:false},
     {x:detLabel[0],y:detLabel[1],text:"Detector",showarrow:false},
     {x:kiArrow.head[0],y:kiArrow.head[1],ax:kiArrow.tail[0],ay:kiArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#7ac943"},
     {x:kfArrow.head[0],y:kfArrow.head[1],ax:kfArrow.tail[0],ay:kfArrow.tail[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#58c7e8"},
-    {x:kiMid[0]-0.18*Math.sin(thetaKi),y:kiMid[1]+0.18*Math.cos(thetaKi),text:"ki",showarrow:false,font:{color:"#7ac943"}},
+    {x:kiMid[0]+0.18*Math.sin(thetaKi),y:kiMid[1]-0.18*Math.cos(thetaKi),text:"ki",showarrow:false,font:{color:"#7ac943"}},
     {x:kfMid[0]+0.18*Math.sin(thetaKf),y:kfMid[1]-0.18*Math.cos(thetaKf),text:"kf",showarrow:false,font:{color:"#58c7e8"}},
     {x:qEnd[0],y:qEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#000"},
-    {x:qEnd[0]+.12*Math.cos(qAngle),y:qEnd[1]+.12*Math.sin(qAngle),text:"Q",showarrow:false,font:{color:"#000"}}
+    {x:qMid[0]-0.18*Math.sin(qAngle),y:qMid[1]+0.18*Math.cos(qAngle),text:"Q",showarrow:false,font:{color:"#000"}}
   ];
 
   // Fixed display viewport.  Do not auto-fit the current angles: auto-fitting made
@@ -1509,20 +1497,7 @@ function setGeometryPerpendicularCondition(mode){
     const qU=hklToQ(b.rl,U), qV=hklToQ(b.rl,V);
     const ux=dot(qU,ex), uy=dot(qU,ey), vx=dot(qV,ex), vy=dot(qV,ey);
     const phiU=rad2deg(Math.atan2(uy,ux)), phiV=rad2deg(Math.atan2(vy,vx));
-    let phiAxis=mode==="perpV"?phiV:phiU;
-
-    // In the -+- convention the TAS geometry displays U/V as a right-handed
-    // crystallographic frame by reflecting the non-reference axis about the
-    // selected orientation reference.  Apply the same reflection to the quick
-    // ki-perpendicular target calculation.  Previously only the drawing had
-    // this handedness correction, so cross-targeting U -> V or V -> U in a
-    // non-orthogonal plane (e.g. hexagonal HK0) was displaced by 120 degrees.
-    const sense=checkedValue("sense");
-    const orient=$("orientationReference")?.value||"perpU";
-    if(sense==="-+-") {
-      if(orient==="perpU" && mode==="perpV") phiAxis=2*phiU-phiV;
-      else if(orient==="perpV" && mode==="perpU") phiAxis=2*phiV-phiU;
-    }
+    const phiAxis=mode==="perpV"?phiV:phiU;
 
     // Perpendicular-condition buttons are absolute quick targets, not operations
     // on the previously entered Q.  Start from the corresponding fundamental
@@ -1545,6 +1520,7 @@ function setGeometryPerpendicularCondition(mode){
     if(cosS2<-1-1e-10||cosS2>1+1e-10) throw new Error("Current |Q| is not accessible at this energy transfer.");
     const s2Geom=rad2deg(Math.acos(clamp(cosS2,-1,1))), t=deg2rad(s2Geom);
     const phiQlab=rad2deg(Math.atan2(-kf*Math.sin(t),ki-kf*Math.cos(t)));
+    const orient=$('orientationReference')?.value||'perpU';
     let s1Perp;
     if(orient==='perpU') s1Perp=wrap180(-(phiAxis-phiU));
     else if(orient==='perpV') s1Perp=wrap180(-(phiAxis-phiV));
