@@ -985,17 +985,26 @@ function renderSingle(cache,index=0){
   if(cache.addDark){
     let fixedLegend=false, kfLegend=false, kiLegend=false;
     for(const r of (cache.darkKI[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (ki side)",showlegend:!kiLegend,legendgroup:"dark-ki",legendrank:2000,meta:"dark-overlay",mode:"lines",line:{width:0},fillcolor:"rgba(0,255,0,0.15)",hoverinfo:"skip"});
       kiLegend=true;
     }
     for(const r of (cache.darkKF[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (kf side)",showlegend:!kfLegend,legendgroup:"dark-kf",legendrank:2000,meta:"dark-overlay",mode:"lines",line:{width:0},fillcolor:"rgba(80,190,255,0.25)",hoverinfo:"skip"});
       kfLegend=true;
     }
     for(const r of (cache.darkFixed[i]||[])){
-      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (fixed)",showlegend:!fixedLegend,legendgroup:"dark-fixed",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)",hoverinfo:"skip"});
+      traces.push({x:r.map(p=>p[0]),y:r.map(p=>p[1]),fill:"toself",name:"Dark angle (fixed)",showlegend:!fixedLegend,legendgroup:"dark-fixed",legendrank:2000,meta:"dark-overlay",mode:"lines",line:{width:0},fillcolor:"rgba(0,0,255,0.15)",hoverinfo:"skip"});
       fixedLegend=true;
     }
+  }
+
+  // Draw dark-angle filled regions below Bragg-peak marker traces so the
+  // transparent overlay cannot intercept hover labels. legendrank keeps the
+  // existing legend order even though the drawing order is changed.
+  const darkOverlayTraces=traces.filter(tr=>tr.meta==="dark-overlay");
+  if(darkOverlayTraces.length){
+    for(let j=traces.length-1;j>=0;j--) if(traces[j].meta==="dark-overlay") traces.splice(j,1);
+    traces.splice(1,0,...darkOverlayTraces);
   }
 
   const energyText=cache.energyMode==="Ef fixed"?`Ef=${cache.Ef.toFixed(2)} meV`:`Ei=${cache.Ei.toFixed(2)} meV`;
