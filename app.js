@@ -5,6 +5,7 @@ import {
   linspace, arange, interpExtrap
 } from "./tas-core.js";
 import {RL_calc as RLRes, inferOutOfPlaneHKL, normalizeScatteringPlaneHKL, calcResolution} from "./resolution-core.js";
+import {parseCifStructure, nuclearStructureFactorSquared} from "./cif-structure.js";
 
 const $ = id => document.getElementById(id);
 const instruments = new Map();
@@ -42,6 +43,76 @@ function backgroundColor(slot,alpha=1){
 const legacyRangeInstruments = new Map();
 
 let singleCache = null;
+let selectedCifStructure = null;
+let selectedCifFileName = "";
+
+function hasSelectedCif(){
+  return checkedValue("sampleMode")==="single" && !!selectedCifStructure;
+}
+
+function updateCifUI(){
+  const row=$("cifSelectRow");
+  if(row) row.classList.toggle("hidden",checkedValue("sampleMode")!=="single");
+  const name=$("cifFileName");
+  if(name){
+    name.textContent=selectedCifFileName || "No file selected";
+    if(selectedCifStructure){
+      const bits=[selectedCifStructure.name];
+      if(selectedCifStructure.spaceGroup) bits.push(`Space group: ${selectedCifStructure.spaceGroup}`);
+      bits.push(`${selectedCifStructure.asymmetricSiteCount} asymmetric site(s)`);
+      bits.push(`${selectedCifStructure.symmetryOperationCount} symmetry operation(s)`);
+      name.title=bits.join(" | ");
+    }else name.title="";
+  }
+  $("sfColorMaxRow")?.classList.toggle("hidden",!hasSelectedCif());
+}
+
+function syncSfColorMaxControl(source="slider"){
+  const slider=$("sfColorMaxSlider"), output=$("sfColorMaxValue"), entry=$("sfColorMaxEntry");
+  if(!slider || !entry) return;
+  let raw;
+  if(source==="entry") raw=Number(entry.value);
+  else if(source==="restore"){
+    const entryValue=Number(entry.value);
+    raw=Number.isFinite(entryValue) ? entryValue : Number(slider.value);
+  }else raw=Number(slider.value);
+  if(!Number.isFinite(raw)) raw=1;
+  const v=Math.max(0.01,Math.min(1,raw));
+  slider.value=String(v);
+  entry.value=v.toFixed(2);
+  if(output) output.textContent=v.toFixed(2);
+}
+
+function sfThresholdFraction(){
+  const entry=$("sfThresholdEntry");
+  let pct=Number(entry?.value);
+  if(!Number.isFinite(pct)) pct=0;
+  pct=Math.max(0,Math.min(100,pct));
+  if(entry) entry.value=pct.toFixed(1);
+  return pct/100;
+}
+
+async function selectCifFile(file){
+  if(!file) return;
+  const text=await file.text();
+  const parsed=parseCifStructure(text);
+  selectedCifStructure=parsed;
+  selectedCifFileName=file.name;
+
+  // A selected CIF defines the crystallographic unit cell.  Keep the existing
+  // U/V orientation indices, but synchronize the six editable lattice fields
+  // to the CIF so every downstream reciprocal-space calculation uses the same
+  // cell as the structure-factor calculation.
+  const lattice=parsed?.lattice || {};
+  for(const id of ["a","b","c","alpha","beta","gamma"]){
+    const value=Number(lattice[id]);
+    if(Number.isFinite(value) && $(id)) $(id).value=String(value);
+  }
+  updateAutoW();
+  updateCifUI();
+  clearError();
+  scheduleRecalc();
+}
 
 function num(id){ return Number($(id).value); }
 function checkedValue(name){
@@ -551,6 +622,7 @@ function updateModeVisibility(){
   $("singleMain").classList.toggle("hidden",!single);
   $("powderMain").classList.toggle("hidden",single);
   $("s2Label").childNodes[0].nodeValue = single ? "S2 min (deg)" : "minimum 2θ (deg)";
+  updateCifUI();
 }
 
 function latticeParams(){
@@ -867,7 +939,14 @@ function calculateSingleCrystal(){
       const k = Math.round(hkl[1]);
       const l = Math.round(hkl[2]);
 
-      Gpoints.push({x:dot(G,ex),y:dot(G,ey),label:(h===0&&k===0&&l===0)?"":`(${formatHKL(hkl)})`});
+      const isOrigin=hkl.every(v=>Math.abs(v)<1e-10);
+      const sf2=selectedCifStructure && !isOrigin
+        ? nuclearStructureFactorSquared(selectedCifStructure,hkl,norm(G))
+        : null;
+      Gpoints.push({
+        x:dot(G,ex),y:dot(G,ey),hkl,label:isOrigin?"":`(${formatHKL(hkl)})`,
+        sf2:Number.isFinite(sf2)?sf2:null,sfNorm:null
+      });
 
       for(const q of propagationVectors){
         const kvec=q.hkl;
@@ -884,6 +963,20 @@ function calculateSingleCrystal(){
             });
           }
         }
+      }
+    }
+  }
+
+  if(selectedCifStructure){
+    const sfMax=Math.max(0,...Gpoints.map(p=>Number.isFinite(p.sf2)?p.sf2:0));
+    for(const p of Gpoints) p.sfNorm=(sfMax>0 && Number.isFinite(p.sf2)) ? p.sf2/sfMax : 0;
+    // Remove effectively extinct reflections.  The threshold is relative to the
+    // strongest displayed reflection, so exact/systematic extinctions disappear
+    // without hiding genuinely weak peaks.
+    if(sfMax>0){
+      for(let j=Gpoints.length-1;j>=0;j--){
+        const p=Gpoints[j];
+        if(p.label && Number.isFinite(p.sf2) && p.sf2<=sfMax*1e-10) Gpoints.splice(j,1);
       }
     }
   }
@@ -911,7 +1004,8 @@ function calculateSingleCrystal(){
     inst,lc,latticeCentering,U,V,rl,ex,ey,ez,
     energyMode,Ei,Ef,lambdaHalf,hwList,
     regions,S2list,QmaxList,darkKF,darkKI,darkFixed,addDark,
-    Gpoints,magPoints,ringData,darkAssets,QrefXY,sense
+    Gpoints,magPoints,ringData,darkAssets,QrefXY,sense,
+    cifStructure:selectedCifStructure,cifFileName:selectedCifFileName
   };
 }
 
@@ -921,7 +1015,7 @@ function singleMarkerSizes(fullSpan,visibleSpan,peakCount){
   const density=Math.max(0.50,Math.min(1,Math.sqrt(90/Math.max(90,peakCount||0))));
   const zoom=Math.max(1,Math.sqrt(Math.max(1,fullSpan/Math.max(visibleSpan,1e-9))));
   const scale=Math.min(1.55,density*zoom);
-  return {nuclear:Math.max(2.5,6*scale),magnetic:Math.max(3.0,7*scale),star:Math.max(3.5,9*scale)};
+  return {nuclear:Math.max(5,12*scale),magnetic:Math.max(3.0,7*scale),star:Math.max(3.5,9*scale)};
 }
 
 function singleNuclearLabelStyle(fullSpan,visibleSpan){
@@ -931,7 +1025,7 @@ function singleNuclearLabelStyle(fullSpan,visibleSpan){
   const span=Math.min(fullSpan,Math.max(1e-9,Number(visibleSpan)||fullSpan));
   const zoom=Math.max(1,fullSpan/span);
   const logZoom=Math.max(0,Math.log2(zoom));
-  const fontSize=Math.min(16,8+2.5*logZoom);
+  const fontSize=Math.min(20,11+2.5*logZoom);
   const offsetFraction=Math.min(0.055,0.022+0.006*logZoom);
   const offset=Math.max(span*offsetFraction,fullSpan*0.0015);
   return {offset,fontSize};
@@ -947,7 +1041,12 @@ function bindSingleZoomLabelScaling(cache,Qplot){
     const idx=(gd.data||[]).findIndex(tr=>tr.meta==="nuclear-labels");
     if(idx<0) return;
     const style=singleNuclearLabelStyle(fullSpan,span);
-    const pts=cache.Gpoints.filter(p=>p.label!=="");
+    // Keep the label trace point-for-point aligned with the currently visible
+    // nuclear peaks.  Using all cache.Gpoints here caused Plotly reset/double-click
+    // to pair a shorter text array with a longer x/y array, visually piling labels
+    // against one side of the plot.
+    const threshold=cache.cifStructure ? sfThresholdFraction() : 0;
+    const pts=cache.Gpoints.filter(p=>p.label!=="" && (!cache.cifStructure || !Number.isFinite(p.sfNorm) || p.sfNorm>threshold));
     Plotly.restyle(gd,{
       x:[pts.map(p=>p.x)],
       y:[pts.map(p=>p.y+style.offset)],
@@ -1030,18 +1129,101 @@ function currentPlotRanges(id){
   };
 }
 
+
+// Higher-order wavelength contamination warning.
+// A label "nki-mkf" denotes an elastic event for the contaminating harmonics,
+// n*ki and m*kf.  Since E is proportional to k^2, the condition is
+// n^2 Ei = m^2 Ef.  We compare the currently displayed apparent hbar-omega
+// (Ei-Ef) with those discrete conditions.
+function qeSpurionWarnings(cache, hw){
+  if(!Number.isFinite(hw)) return [];
+  const list=Array.isArray(cache?.hwList) ? cache.hwList.map(Number).filter(Number.isFinite) : [];
+  if(!list.length) return [];
+
+  const fixedEf=Number(cache?.Ef);
+  const fixedEi=Number(cache?.Ei);
+  const candidates=[];
+
+  // Convention used in the warning label:
+  // "nki-mkf" corresponds to ki/kf = n/m.
+  // Therefore Ei/Ef = (n/m)^2.
+  //
+  // Only include an incident higher-order component while its energy
+  // n^2 * Ei is <= 100 meV, since the reactor spectrum is negligible above it.
+  // The upper n bound below is intentionally generous; the 100-meV test is
+  // the actual cutoff.
+  for(let n=2;n<=12;n++){
+    for(let m=1;m<n;m++){
+      let hws, EiAtSpurion, EfAtSpurion;
+      const r=(n/m)*(n/m);
+
+      if(cache.energyMode==="Ef fixed"){
+        if(!(fixedEf>0)) continue;
+        EfAtSpurion=fixedEf;
+        EiAtSpurion=fixedEf*r;
+        hws=EiAtSpurion-EfAtSpurion;
+      }else{
+        if(!(fixedEi>0)) continue;
+        EiAtSpurion=fixedEi;
+        EfAtSpurion=fixedEi/r;
+        hws=EiAtSpurion-EfAtSpurion;
+      }
+
+      if(!(EiAtSpurion>0) || !(EfAtSpurion>0) || !Number.isFinite(hws)) continue;
+      if(n*n*EiAtSpurion > 100 + 1e-9) continue;
+
+      // Reduce duplicate ratios (e.g. 4/2 == 2/1); keep the lowest-order label.
+      if(candidates.some(x=>Math.abs(x.hw-hws)<1e-9)) continue;
+      candidates.push({label:`${n}ki-${m}kf`,hw:hws});
+    }
+  }
+
+  // Warn on the two sampled hbar-omega points nearest each theoretical spurion.
+  // This makes a 0.1-meV grid show the warning on two adjacent points.
+  const hits=[];
+  for(const cand of candidates){
+    const nearest=list
+      .map((v,idx)=>({v,idx,d:Math.abs(v-cand.hw)}))
+      .sort((a,b)=>a.d-b.d || a.idx-b.idx)
+      .slice(0,Math.min(2,list.length));
+    if(nearest.some(p=>Math.abs(p.v-hw)<1e-9)) hits.push(cand);
+  }
+  return hits;
+}
+
+function updateQESpurionWarning(cache,index){
+  const box=$("qeSpurionWarning");
+  if(!box || !cache?.hwList?.length) return;
+  const i=Math.max(0,Math.min(Number(index)||0,cache.hwList.length-1));
+  const hw=Number(cache.hwList[i]);
+  const hits=qeSpurionWarnings(cache,hw);
+  box.textContent=hits.length ? `Spurion warning: ${hits.map(x=>x.label).join(", ")}` : "";
+  box.classList.toggle("active",hits.length>0);
+}
+
+function updateGeometrySpurionWarning(cache, hw){
+  const box=$("geometrySpurionWarning");
+  if(!box) return;
+  const hits=qeSpurionWarnings(cache,Number(hw));
+  box.textContent=hits.length ? `Spurion warning: ${hits.map(x=>x.label).join(", ")}` : "";
+  box.classList.toggle("active",hits.length>0);
+}
+
 function renderSingle(cache,index=0){
   const keptView=currentPlotRanges("singlePlot");
   const i=Math.max(0,Math.min(index,cache.regions.length-1));
   const boundary=cache.regions[i];
-  const qMax = Math.max(
-    ...cache.Gpoints.map(p => Math.hypot(p.x, p.y))
-  );
+  const qMax = Math.max(0, ...cache.Gpoints.map(p => Math.hypot(p.x, p.y)));
 
   const s2Min = num("S2min");
   const s2Max = cache.S2list[i];
   const Qplot=1.2*Math.max(...cache.QmaxList);
   const initialMarkerSizes=singleMarkerSizes(2*Qplot,2*Qplot,cache.Gpoints.length+cache.magPoints.length);
+
+  const sfThreshold=cache.cifStructure ? sfThresholdFraction() : 0;
+  const visibleGpoints=cache.cifStructure
+    ? cache.Gpoints.filter(p=>!p.label || !Number.isFinite(p.sfNorm) || p.sfNorm>sfThreshold)
+    : cache.Gpoints;
 
   const traces=[
     {
@@ -1054,17 +1236,37 @@ function renderSingle(cache,index=0){
       fillcolor:"rgba(255,215,0,0.20)"
     },
     {
-      x:cache.Gpoints.map(p=>p.x),
-      y:cache.Gpoints.map(p=>p.y),
+      x:[null], y:[null], mode:"markers", name:"Nuclear Bragg peaks",
+      marker:{color:"black",size:initialMarkerSizes.nuclear},
+      hoverinfo:"skip",
+      meta:"nuclear-legend"
+    },
+    {
+      x:visibleGpoints.map(p=>p.x),
+      y:visibleGpoints.map(p=>p.y),
       mode:"markers",
       name:"Nuclear Bragg peaks",
-      marker:{color:"black",size:initialMarkerSizes.nuclear},
-      hovertext:cache.Gpoints.map(p=>p.label),
+      showlegend:false,
+      meta:"nuclear-data",
+      marker:cache.cifStructure ? {
+        color:visibleGpoints.map(p=>Number.isFinite(p.sfNorm)?p.sfNorm:0),
+        colorscale:[[0,"rgb(245,245,245)"],[0.25,"rgb(205,205,205)"],[0.5,"rgb(150,150,150)"],[0.75,"rgb(85,85,85)"],[1,"rgb(0,0,0)"]],
+        cmin:0,cmax:Math.max(0.01,Math.min(1,Number($("sfColorMaxSlider")?.value)||1)),
+        showscale:true,
+        colorbar:{title:{text:"|F_N|² / max",side:"right",font:{size:15}},tickfont:{size:14},thickness:16,len:0.62,x:1.02,y:0.52},
+        size:initialMarkerSizes.nuclear,
+        line:{color:"rgba(80,80,80,0.55)",width:0.4}
+      } : {color:"black",size:initialMarkerSizes.nuclear},
+      hovertext:visibleGpoints.map(p=>{
+        if(!cache.cifStructure || !p.label) return p.label;
+        const raw=Number.isFinite(p.sf2)?p.sf2:0, rel=Number.isFinite(p.sfNorm)?p.sfNorm:0;
+        return `${p.label}<br>|F<sub>N</sub>|² = ${(raw/100).toPrecision(6)} barn<br>|F<sub>N</sub>|² / max = ${rel.toFixed(4)}`;
+      }),
       hovertemplate:"%{hovertext}<extra></extra>"
     },
   ];
   if($("displayNuclearLabels")?.checked){
-    const labelPts=cache.Gpoints.filter(p=>p.label!=="");
+    const labelPts=visibleGpoints.filter(p=>p.label!=="");
     const labelStyle=singleNuclearLabelStyle(2*Qplot,2*Qplot);
     traces.push({
       x:labelPts.map(p=>p.x),
@@ -1138,21 +1340,25 @@ function renderSingle(cache,index=0){
   Plotly.react("singlePlot",traces,{
     // Preserve user zoom/pan when controls trigger a recalculation.
     uirevision:"singlePlot",
-    title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
-    xaxis:{title:"Qx (Å⁻¹)",range:keptView.x||[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,constrain:"domain"},
+    title:{text:title,x:0.5,xanchor:"center",font:{size:16}},
+    xaxis:{title:{text:"Qx (Å⁻¹)",font:{size:16}},tickfont:{size:14},range:keptView.x||[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,constrain:"domain"},
     // Keep the reciprocal-space plotting box square: identical numerical Qx/Qy
     // ranges and a 1:1 data-unit aspect ratio.  `constrain: domain` makes Plotly
     // shrink the axis domain rather than silently expanding one numerical range.
-    yaxis:{title:"Qy (Å⁻¹)",range:keptView.y||[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1,constrain:"domain"},
+    yaxis:{title:{text:"Qy (Å⁻¹)",font:{size:16}},tickfont:{size:14},range:keptView.y||[-Qplot,Qplot],tickmode:"auto",nticks:10,showgrid:true,gridcolor:"lightgray",zeroline:true,scaleanchor:"x",scaleratio:1,constrain:"domain"},
     // UI-only spacing: reclaim a little space above the plot, while reserving
     // more room below so the x-axis title and horizontal legend do not crowd.
-    margin:{l:60,r:20,t:92,b:96},
+    margin:{l:60,r:cache.cifStructure?88:20,t:92,b:96},
     legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"}
   },{responsive:true});
   bindSingleZoomMarkerScaling(cache,Qplot);
   bindSingleZoomLabelScaling(cache,Qplot);
 
-  $("hwValue").textContent=`${cache.hwList[i].toFixed(1)} meV`;
+  const hwDisplay=$("hwValue");
+  if(hwDisplay) hwDisplay.textContent=`${cache.hwList[i].toFixed(1)} meV`;
+  const hwEntry=$("hwEntry");
+  if(hwEntry && document.activeElement!==hwEntry) hwEntry.value=cache.hwList[i].toFixed(1);
+  updateQESpurionWarning(cache,i);
   updateS2MaxDisplayForQERange(cache,i);
   renderGeometry(cache,i);
 }
@@ -1183,6 +1389,7 @@ function renderGeometry(cache,index=0){
   const i=Math.max(0,Math.min(index,cache.hwList.length-1));
   const sense=cache.sense || checkedValue("sense");
   const hw=cache.hwList[i] || 0;
+  updateGeometrySpurionWarning(cache,num("geomHW"));
   const mirror=sense==="+-+" ? 1 : -1;
 
   // Default explanatory geometry is retained when the requested target cannot
@@ -1589,7 +1796,7 @@ function calculatePowder(){
   Plotly.react("powderPlot",traces,{
     // Preserve user zoom/pan when controls trigger a recalculation.
     uirevision:"powderPlot",
-    title:{text:title,x:0.5,xanchor:"center",font:{size:14}},
+    title:{text:title,x:0.5,xanchor:"center",font:{size:16}},
     xaxis:{title:"Q (Å⁻¹)",range:keptPowderView.x||[0,Qlim+qMargin],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
     yaxis:{title:"ħω (meV)",range:keptPowderView.y||[0,hwmax*1.1||1],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
     plot_bgcolor:"white",paper_bgcolor:"white",legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"},
@@ -1713,12 +1920,29 @@ function ensureQESliderControls(){
   if(!$('hwEntry')){
     const row=$('hwSlider')?.closest('.energy-slider-row');
     if(row){
-      row.style.display='grid'; row.style.gridTemplateColumns='1fr auto auto'; row.style.gap='10px'; row.style.alignItems='end';
-      const wrap=document.createElement('label'); wrap.textContent='ħω (meV)';
-      const input=document.createElement('input'); input.id='hwEntry'; input.type='number'; input.step='0.1'; input.value='0.0'; input.style.width='88px'; wrap.appendChild(input); row.appendChild(wrap);
-      const srow=document.createElement('div'); srow.className='energy-slider-row'; srow.style.display='grid'; srow.style.gridTemplateColumns='1fr auto auto'; srow.style.gap='10px'; srow.style.alignItems='end';
-      srow.innerHTML='<label>S2<input id="s2Slider" type="range" min="0" max="180" step="0.1" value="0"></label><output id="s2Value">0.0°</output><label>S2 (deg)<input id="s2Entry" type="number" step="0.1" value="0.0" style="width:88px"></label>';
-      row.insertAdjacentElement('afterend',srow);
+      const parent=row.parentNode;
+      const grid=document.createElement('div');
+      grid.id='qeRangeControlGrid';
+      grid.className='qe-range-control-grid';
+
+      const hwCard=document.createElement('div');
+      hwCard.className='qe-range-control';
+      hwCard.innerHTML='<div id="qeSpurionWarning" class="qe-spurion-warning" aria-live="polite"></div><label class="qe-control-entry">ħω (meV)<input id="hwEntry" type="number" step="0.1" value="0.0"></label>';
+      hwCard.appendChild($('hwSlider'));
+      const hwOut=$('hwValue'); if(hwOut) hwOut.classList.add('hidden');
+
+      const s2Card=document.createElement('div');
+      s2Card.className='qe-range-control';
+      s2Card.innerHTML='<label class="qe-control-entry">S2 (deg)<input id="s2Entry" type="number" step="0.1" value="0.0"></label><input id="s2Slider" type="range" min="0" max="180" step="0.1" value="0">';
+
+      const sfCard=document.createElement('div');
+      sfCard.id='sfColorMaxRow';
+      sfCard.className='qe-range-control sf-control hidden';
+      sfCard.innerHTML='<label class="qe-control-entry">Threshold (% of max)<input id="sfThresholdEntry" type="number" min="0" max="100" step="0.1" value="0.0"></label><label class="qe-control-entry">Colorbar scale<input id="sfColorMaxEntry" type="number" min="0.01" max="1" step="0.01" value="1.00"></label><input id="sfColorMaxSlider" type="range" min="0.01" max="1" step="0.01" value="1"><output id="sfColorMaxValue" class="hidden">1.00</output>';
+
+      grid.append(hwCard,s2Card,sfCard);
+      parent.insertBefore(grid,row);
+      row.remove();
     }
   }
   if(!$('powderS2Slider')){
@@ -2402,7 +2626,7 @@ const LEFT_PANEL_STORAGE_KEY='tas-qe-left-panel-v1';
 let restoringLeftPanel=false;
 
 function leftPanelControls(){
-  return [...document.querySelectorAll('.sidebar input[id], .sidebar select[id]')];
+  return [...document.querySelectorAll('.sidebar input[id], .sidebar select[id]')].filter(el=>el.type!=='file');
 }
 
 function saveLeftPanelState(){
@@ -2499,10 +2723,11 @@ async function initialize(){
   for(let slot=1;slot<=3;slot++) updateDarkReferenceUI(slot);
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
-  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls();
+  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls(); updateCifUI();
   // Right-side controls are restored only after dynamic Toolbox controls exist and
   // after the default geometry target has been initialized, so saved values win.
   const restoredRightState=restoreRightPanelState();
+  syncSfColorMaxControl("restore");
   enableRightPanelPersistence();
   $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));$('tabToolbox').addEventListener('click',()=>setActiveTab('toolbox'));
   for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity','toolMass','toolField','toolJ','toolCal']) $(id).addEventListener('input',()=>setToolboxFrom(id));
@@ -2513,6 +2738,27 @@ async function initialize(){
   $('powderS2Slider').addEventListener('input',()=>{$('powderS2Entry').value=Number($('powderS2Slider').value).toFixed(1);updatePowderS2Line();});
   $('powderS2Entry').addEventListener('change',updatePowderS2Line);
   $('displayNuclearLabels').addEventListener('change',()=>{if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));saveRightPanelState();});
+  $('sfColorMaxSlider')?.addEventListener('input',()=>{
+    syncSfColorMaxControl("slider");
+    if(singleCache) renderSingle(singleCache,Number($('hwSlider').value));
+  });
+  $('sfColorMaxEntry')?.addEventListener('change',()=>{
+    syncSfColorMaxControl("entry");
+    if(singleCache) renderSingle(singleCache,Number($('hwSlider').value));
+    saveRightPanelState();
+  });
+  $('sfThresholdEntry')?.addEventListener('change',()=>{
+    sfThresholdFraction();
+    if(singleCache) renderSingle(singleCache,Number($('hwSlider').value));
+    saveRightPanelState();
+  });
+  $('cifSelectButton').addEventListener('click',()=>$('cifFileInput').click());
+  $('cifFileInput').addEventListener('change',async()=>{
+    const file=$('cifFileInput').files?.[0];
+    if(!file) return;
+    try{ await selectCifFile(file); }catch(err){ showError(err); }
+    finally{ $('cifFileInput').value=''; }
+  });
   setToolboxFrom('toolLambda'); updatePowderRelation('powderTwoTheta');
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
