@@ -25,6 +25,39 @@ function selectedBackgrounds(){
     .filter(x=>x.key && samples.has(x.key));
 }
 
+function updateBackgroundSelectAvailability(){
+  const chosen=new Map();
+  for(const slot of BACKGROUND_SLOTS){
+    const sel=$(slot.id);
+    if(sel?.value) chosen.set(slot.id,sel.value);
+  }
+  for(const slot of BACKGROUND_SLOTS){
+    const sel=$(slot.id);
+    if(!sel) continue;
+    for(const opt of sel.options){
+      if(!opt.value){ opt.disabled=false; opt.hidden=false; continue; }
+      const usedElsewhere=[...chosen.entries()].some(([id,key])=>id!==slot.id && key===opt.value);
+      opt.disabled=usedElsewhere;
+      opt.hidden=usedElsewhere;
+    }
+  }
+}
+
+function handleBackgroundSelection(changedId){
+  const changed=$(changedId);
+  if(!changed) return;
+  const key=changed.value;
+  if(key){
+    // The most recently changed slot owns the selection.  This is mainly a
+    // safeguard for restored/legacy states; normally duplicates are hidden.
+    for(const slot of BACKGROUND_SLOTS){
+      if(slot.id!==changedId && $(slot.id)?.value===key) $(slot.id).value="";
+    }
+  }
+  updateBackgroundSelectAvailability();
+  scheduleRecalc();
+}
+
 function enabledPropagationVectors(){
   // Global display switch: keep q1/q2/q3 values/enables intact while hiding
   // all magnetic Bragg peaks when Propagation vectors > show is off.
@@ -1337,6 +1370,17 @@ function renderSingle(cache,index=0){
     `α=${cache.lc.alpha.toFixed(1)}, β=${cache.lc.beta.toFixed(1)}, γ=${cache.lc.gamma.toFixed(1)}° | `+
     `Centering: ${cache.latticeCentering} | Plane: (${cache.U.join(",")})-(${cache.V.join(",")})`;
 
+  // Plotly draws later traces on top. Keep the nuclear legend entry where it is,
+  // but render the actual nuclear markers/labels last so BG1-BG4 and other
+  // line traces cannot cover them.
+  const nuclearTop=traces.filter(tr=>tr.meta==="nuclear-data" || tr.meta==="nuclear-labels");
+  if(nuclearTop.length){
+    for(let j=traces.length-1;j>=0;j--){
+      if(traces[j].meta==="nuclear-data" || traces[j].meta==="nuclear-labels") traces.splice(j,1);
+    }
+    traces.push(...nuclearTop);
+  }
+
   Plotly.react("singlePlot",traces,{
     // Preserve user zoom/pan when controls trigger a recalculation.
     uirevision:"singlePlot",
@@ -2008,7 +2052,7 @@ $("instrument").addEventListener("change",()=>{
 });
 
 for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.se).addEventListener("change",()=>applySampleEnvironmentDefaults(slot)); $(ids.ref).addEventListener("change",()=>{updateDarkReferenceUI(slot);scheduleRecalc();}); }
-BACKGROUND_SLOTS.forEach(slot=>$(slot.id).addEventListener("change",scheduleRecalc));
+BACKGROUND_SLOTS.forEach(slot=>$(slot.id).addEventListener("change",()=>handleBackgroundSelection(slot.id)));
 
 $("hwSlider").addEventListener("input",()=>{ if(singleCache) renderSingle(singleCache,Number($("hwSlider").value)); });
 
@@ -2714,7 +2758,7 @@ async function initialize(){
   mergeLegacyRangeData();
   refreshSelect(instruments,$('instrument'),null);BACKGROUND_SLOTS.forEach(slot=>refreshSelect(samples,$(slot.id),'None'));for(let slot=1;slot<=3;slot++) refreshSelect(sampleEnvironments,$(darkAssetIds(slot).se),'Standard');
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
-  $('instrument').selectedIndex=0;BACKGROUND_SLOTS.forEach(slot=>$(slot.id).value='');for(let slot=1;slot<=3;slot++) $(darkAssetIds(slot).se).value='';applyInstrumentDefaults();for(let slot=1;slot<=3;slot++) applySampleEnvironmentDefaults(slot);
+  $('instrument').selectedIndex=0;BACKGROUND_SLOTS.forEach(slot=>$(slot.id).value='');for(let slot=1;slot<=3;slot++) $(darkAssetIds(slot).se).value='';applyInstrumentDefaults();for(let slot=1;slot<=3;slot++) applySampleEnvironmentDefaults(slot);updateBackgroundSelectAvailability();
   // JSON configuration is now fully loaded.  Only at this point is it safe to
   // overlay browser-local user parameters (including the selected instrument).
   const restoredLocalState=restoreLeftPanelState();
