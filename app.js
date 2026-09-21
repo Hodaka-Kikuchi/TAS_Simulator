@@ -502,39 +502,33 @@ function calcQDark(s1,s2,ki,kf,s1Offset,QrefXY,sense,energyMode=null){
   return q;
 }
 
-// Direct-beam dark-angle zero is defined at the sample orientation where
-// ki is perpendicular to U.  The orientation calibration itself remains the
-// validated Reference-Q pipeline.  Observing the elastic U Bragg peak puts the
-// sample theta=S2/2 away from ki-perpendicular-U, so compensate the dark-angle
-// rotation by that amount.  The laboratory mirror between +-+ and -+- reverses
-// only the sign of this display/range correction.
-function directBeamPerpUCorrection(rl,energyMode,Ei,Ef,sense){
-  // Bragg-peak-position orientation already carries the original Reference-Q
-  // calibration, so no extra S2(U)/2 rebasing is needed there.  The direct-beam
-  // correction is only for the ki-perpendicular U/V orientation modes.
-  if(($('orientationReference')?.value || 'bragg') === 'bragg') return 0;
-  const Uhkl=[num("Uh"),num("Uk"),num("Ul")];
-  const qU=norm(hklToQ(rl,Uhkl));
-  const E0=energyMode==="Ef fixed"?Ef:Ei;
-  if(!(qU>1e-12) || !(E0>0)) return 0;
-  const k0=Math.sqrt(E0/2.072);
-  const arg=qU/(2*k0);
-  if(arg>1+1e-10) return 0;
-  const halfS2=rad2deg(Math.asin(clamp(arg,-1,1)));
+// Direct-beam dark-angle zero is tied to the currently selected
+// ki-perpendicular orientation reference.  For perpU use U; for perpV use V.
+// The elastic Bragg condition for that reference lies theta=S2/2 away from the
+// ki-perpendicular condition, so the same +theta correction must be used by
+// both the Q-E dark-angle calculation and the TAS geometry overlay.
+//
+// The -+- TAS drawing is rendered as an exact left/right mirror of the canonical
+// +-+ drawing.  Therefore the internal angular correction is the same +theta
+// before the display mirror is applied; no empirical sign-dependent offset is
+// needed here.
+function directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense){
+  const orientationMode=$('orientationReference')?.value || 'bragg';
+  if(orientationMode==='bragg') return 0;
 
-  // +-+ is already calibrated correctly and must remain unchanged.
-  //
-  // For -+-, the TAS geometry is displayed as the left/right mirror of the
-  // canonical +-+ drawing.  With the old -halfS2 correction, Direct-beam
-  // rotation=0 / offset=0 is displaced from the incident ki ray by exactly
-  // S2(U)=2*halfS2.  Apply that missing mirrored-sense offset here.
-  //
-  // This helper is used by BOTH the Q-E dark-angle calculation and the TAS
-  // geometry overlay, so the numerical blocked region and the drawn sector
-  // remain registered to one another.
-  const baseCorrection=(sense==="+-+") ? +halfS2 : -halfS2;
-  const minusPlusMinusAlignment=(sense==="-+-") ? 2*halfS2 : 0;
-  return baseCorrection+minusPlusMinusAlignment;
+  const refHkl=orientationMode==='perpV'
+    ? [num("Vh"),num("Vk"),num("Vl")]
+    : [num("Uh"),num("Uk"),num("Ul")];
+  const qRef=norm(hklToQ(rl,refHkl));
+  const E0=energyMode==="Ef fixed"?Ef:Ei;
+  if(!(qRef>1e-12) || !(E0>0)) return 0;
+
+  const k0=Math.sqrt(E0/2.072);
+  const arg=qRef/(2*k0);
+  if(arg>1+1e-10) return 0;
+
+  const halfS2Ref=rad2deg(Math.asin(clamp(arg,-1,1)));
+  return +halfS2Ref;
 }
 
 function darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef){
@@ -696,7 +690,7 @@ function calculateSingleCrystal(){
         for(const rawRange of asset.ranges){
           const [from,to,offset]=rawRange; if(from===0 && to===0) continue;
           const directBeamCorrection=darkRef==="Direct beam"
-            ? directBeamPerpUCorrection(rl,energyMode,Ei,Ef,sense) : 0;
+            ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense) : 0;
           const correctedOffset=offset+directBeamCorrection;
           const s1from=correctedOffset+from-Qoffset, s1to=correctedOffset+to-Qoffset;
 
@@ -1217,7 +1211,7 @@ function renderGeometry(cache,index=0){
     asset.ranges.forEach((r,j)=>{
       const [from,to,offset]=r; if(from===0&&to===0) return;
       const directBeamCorrection=asset.ref==="Direct beam"
-        ? directBeamPerpUCorrection(cache.rl,cache.energyMode,cache.Ei,cache.Ef,sense) : 0;
+        ? directBeamOrientationCorrection(cache.rl,cache.energyMode,cache.Ei,cache.Ef,sense) : 0;
       let a0=offset+from+directBeamCorrection,a1=offset+to+directBeamCorrection; if(a1<a0)a1+=360;
       const aa=linspace(a0,a1,120).map(d=>base-deg2rad(d));
       // Display-only differentiation: Dark 1/2/3 use 1.0/1.1/1.2 x radius
