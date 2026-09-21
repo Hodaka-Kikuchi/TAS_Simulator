@@ -61,15 +61,16 @@
     "width": 0.15,
     "height": 0.15
   },
+  "s2_dep_ei": "no",
   "S2_min": 5,
   "S2_limits": [
-      {
-          "S2limit": 130,
-          "Ei": 14.5
-      },
-      {
-          "S2limit": 130,
-          "Ei": 0.1
-      }
+    {
+      "S2limit": 130,
+      "Ei": 14.5
+    },
+    {
+      "S2limit": 130,
+      "Ei": 0.1
+    }
   ]
 }

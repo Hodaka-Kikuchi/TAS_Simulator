@@ -130,3 +130,15 @@
 .dark-asset:has(#darkEnable1){border:2px solid #d62728}
 .dark-asset:has(#darkEnable2){border:2px solid #1f77b4}
 .dark-asset:has(#darkEnable3){border:2px solid #2ca02c}
+
+
+/* Visually distinguish non-editable entry boxes from editable inputs. */
+input[readonly],
+input:disabled,
+textarea[readonly],
+textarea:disabled {
+  background: #e9ecef;
+  color: #666;
+  border-color: #c7c7c7;
+  cursor: not-allowed;
+}

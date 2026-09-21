@@ -1,18 +1,14 @@
 {
-    "name": "Poplar(Larmor)@HFIR",
-
-    "energy_mode": "Ei fixed",
-
-    "sense": "-+-",
-
-    "default_energy": 13.9,
-
-    "S2_min": 30.0,
-
-    "configuration": [
-        {
-            "S2limit": 60.0,
-            "Ei": 13.9
-        }
-    ]
+  "name": "Poplar(Larmor)@HFIR",
+  "energy_mode": "Ei fixed",
+  "sense": "-+-",
+  "default_energy": 13.9,
+  "s2_dep_ei": "no",
+  "S2_min": 30.0,
+  "configuration": [
+    {
+      "S2limit": 60.0,
+      "Ei": 13.9
+    }
+  ]
 }

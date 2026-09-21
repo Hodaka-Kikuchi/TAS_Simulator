@@ -21,7 +21,7 @@
     "crystal": "Heusler",
     "mosaic_h": 30,
     "mosaic_v": 30,
-    "width": 0.140,
+    "width": 0.14,
     "height": 0.153,
     "thickness": 0.0025,
     "vfocus": true,
@@ -33,7 +33,7 @@
     "crystal": "Heusler",
     "mosaic_h": 40,
     "mosaic_v": 40,
-    "width": 0.100,
+    "width": 0.1,
     "height": 0.153,
     "thickness": 0.002,
     "vfocus": true,
@@ -61,15 +61,16 @@
     "width": 0.15,
     "height": 0.15
   },
+  "s2_dep_ei": "no",
   "S2_min": 5,
   "S2_limits": [
-      {
-          "S2limit": 100,
-          "Ei": 38.5
-      },
-      {
-          "S2limit": 100,
-          "Ei": 13.5
-      }
+    {
+      "S2limit": 100,
+      "Ei": 38.5
+    },
+    {
+      "S2limit": 100,
+      "Ei": 13.5
+    }
   ]
 }

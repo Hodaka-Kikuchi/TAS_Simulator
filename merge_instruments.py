@@ -31,6 +31,7 @@ for key,(p,r) in res.items():
         table=q.get('S2_limits') or (q.get('configuration') if isinstance(q.get('configuration'),list) else None)
         if table: merged['S2_limits']=table
         merged['S2_min']=q.get('S2_min',q.get('default_S2min',8.0))
+        if 's2_dep_ei' in q: merged['s2_dep_ei']=q['s2_dep_ei']
         if 'default_energy' in q: merged.setdefault('qe_range',{})['default_energy']=q['default_energy']
     (OUT/p.name).write_text(json.dumps(merged,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
     print(p.name,'<-', 'merged' if cand else 'resolution only (no matching QE file)')

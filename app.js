@@ -332,12 +332,130 @@ function instrumentInterp(inst,lambdaHalf=false){
   return x=>interpExtrap(xp,yp,x);
 }
 
+// S2-limit policy is explicit in the instrument JSON.
+//   s2_dep_ei = "yes": the JSON S2 maximum is evaluated from the Ei-dependent
+//                      curve.  The user may edit either Delta S2 or the current
+//                      Effective S2 max; editing Effective converts it back to a
+//                      single Delta that is then applied to the full Ei curve.
+//   s2_dep_ei = "no" : the JSON S2 maximum is constant, but the same two-way
+//                      Delta/Effective controls are retained for a uniform UI.
+// Legacy files without the flag keep backward-compatible behavior: if the
+// table actually varies in S2limit, it is treated as Ei-dependent.
+function s2DependsOnEi(inst){
+  const raw=inst?.s2_dep_ei ?? inst?.qe_range?.s2_dep_ei;
+  if(typeof raw==='string'){
+    const v=raw.trim().toLowerCase();
+    if(v==='yes') return true;
+    if(v==='no') return false;
+  }
+  if(typeof raw==='boolean') return raw;
+  const values=rangeTable(inst).map(x=>Number(x.S2limit)).filter(Number.isFinite);
+  return values.some(v=>Math.abs(v-values[0])>1e-10);
+}
+function configuredConstantS2Max(inst){
+  const first=rangeTable(inst).map(x=>Number(x.S2limit)).find(Number.isFinite);
+  if(!Number.isFinite(first)) throw new Error('Selected instrument has no valid S2 maximum.');
+  return first;
+}
+function s2ElasticIncidentEnergy(){
+  const entered=num('energy');
+  if(!(entered>0)) return NaN;
+  return $('lambdaHalf')?.checked ? 4*entered : entered;
+}
+function baseS2MaxAtEi(inst,Ei,lambdaHalf=false){
+  return s2DependsOnEi(inst) ? Number(instrumentInterp(inst,lambdaHalf)(Ei)) : configuredConstantS2Max(inst);
+}
+function effectiveS2MaxAtEi(inst,Ei,lambdaHalf=false){
+  const base=baseS2MaxAtEi(inst,Ei,lambdaHalf);
+  const raw=$('S2maxUser')?.value;
+  const delta=(raw===undefined||raw===null||String(raw).trim()==='') ? 0 : Number(raw);
+  return base+(Number.isFinite(delta)?delta:0);
+}
+function formatS2ControlValue(x){
+  return Number.isFinite(Number(x)) ? String(Number(Number(x).toFixed(3))) : '';
+}
+function initializeS2MaxControl(inst=currentInstrument()){
+  if(!$('S2maxUser')) return;
+  // Start from the instrument JSON value for every instrument.  Users can then
+  // modify either Delta S2 or Effective S2 max without changing the JSON model.
+  $('S2maxUser').value='0';
+  updateS2MaxDisplay(inst);
+}
+function currentS2DisplayContext(inst=null,EiOverride=NaN,lambdaHalfOverride=null){
+  inst=inst||currentInstrument();
+  const lambdaHalf=lambdaHalfOverride===null
+    ? (checkedValue('sampleMode')==='single' && !!$('lambdaHalf')?.checked)
+    : !!lambdaHalfOverride;
+  const Ei0=Number.isFinite(Number(EiOverride)) ? Number(EiOverride) : s2ElasticIncidentEnergy();
+  const base=Number.isFinite(Ei0) ? baseS2MaxAtEi(inst,Ei0,lambdaHalf) : configuredConstantS2Max(inst);
+  return {inst,lambdaHalf,Ei0,base};
+}
+function updateS2MaxDisplay(inst=null,EiOverride=NaN,lambdaHalfOverride=null){
+  if(!$('S2maxUser') || !$('S2maxBase') || !$('S2maxEffective')) return;
+  try{
+    const ctx=currentS2DisplayContext(inst,EiOverride,lambdaHalfOverride);
+    const deltaRaw=$('S2maxUser').value;
+    const delta=(deltaRaw===undefined||deltaRaw===null||String(deltaRaw).trim()==='') ? 0 : Number(deltaRaw);
+    const effective=ctx.base+(Number.isFinite(delta)?delta:0);
+    $('S2maxBase').value=formatS2ControlValue(ctx.base);
+    $('S2maxEffective').value=formatS2ControlValue(effective);
+
+    // JSON S2 max is metadata and stays read-only.  Delta and Effective are
+    // deliberately both editable; they are synchronized bidirectionally.
+    $('S2maxBase').readOnly=true;
+    $('S2maxUser').readOnly=false;
+    $('S2maxEffective').readOnly=false;
+
+    if($('s2MaxBaseLabel')?.firstChild) $('s2MaxBaseLabel').firstChild.nodeValue='JSON S2 max (deg)';
+    if($('s2MaxControlLabel')?.firstChild) $('s2MaxControlLabel').firstChild.nodeValue='ΔS2 max (deg)';
+    if($('s2MaxEffectiveLabel')?.firstChild) $('s2MaxEffectiveLabel').firstChild.nodeValue='Effective S2 max (deg)';
+    $('s2MaxEffectiveLabel')?.classList.remove('hidden');
+
+    $('S2maxUser').title='Relative offset added to the JSON S2 maximum.';
+    $('S2maxEffective').title=s2DependsOnEi(ctx.inst)
+      ? 'Absolute S2 maximum at the currently displayed Ei. Editing this converts the value to ΔS2 and applies that Δ across the Ei-dependent curve.'
+      : 'Absolute S2 maximum. Editing this automatically updates ΔS2.';
+  }catch(_err){
+    $('S2maxBase').value=''; $('S2maxEffective').value='';
+  }
+}
+function syncS2DeltaFromEffective(){
+  if(!$('S2maxUser') || !$('S2maxEffective')) return;
+  try{
+    let inst=currentInstrument(), EiOverride=NaN, lambdaHalfOverride=null;
+    if(singleCache?.hwList?.length && $('hwSlider')){
+      const i=Math.max(0,Math.min(Number($('hwSlider').value)||0,singleCache.hwList.length-1));
+      const hw=Number(singleCache.hwList[i])||0;
+      EiOverride=singleCache.energyMode==='Ef fixed' ? singleCache.Ef+hw : singleCache.Ei;
+      inst=singleCache.inst||inst;
+      lambdaHalfOverride=singleCache.lambdaHalf;
+    }
+    const ctx=currentS2DisplayContext(inst,EiOverride,lambdaHalfOverride);
+    const effective=Number($('S2maxEffective').value);
+    if(!Number.isFinite(effective)) return;
+    $('S2maxUser').value=formatS2ControlValue(effective-ctx.base);
+  }catch(_err){}
+}
+function updateS2MaxDisplayForQERange(cache,index){
+  if(!cache?.hwList?.length) return;
+  const i=Math.max(0,Math.min(Number(index)||0,cache.hwList.length-1));
+  const hw=Number(cache.hwList[i])||0;
+  const Ei=cache.energyMode==='Ef fixed' ? cache.Ef+hw : cache.Ei;
+  updateS2MaxDisplay(cache.inst,Ei,cache.lambdaHalf);
+}
+function validateEffectiveS2Max(S2max,S2min,Ei){
+  if(!Number.isFinite(S2max)) throw new Error('S2 maximum is not a finite number.');
+  if(S2max>180) throw new Error(`Effective S2 maximum (${S2max.toFixed(2)}°) exceeds 180°${Number.isFinite(Ei)?` at Ei=${Ei.toFixed(2)} meV`:''}.`);
+  if(S2max<=S2min) throw new Error(`Effective S2 maximum (${S2max.toFixed(2)}°) must be greater than S2 minimum (${S2min.toFixed(2)}°)${Number.isFinite(Ei)?` at Ei=${Ei.toFixed(2)} meV`:''}.`);
+  return S2max;
+}
+
 function normalizeCrystalName(name){ const aliases={PG002:"PG(002)",PG004:"PG(004)"}; return aliases[name]||name; }
 function setIf(id,x){ if($(id)&&x!==undefined&&x!==null&&Number.isFinite(Number(x))) $(id).value=x; }
 function setBool(id,x){ if($(id)&&x!==undefined&&x!==null) $(id).checked=!!x; }
 function setSelect(id,x){ if(!$(id)||x===undefined||x===null) return; if([...$(id).options].some(o=>o.value===String(x))) $(id).value=String(x); }
 const CRYSTALS={'PG(002)':3.355,'PG(004)':1.677,'Heusler':3.437,'CoFe':1.771,'Ge(111)':3.266,'Ge(311)':1.714,'Ge(511)':1.089,'Ge(533)':0.863,'Si(111)':3.135,'Cu(111)':2.087,'Cu(002)':1.807,'Cu(220)':1.278,'Other':null};
-function fillCrystal(selectId,dId){ const s=$(selectId); s.innerHTML=''; for(const k of Object.keys(CRYSTALS)){const o=document.createElement('option');o.value=k;o.textContent=k;s.appendChild(o);} s.value='PG(002)'; s.addEventListener('change',()=>{const d=CRYSTALS[s.value];if(d!=null){$(dId).value=d;$(dId).disabled=true;}else $(dId).disabled=false;}); $(dId).disabled=true; }
+function fillCrystal(selectId,dId){ const s=$(selectId); s.innerHTML=''; for(const k of Object.keys(CRYSTALS)){const o=document.createElement('option');o.value=k;o.textContent=k;s.appendChild(o);} s.value='PG(002)'; s.addEventListener('change',()=>{const d=CRYSTALS[s.value];if(d!=null) $(dId).value=d; $(dId).disabled=false;}); $(dId).disabled=false; }
 function updateSupermirrorUI(){ const on=$("gm1").checked; $("div1m").disabled=!on; $("div1h").disabled=on; $("div1v").disabled=on; }
 
 function applyInstrumentDefaults(){
@@ -350,6 +468,7 @@ function applyInstrumentDefaults(){
   const defaultEnergy=energyMode==="Ei fixed" ? (cfg.Ei ?? cfg.Ef ?? qr.default_energy ?? inst.default_energy ?? 14.7) : (cfg.Ef ?? cfg.Ei ?? qr.default_energy ?? inst.default_energy ?? 14.7);
   setIf("energy",defaultEnergy);
   setIf("S2min",qr.S2_min ?? inst.S2_min ?? inst.default_S2min ?? 8.0);
+  initializeS2MaxControl(inst);
   setSelect("sense",cfg.sign || qr.sense || inst.sense || "-+-");
   setSelect("geometry",cfg.geometry || "W");
   setSelect("method",(inst.approximation||{}).method);
@@ -595,7 +714,6 @@ function calculateSingleCrystal(){
   const s1Offset=-thetaRef+180-phiRef;
 
   const S2min=num("S2min"), S1min=num("S1min"), S1max=num("S1max");
-  const interp=instrumentInterp(inst,lambdaHalf);
   let hwList;
   if(lambdaHalf) hwList=[0];
   else if(energyMode==="Ef fixed"){
@@ -617,7 +735,7 @@ function calculateSingleCrystal(){
     else { EiHw=Ei; EfHw=Ei-hw; }
     if(EiHw<=0 || EfHw<=0) continue;
     const ki=0.6947*Math.sqrt(EiHw), kf=0.6947*Math.sqrt(EfHw);
-    const S2max=Number(interp(EiHw));
+    const S2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,EiHw,lambdaHalf),S2min,EiHw);
 
     // S1min/S1max are motor limits and remain the same for both senses.
     // The sign convention changes the reciprocal-space handedness, not the
@@ -1035,6 +1153,7 @@ function renderSingle(cache,index=0){
   bindSingleZoomLabelScaling(cache,Qplot);
 
   $("hwValue").textContent=`${cache.hwList[i].toFixed(1)} meV`;
+  updateS2MaxDisplayForQERange(cache,i);
   renderGeometry(cache,i);
 }
 
@@ -1338,7 +1457,6 @@ function calculatePowder(){
   const lc=latticeParams();
   const rv=reciprocalVectors(lc.a,lc.b,lc.c,lc.alpha,lc.beta,lc.gamma);
   const al=norm(rv.astar), bl=norm(rv.bstar), cl=norm(rv.cstar);
-  const interp=instrumentInterp(inst,false);
   const energyMode=checkedValue("energyMode");
   const E=num("energy"), S2min=num("S2min");
   const qmin=[],qmax=[],hw=[];
@@ -1348,7 +1466,7 @@ function calculatePowder(){
     const Ef=E;
     const EiMax=Math.max(...rangeTable(inst).map(x=>Number(x.Ei)));
     for(const Ei of arange(Ef+0.01,EiMax,0.1)){
-      const s2max=interp(Ei), ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
+      const s2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,Ei,false),S2min,Ei), ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
       const tmin=deg2rad(S2min),tmax=deg2rad(s2max);
       qmin.push(Math.sqrt(ki*ki+kf*kf-2*ki*kf*Math.cos(tmin)));
       qmax.push(Math.sqrt(ki*ki+kf*kf-2*ki*kf*Math.cos(tmax)));
@@ -1356,7 +1474,7 @@ function calculatePowder(){
     }
   } else {
     const Ei=E;
-    const s2max=interp(Ei),ki=0.6947*Math.sqrt(Ei);
+    const s2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,Ei,false),S2min,Ei),ki=0.6947*Math.sqrt(Ei);
     for(const w of arange(0,Ei-0.01,0.1)){
       const Ef=Ei-w;
       if(Ef<=0) continue;
@@ -1639,6 +1757,7 @@ function updatePowderS2Line(){ calculatePowder(); }
 function recalculate(){
   clearError();
   updateEnergyLabel();
+  updateS2MaxDisplay();
   updateModeVisibility();
   try{
     if(checkedValue("sampleMode")==="single"){
@@ -1686,6 +1805,12 @@ $("geomPerpU").addEventListener("click",setGeometryKiPerpU);
 $("geomPerpV").addEventListener("click",setGeometryKiPerpV);
 $("geomSetBragg").addEventListener("click",setGeometryTargetFromBragg);
 for(let slot=1;slot<=3;slot++) $(`geomSetRefQ${slot}`).addEventListener("click",()=>setGeometryTargetFromDarkRef(slot));
+
+// Either S2 control may be used as the user's entry point.  Effective is an
+// absolute value; convert it to Delta before the normal recalculation handler
+// runs.  Editing Delta needs no conversion because Effective is derived from it.
+$('S2maxEffective')?.addEventListener('input',syncS2DeltaFromEffective);
+$('S2maxEffective')?.addEventListener('change',syncS2DeltaFromEffective);
 
 document.querySelectorAll("input,select").forEach(el=>{
   if([
@@ -2339,7 +2464,7 @@ function restoreLeftPanelState(){
       setSavedControl(el.id,v[el.id],{dispatchChange:el.id==='monoCrystal'||el.id==='anaCrystal'});
     }
 
-    updateModeVisibility(); updateEnergyLabel(); updateSupermirrorUI(); updateAutoW();
+    updateModeVisibility(); updateEnergyLabel(); updateS2MaxDisplay(); updateSupermirrorUI(); updateAutoW();
     return true;
   }finally{restoringLeftPanel=false;}
 }
