@@ -97,6 +97,8 @@ function updateCifUI(){
       name.title=bits.join(" | ");
     }else name.title="";
   }
+  const clearButton=$("cifClearButton");
+  if(clearButton) clearButton.disabled=!selectedCifStructure;
   $("sfColorMaxRow")?.classList.toggle("hidden",!hasSelectedCif());
 }
 
@@ -125,29 +127,466 @@ function sfThresholdFraction(){
   return pct/100;
 }
 
-async function selectCifFile(file){
-  if(!file) return;
-  const text=await file.text();
+function loadCifText(text,fileName="generated_structure.cif"){
   const parsed=parseCifStructure(text);
   selectedCifStructure=parsed;
-  selectedCifFileName=file.name;
+  selectedCifFileName=fileName;
 
-  // A selected CIF defines the crystallographic unit cell.  Keep the existing
-  // U/V orientation indices, but synchronize the six editable lattice fields
-  // to the CIF so every downstream reciprocal-space calculation uses the same
-  // cell as the structure-factor calculation.
+  // A selected/generated CIF defines the crystallographic unit cell. Keep the
+  // existing U/V orientation indices, but synchronize the six lattice fields.
   const lattice=parsed?.lattice || {};
   for(const id of ["a","b","c","alpha","beta","gamma"]){
     const value=Number(lattice[id]);
     if(Number.isFinite(value) && $(id)) $(id).value=String(value);
   }
+  // When the CIF contains a recognizable standard-setting space group, keep
+  // the Sample Space group controls synchronized with the loaded structure.
+  const sg=findGeneratorSpaceGroup(parsed);
+  if(sg) setSampleSpaceGroup(sg.number,{recalc:false});
+
   updateAutoW();
+  updateCifUI();
+  clearError();
+  scheduleRecalc();
+  return parsed;
+}
+
+async function selectCifFile(file){
+  if(!file) return;
+  return loadCifText(await file.text(),file.name);
+}
+
+function clearSelectedCif(){
+  selectedCifStructure=null;
+  selectedCifFileName="";
+  if($("cifFileInput")) $("cifFileInput").value="";
   updateCifUI();
   clearError();
   scheduleRecalc();
 }
 
+// ==================== CIF Generator ====================
+let cifSpaceGroups=[];
+
+function sampleSpaceGroupByNumber(number){
+  const n=Math.round(Number(number));
+  return cifSpaceGroups.find(sg=>sg.number===n) || null;
+}
+
+function centeringFromSpaceGroup(sg){
+  const symbol=String(sg?.hm || "").trim().toUpperCase();
+  const first=symbol.charAt(0);
+  // The bundled standard settings use conventional P/A/B/C/I/F/R lattice
+  // symbols. H, if ever encountered in imported metadata, is equivalent to
+  // rhombohedral centering in hexagonal axes for this extinction filter.
+  if(["P","A","B","C","I","F","R"].includes(first)) return first;
+  if(first==="H") return "R";
+  return "P";
+}
+
+function selectedSampleSpaceGroup(){
+  const n=Number($("sampleSpaceGroup")?.value || $("sampleSpaceGroupNumber")?.value || 1);
+  return sampleSpaceGroupByNumber(n) || sampleSpaceGroupByNumber(1);
+}
+
+function selectedSampleCentering(){
+  return centeringFromSpaceGroup(selectedSampleSpaceGroup());
+}
+
+function setSampleSpaceGroup(number,{recalc=true}={}){
+  const sg=sampleSpaceGroupByNumber(number);
+  if(!sg) return false;
+  const select=$("sampleSpaceGroup"), entry=$("sampleSpaceGroupNumber");
+  if(select) select.value=String(sg.number);
+  if(entry) entry.value=String(sg.number);
+  if(recalc) scheduleRecalc();
+  return true;
+}
+
+function jumpToSampleSpaceGroupNumber(){
+  const entry=$("sampleSpaceGroupNumber");
+  if(!entry) return;
+  let n=Math.round(Number(entry.value));
+  if(!Number.isFinite(n)) n=Number($("sampleSpaceGroup")?.value)||1;
+  n=Math.max(1,Math.min(230,n));
+  if(!setSampleSpaceGroup(n)) entry.value=String(Number($("sampleSpaceGroup")?.value)||1);
+}
+
+function syncSampleSpaceGroupNumberFromSelect(){
+  const n=Number($("sampleSpaceGroup")?.value);
+  if(Number.isInteger(n) && $("sampleSpaceGroupNumber")) $("sampleSpaceGroupNumber").value=String(n);
+  scheduleRecalc();
+}
+
+function restoreSampleSpaceGroupSelection(){
+  let saved=null;
+  try{ saved=JSON.parse(localStorage.getItem(LEFT_PANEL_STORAGE_KEY)||"null"); }catch(_e){}
+  const n=Number(saved?.values?.sampleSpaceGroup || saved?.values?.sampleSpaceGroupNumber);
+  if(Number.isInteger(n) && sampleSpaceGroupByNumber(n)) setSampleSpaceGroup(n,{recalc:false});
+  else setSampleSpaceGroup(1,{recalc:false});
+}
+
+function populateSampleSpaceGroupControls(){
+  const select=$("sampleSpaceGroup");
+  if(!select) return;
+  select.replaceChildren();
+  for(const sg of cifSpaceGroups){
+    const opt=document.createElement("option");
+    opt.value=String(sg.number);
+    opt.textContent=`${sg.number} — ${sg.hm}`;
+    select.appendChild(opt);
+  }
+  restoreSampleSpaceGroupSelection();
+  if(!select.dataset.bound){
+    select.addEventListener("change",syncSampleSpaceGroupNumberFromSelect);
+    $("sampleSpaceGroupNumber")?.addEventListener("change",jumpToSampleSpaceGroupNumber);
+    $("sampleSpaceGroupNumber")?.addEventListener("keydown",ev=>{
+      if(ev.key==="Enter"){ ev.preventDefault(); jumpToSampleSpaceGroupNumber(); }
+    });
+    select.dataset.bound="1";
+  }
+}
+
+let lastGeneratedCifText="";
+let lastGeneratedCifName="generated_structure.cif";
+
+function setCifGeneratorMessage(text,isError=false){
+  const box=$("cifGeneratorMessage");
+  if(!box) return;
+  box.textContent=text || "";
+  box.classList.toggle("error-text",!!isError);
+}
+
+const CIF_LATTICE_FIELDS={a:"cifA",b:"cifB",c:"cifC",alpha:"cifAlpha",beta:"cifBeta",gamma:"cifGamma"};
+
+function selectedCifGeneratorSpaceGroup(){
+  const n=Number($("cifSpaceGroup")?.value);
+  return cifSpaceGroups.find(x=>x.number===n) || null;
+}
+
+function syncCifSpaceGroupNumberFromSelect(){
+  const n=Number($("cifSpaceGroup")?.value);
+  const entry=$("cifSpaceGroupNumber");
+  if(entry && Number.isInteger(n)) entry.value=String(n);
+}
+
+function jumpToCifSpaceGroupNumber(){
+  const entry=$("cifSpaceGroupNumber");
+  const select=$("cifSpaceGroup");
+  if(!entry || !select) return;
+  let n=Math.round(Number(entry.value));
+  if(!Number.isFinite(n)) n=Number(select.value)||1;
+  n=Math.max(1,Math.min(230,n));
+  entry.value=String(n);
+  const sg=cifSpaceGroups.find(x=>x.number===n);
+  if(!sg){
+    setCifGeneratorMessage(`Space group #${n} is not available.`,true);
+    return;
+  }
+  select.value=String(n);
+  updateCifSpaceGroupInfo();
+}
+
+function applyCifLatticeConstraints(){
+  const sg=selectedCifGeneratorSpaceGroup();
+  if(!sg) return;
+  const inputs=Object.fromEntries(Object.entries(CIF_LATTICE_FIELDS).map(([key,id])=>[key,$(id)]));
+  for(const input of Object.values(inputs)){
+    if(!input) continue;
+    input.readOnly=false;
+    input.removeAttribute("aria-readonly");
+    input.title="";
+  }
+  const lockValue=(key,value,reason)=>{
+    const input=inputs[key]; if(!input) return;
+    input.value=String(value); input.readOnly=true; input.setAttribute("aria-readonly","true"); input.title=reason;
+  };
+  const lockEqual=(key,sourceKey,reason)=>{
+    const source=Number(inputs[sourceKey]?.value);
+    if(Number.isFinite(source)) lockValue(key,source,reason);
+  };
+  const cs=String(sg.crystal_system||"").toLowerCase();
+  if(cs==="monoclinic"){
+    lockValue("alpha",90,"Fixed by the standard monoclinic setting.");
+    lockValue("gamma",90,"Fixed by the standard monoclinic setting.");
+  }else if(cs==="orthorhombic"){
+    for(const k of ["alpha","beta","gamma"]) lockValue(k,90,"Fixed by orthorhombic symmetry.");
+  }else if(cs==="tetragonal"){
+    lockEqual("b","a","b = a by tetragonal symmetry.");
+    for(const k of ["alpha","beta","gamma"]) lockValue(k,90,"Fixed by tetragonal symmetry.");
+  }else if(cs==="trigonal" || cs==="hexagonal"){
+    // The bundled standard settings use hexagonal axes for trigonal groups.
+    lockEqual("b","a",`${cs==="trigonal"?"Trigonal (hexagonal setting)":"Hexagonal"} symmetry requires b = a.`);
+    lockValue("alpha",90,"Fixed by the standard hexagonal-axis setting.");
+    lockValue("beta",90,"Fixed by the standard hexagonal-axis setting.");
+    lockValue("gamma",120,"Fixed by the standard hexagonal-axis setting.");
+  }else if(cs==="cubic"){
+    lockEqual("b","a","b = a by cubic symmetry.");
+    lockEqual("c","a","c = a by cubic symmetry.");
+    for(const k of ["alpha","beta","gamma"]) lockValue(k,90,"Fixed by cubic symmetry.");
+  }
+}
+
+function copyCurrentLatticeToGenerator(){
+  const map={cifA:"a",cifB:"b",cifC:"c",cifAlpha:"alpha",cifBeta:"beta",cifGamma:"gamma"};
+  for(const [dst,src] of Object.entries(map)){
+    const v=Number($(src)?.value);
+    if(Number.isFinite(v) && $(dst)) $(dst).value=String(v);
+  }
+  applyCifLatticeConstraints();
+}
+
+function updateCifSpaceGroupInfo(){
+  const sg=selectedCifGeneratorSpaceGroup();
+  const box=$("cifSpaceGroupInfo");
+  if(!box) return;
+  if(!sg){ box.textContent="Select a space group."; return; }
+  syncCifSpaceGroupNumberFromSelect();
+  box.textContent=`#${sg.number} ${sg.hm} · ${sg.crystal_system} · standard setting · ${sg.operations.length} symmetry operation(s)`;
+  applyCifLatticeConstraints();
+}
+
+function addCifAtomRow(values={}){
+  const host=$("cifAtomRows");
+  if(!host) return;
+  const row=document.createElement("div");
+  row.className="cif-atom-row";
+  const specs=[
+    ["element","text",values.element ?? ""],
+    ["x","number",values.x ?? 0],
+    ["y","number",values.y ?? 0],
+    ["z","number",values.z ?? 0],
+    ["occupancy","number",values.occupancy ?? 1]
+  ];
+  for(const [key,type,value] of specs){
+    const cell=document.createElement("div"); cell.className="cif-atom-cell";
+    const input=document.createElement("input");
+    input.type=type; input.dataset.cifAtomField=key; input.value=String(value);
+    if(type==="number") input.step=key==="occupancy" ? "0.01" : "0.0001";
+    if(key==="occupancy"){ input.min="0"; input.max="1"; }
+    if(key==="element") input.placeholder="e.g. Cu";
+    cell.appendChild(input); row.appendChild(cell);
+  }
+  const action=document.createElement("div"); action.className="cif-atom-cell";
+  const remove=document.createElement("button"); remove.type="button"; remove.textContent="Remove";
+  remove.addEventListener("click",()=>{
+    row.remove();
+    if(!host.querySelector(".cif-atom-row")) addCifAtomRow();
+  });
+  action.appendChild(remove); row.appendChild(action);
+  host.appendChild(row);
+}
+
+function replaceCifAtomRows(atoms){
+  const host=$("cifAtomRows");
+  if(!host) return;
+  host.replaceChildren();
+  for(const atom of atoms) addCifAtomRow(atom);
+  if(!atoms.length) addCifAtomRow();
+}
+
+function normalizeCifElement(raw){
+  const s=String(raw||"").trim();
+  if(/^D$/i.test(s)) return "D";
+  const iso=s.match(/^(\d+)([A-Za-z]{1,2})$/);
+  if(iso) return `${iso[1]}${iso[2][0].toUpperCase()+iso[2].slice(1).toLowerCase()}`;
+  const m=s.match(/^([A-Za-z]{1,2})/);
+  if(!m) return "";
+  return m[1][0].toUpperCase()+m[1].slice(1).toLowerCase();
+}
+
+function readCifGeneratorAtoms(){
+  const host=$("cifAtomRows");
+  const rows=host ? [...host.querySelectorAll(".cif-atom-row")] : [];
+  const atoms=[];
+  for(let i=0;i<rows.length;i++){
+    const get=key=>rows[i].querySelector(`[data-cif-atom-field="${key}"]`)?.value;
+    const element=normalizeCifElement(get("element"));
+    if(!element) throw new Error(`Atom ${i+1}: enter a valid element symbol.`);
+    const x=Number(get("x")), y=Number(get("y")), z=Number(get("z")), occupancy=Number(get("occupancy"));
+    if(![x,y,z].every(Number.isFinite)) throw new Error(`Atom ${i+1}: x, y, and z must be finite fractional coordinates.`);
+    if(!Number.isFinite(occupancy) || occupancy<0 || occupancy>1) throw new Error(`Atom ${i+1}: occupancy must be between 0 and 1.`);
+    atoms.push({element,x,y,z,occupancy});
+  }
+  if(!atoms.length) throw new Error("Add at least one asymmetric-unit atom.");
+  return atoms;
+}
+
+function cifGeneratorNumber(id,label,{positive=false,angle=false}={}){
+  const v=Number($(id)?.value);
+  if(!Number.isFinite(v)) throw new Error(`${label} must be a number.`);
+  if(positive && !(v>0)) throw new Error(`${label} must be greater than zero.`);
+  if(angle && !(v>0 && v<180)) throw new Error(`${label} must be between 0 and 180 degrees.`);
+  return v;
+}
+
+function cleanCifFileName(raw){
+  let name=String(raw||"generated_structure.cif").trim().replace(/[\\/:*?"<>|]+/g,"_");
+  if(!name) name="generated_structure.cif";
+  if(!name.toLowerCase().endsWith(".cif")) name+=".cif";
+  return name;
+}
+
+function buildGeneratedCif(){
+  applyCifLatticeConstraints();
+  const sg=selectedCifGeneratorSpaceGroup();
+  if(!sg) throw new Error("Select a space group.");
+  const lattice={
+    a:cifGeneratorNumber("cifA","a",{positive:true}),
+    b:cifGeneratorNumber("cifB","b",{positive:true}),
+    c:cifGeneratorNumber("cifC","c",{positive:true}),
+    alpha:cifGeneratorNumber("cifAlpha","alpha",{angle:true}),
+    beta:cifGeneratorNumber("cifBeta","beta",{angle:true}),
+    gamma:cifGeneratorNumber("cifGamma","gamma",{angle:true})
+  };
+  const atoms=readCifGeneratorAtoms();
+  const filename=cleanCifFileName($("cifGeneratedName")?.value);
+  const dataName=filename.replace(/\.cif$/i,"").replace(/[^A-Za-z0-9_\-]/g,"_") || "generated_structure";
+  const lines=[
+    `data_${dataName}`,
+    "_audit_creation_method 'TAS Simulator CIF Generator'",
+    `_space_group_name_H-M_alt '${sg.hm}'`,
+    `_space_group_name_Hall '${sg.hall}'`,
+    `_space_group_IT_number ${sg.number}`,
+    `_cell_length_a ${lattice.a}`,
+    `_cell_length_b ${lattice.b}`,
+    `_cell_length_c ${lattice.c}`,
+    `_cell_angle_alpha ${lattice.alpha}`,
+    `_cell_angle_beta ${lattice.beta}`,
+    `_cell_angle_gamma ${lattice.gamma}`,
+    "",
+    "loop_",
+    "_space_group_symop_id",
+    "_space_group_symop_operation_xyz"
+  ];
+  sg.operations.forEach((op,i)=>lines.push(`${i+1} '${op}'`));
+  lines.push("","loop_","_atom_site_label","_atom_site_type_symbol","_atom_site_fract_x","_atom_site_fract_y","_atom_site_fract_z","_atom_site_occupancy");
+  const counts=new Map();
+  for(const atom of atoms){
+    const n=(counts.get(atom.element)||0)+1; counts.set(atom.element,n);
+    lines.push(`${atom.element}${n} ${atom.element} ${atom.x} ${atom.y} ${atom.z} ${atom.occupancy}`);
+  }
+  lines.push("");
+  const text=lines.join("\n");
+  // Validate with the same parser used by the simulator. This catches unknown
+  // atom types and any atom/site that cannot be expanded before download/apply.
+  const parsed=parseCifStructure(text);
+  return {text,filename,sg,atoms,parsed};
+}
+
+function downloadGeneratedCif(text,filename){
+  const blob=new Blob([text],{type:"chemical/x-cif;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+}
+
+function normalizedSpaceGroupSymbol(value){
+  return String(value||"").toLowerCase().replace(/[\s_'".]/g,"");
+}
+
+function findGeneratorSpaceGroup(parsed){
+  const n=Number(parsed?.spaceGroupNumber);
+  if(Number.isFinite(n)){
+    const byNumber=cifSpaceGroups.find(x=>x.number===n);
+    if(byNumber) return byNumber;
+  }
+  const sym=normalizedSpaceGroupSymbol(parsed?.spaceGroup);
+  if(!sym) return null;
+  return cifSpaceGroups.find(x=>normalizedSpaceGroupSymbol(x.hm)===sym || normalizedSpaceGroupSymbol(x.hall)===sym) || null;
+}
+
+async function loadCifIntoGenerator(file){
+  if(!file) return;
+  const text=await file.text();
+  const parsed=parseCifStructure(text);
+  const sg=findGeneratorSpaceGroup(parsed);
+  if(!sg) throw new Error(`Could not identify a supported standard-setting space group from ${file.name}.`);
+  const lattice=parsed.lattice || {};
+  for(const key of ["a","b","c","alpha","beta","gamma"]){
+    const v=Number(lattice[key]);
+    if(!Number.isFinite(v)) throw new Error(`Could not load ${file.name}: lattice parameter ${key} is missing or invalid.`);
+  }
+  if(!Array.isArray(parsed.asymmetricSites) || !parsed.asymmetricSites.length) throw new Error(`Could not load asymmetric-unit atoms from ${file.name}.`);
+  $("cifSpaceGroup").value=String(sg.number);
+  for(const [key,id] of Object.entries(CIF_LATTICE_FIELDS)) $(id).value=String(lattice[key]);
+  replaceCifAtomRows(parsed.asymmetricSites.map(a=>({element:a.element,x:a.x,y:a.y,z:a.z,occupancy:a.occupancy})));
+  if($("cifGeneratedName")) $("cifGeneratedName").value=cleanCifFileName(file.name);
+  updateCifSpaceGroupInfo();
+  lastGeneratedCifText="";
+  setCifGeneratorMessage(`Loaded ${file.name} for editing: #${sg.number} ${sg.hm}, ${parsed.asymmetricSites.length} asymmetric site(s).`);
+}
+
+async function initializeCifGenerator(){
+  const select=$("cifSpaceGroup");
+  if(!select) return;
+  try{
+    const response=await fetch("space-groups.json",{cache:"no-store"});
+    if(!response.ok) throw new Error(`space-groups.json returned HTTP ${response.status}`);
+    const data=await response.json();
+    cifSpaceGroups=Array.isArray(data) ? data : data.space_groups;
+    if(!Array.isArray(cifSpaceGroups) || cifSpaceGroups.length!==230) throw new Error("space-groups.json does not contain the expected 230 standard space groups.");
+    populateSampleSpaceGroupControls();
+    select.replaceChildren();
+    for(const sg of cifSpaceGroups){
+      const opt=document.createElement("option"); opt.value=String(sg.number); opt.textContent=`${sg.number} — ${sg.hm}`; select.appendChild(opt);
+    }
+    select.value="1";
+    syncCifSpaceGroupNumberFromSelect();
+    copyCurrentLatticeToGenerator();
+    addCifAtomRow({element:"",x:0,y:0,z:0,occupancy:1});
+    updateCifSpaceGroupInfo();
+    select.addEventListener("change",updateCifSpaceGroupInfo);
+    $("cifSpaceGroupNumber")?.addEventListener("change",jumpToCifSpaceGroupNumber);
+    $("cifSpaceGroupNumber")?.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); jumpToCifSpaceGroupNumber(); } });
+    $("cifA")?.addEventListener("input",applyCifLatticeConstraints);
+    $("cifCopyLattice")?.addEventListener("click",()=>{copyCurrentLatticeToGenerator();setCifGeneratorMessage("Current sample lattice copied.");});
+    $("cifAddAtom")?.addEventListener("click",()=>addCifAtomRow());
+    $("cifLoadExisting")?.addEventListener("click",()=>$("cifLoadFile")?.click());
+    $("cifLoadFile")?.addEventListener("change",async ev=>{
+      const file=ev.target.files?.[0];
+      try{ await loadCifIntoGenerator(file); }
+      catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
+      finally{ ev.target.value=""; }
+    });
+    $("cifGenerateDownload")?.addEventListener("click",()=>{
+      try{
+        const generated=buildGeneratedCif();
+        lastGeneratedCifText=generated.text; lastGeneratedCifName=generated.filename;
+        downloadGeneratedCif(generated.text,generated.filename);
+        setCifGeneratorMessage(`Generated and downloaded ${generated.filename}: ${generated.sg.hm}, ${generated.atoms.length} asymmetric site(s), ${generated.parsed.atoms.length} expanded atom(s).`);
+      }catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
+    });
+    $("cifApplyToSimulator")?.addEventListener("click",()=>{
+      try{
+        const generated=buildGeneratedCif();
+        lastGeneratedCifText=generated.text; lastGeneratedCifName=generated.filename;
+        if($("sampleMode")?.value!=="single"){
+          $("sampleMode").value="single"; updateModeVisibility();
+        }
+        const parsed=loadCifText(generated.text,generated.filename);
+        setCifGeneratorMessage(`Generated and set ${generated.filename} as the selected CIF (no download): ${generated.sg.hm}, ${generated.atoms.length} asymmetric site(s), ${parsed.atoms.length} expanded atom(s).`);
+      }catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
+    });
+  }catch(err){
+    select.innerHTML='<option value="">Space-group data unavailable</option>';
+    for(const id of ["cifLoadExisting","cifGenerateDownload","cifApplyToSimulator","cifSpaceGroupNumber"]){ if($(id)) $(id).disabled=true; }
+    setCifGeneratorMessage(`CIF Generator could not load space-group data: ${err?.message||String(err)}`,true);
+  }
+}
+
 function num(id){ return Number($(id).value); }
+
+// Temporary numerical sign-label swap.
+// Beamline checks indicate that the current internal +-+ and -+- branches are
+// associated with the opposite user-facing labels. Keep the UI unchanged and
+// swap only when the selected sign enters TAS/Q-E numerical calculations.
+function calculationTasSense(uiSense){
+  if(uiSense==="+-+") return "-+-";
+  if(uiSense==="-+-") return "+-+";
+  return uiSense;
+}
+
 function checkedValue(name){
   const direct=$(name);
   if(direct && direct.tagName==="SELECT") return direct.value;
@@ -195,7 +634,15 @@ function effectiveOrientationReference(rl, fixedEnergyMeV=null){
   const arg=qNorm/(2*k);
   if(arg>1+1e-10) throw new Error(`${mode==='perpV'?'V':'U'} Bragg peak is inaccessible at the selected reference energy.`);
   const s2Ref=2*rad2deg(Math.asin(clamp(arg,-1,1)));
-  return {mode,hkl,s1:-0.5*s2Ref,s2Ref};
+
+  // S1 is counter-clockwise positive in both configurations.  Starting from
+  // the physical S1=0 condition where ki is perpendicular to U/V, the elastic
+  // Bragg position lies at -theta for user-facing +-+ and +theta for -+-.
+  // Using -theta for both configurations shifts the -+- perpendicular
+  // condition by 2*theta = S2.
+  const uiSense=checkedValue("sense");
+  const s1Ref=(uiSense==="-+-" ? +1 : -1)*0.5*s2Ref;
+  return {mode,hkl,s1:s1Ref,s2Ref};
 }
 
 function updateOrientationReferenceUI(){
@@ -678,15 +1125,43 @@ function getDarkAssets(){
   return assets;
 }
 
-function calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY,sense){
+function tasPhiLabDeg(ki,kf,s2deg){
+  const t=deg2rad(s2deg);
+  const qx=-kf*Math.sin(t);
+  const qz= ki-kf*Math.cos(t);
+  return rad2deg(Math.atan2(qx,qz));
+}
+
+function calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY,sense,s1Calibration=null){
+  if(s1Calibration){
+    // Exact inverse of tasMotorAngles() S1 calibration:
+    //
+    //   S1 = S1ref + (omegaTarget-omegaRef)/c2Sign
+    //
+    // therefore
+    //
+    //   omegaTarget = omegaRef + c2Sign*(S1-S1ref)
+    //
+    // tasMotorAngles() deliberately uses the positive |S2| branch for the S1
+    // orientation calibration in both TAS configurations, so do the same here.
+    const qMag=Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
+    const omegaTarget=s1Calibration.omegaRef
+      + s1Calibration.c2Sign*(s1-s1Calibration.refS1);
+    // Do not apply any extra Q-space mirror/arc correction here.
+    // Angle calculation already defines the calibrated relation between
+    // S1, |S2| and the reciprocal-space azimuth.  Using its exact inverse
+    // keeps the Q-E boundary on the same HKL side as Angle calculation.
+    const phiTarget=deg2rad(
+      wrap180(tasPhiLabDeg(ki,kf,s2)-omegaTarget)
+    );
+    return [qMag*Math.cos(phiTarget),qMag*Math.sin(phiTarget)];
+  }
+
+  // Fallback only when a usable S1 reference calibration is unavailable.
   const kiAngle=deg2rad(-s1+s1Offset+refS1);
   const kfAngle=deg2rad(s2-s1+s1Offset+refS1);
   let q=[ki*Math.sin(kiAngle)-kf*Math.sin(kfAngle),
          ki*Math.cos(kiAngle)-kf*Math.cos(kfAngle)];
-  // The two TAS sign conventions are mirror images about the Reference-Q axis.
-  // Keep the motor limits themselves unchanged; only the reciprocal-space
-  // handedness changes.  This also reverses the S2-sweep arc direction for a
-  // fixed S1, as required physically.
   if(sense==="+-+" && norm(QrefXY)>1e-10){
     const eQ=normalize(QrefXY);
     q=sub(scale(eQ,2*dot(q,eQ)),q);
@@ -732,10 +1207,9 @@ function calcQDark(s1,s2,ki,kf,s1Offset,QrefXY,sense,energyMode=null){
 // ki-perpendicular condition, so the same +theta correction must be used by
 // both the Q-E dark-angle calculation and the TAS geometry overlay.
 //
-// The -+- TAS drawing is rendered as an exact left/right mirror of the canonical
-// +-+ drawing.  Therefore the internal angular correction is the same +theta
-// before the display mirror is applied; no empirical sign-dependent offset is
-// needed here.
+// The Direct-beam geometric axis is mirrored separately in the TAS drawing.
+// The orientation-reference calibration itself uses the same +theta=S2/2
+// correction for both user-facing configurations.
 function directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense){
   const orientationMode=$('orientationReference')?.value || 'bragg';
   if(orientationMode==='bragg') return 0;
@@ -752,6 +1226,10 @@ function directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense){
   if(arg>1+1e-10) return 0;
 
   const halfS2Ref=rad2deg(Math.asin(clamp(arg,-1,1)));
+
+  // The geometric Direct-beam axis is already mirrored in renderGeometry().
+  // Do not mirror this half-S2 calibration a second time.  Changing +theta to
+  // -theta shifts the -+- zero by 2*theta = S2, exactly the observed offset.
   return +halfS2Ref;
 }
 
@@ -781,7 +1259,10 @@ function darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef){
 function calculateSingleCrystal(){
   const inst=currentInstrument();
   const lc=latticeParams();
-  const latticeCentering=$("latticeCentering").value || "P";
+  // Lattice centering is derived from the selected Space group; there is no
+  // separate manual centering selector in the Sample UI.
+  const sampleSpaceGroup=selectedSampleSpaceGroup();
+  const latticeCentering=centeringFromSpaceGroup(sampleSpaceGroup);
   const U=[num("Uh"),num("Uk"),num("Ul")];
   const V=[num("Vh"),num("Vk"),num("Vl")];
   const rl=RL_calc({...lc,sv1:U,sv2:V});
@@ -813,6 +1294,7 @@ function calculateSingleCrystal(){
     if(arg>1+1e-12) throw new Error("Reference Q is not accessible at the selected reference energy.");
     thetaRef=rad2deg(Math.asin(clamp(arg,-1,1)));
   }
+
   const darkAssets=getDarkAssets();
   // Each enabled asset keeps its own reference convention. Existing single-asset
   // formulas are reused independently, then their blocked regions are overlaid.
@@ -832,7 +1314,21 @@ function calculateSingleCrystal(){
   const regions=[], S2list=[], QmaxList=[];
   const darkKF=[],darkKI=[],darkFixed=[];
   const addDark=$("addDark").checked && darkAssets.length>0;
-  const sense=checkedValue("sense");
+  const uiSense=checkedValue("sense");
+  const sense=calculationTasSense(uiSense);
+
+  // Match the Angle-calculation S1 convention exactly. Because the UI sign is
+  // intentionally mapped to the opposite internal branch at present, c2Sign
+  // must be derived from this INTERNAL sense, not directly from the UI label.
+  const s1C2Sign=(sense==="+-+") ? +1 : -1;
+  const kRef=Math.sqrt(fixedReferenceEnergy/2.072);
+  const s1RangeCalibration=QrefNorm>1e-10
+    ? {
+        refS1,
+        c2Sign:s1C2Sign,
+        omegaRef:wrap180(tasPhiLabDeg(kRef,kRef,2*thetaRef)-phiRef)
+      }
+    : null;
 
   for(const hw of hwList){
     let EiHw,EfHw;
@@ -842,16 +1338,15 @@ function calculateSingleCrystal(){
     const ki=0.6947*Math.sqrt(EiHw), kf=0.6947*Math.sqrt(EfHw);
     const S2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,EiHw,lambdaHalf),S2min,EiHw);
 
-    // S1min/S1max are motor limits and remain the same for both senses.
-    // The sign convention changes the reciprocal-space handedness, not the
-    // numerical motor interval.  calcQ0() applies that mirror about Reference Q.
+    // S1min/S1max are physical motor limits. The Q-E boundary is generated
+    // from the exact inverse of the same S1 calibration used by Angle calculation.
     const s1range=linspace(S1min,S1max,200);
     const s2range=linspace(S2min,S2max,200);
 
-    const p1=s1range.map(s1=>calcQ0(s1,S2min,ki,kf,s1Offset,refS1,QrefXY,sense));
-    const p2=s2range.map(s2=>calcQ0(S1max,s2,ki,kf,s1Offset,refS1,QrefXY,sense));
-    const p3=[...s1range].reverse().map(s1=>calcQ0(s1,S2max,ki,kf,s1Offset,refS1,QrefXY,sense));
-    const p4=[...s2range].reverse().map(s2=>calcQ0(S1min,s2,ki,kf,s1Offset,refS1,QrefXY,sense));
+    const p1=s1range.map(s1=>calcQ0(s1,S2min,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration));
+    const p2=s2range.map(s2=>calcQ0(S1max,s2,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration));
+    const p3=[...s1range].reverse().map(s1=>calcQ0(s1,S2max,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration));
+    const p4=[...s2range].reverse().map(s2=>calcQ0(S1min,s2,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration));
     const boundary=[...p1,...p2,...p3,...p4];
     regions.push(boundary); S2list.push(S2max);
     QmaxList.push(Math.max(...boundary.map(norm)));
@@ -913,7 +1408,7 @@ function calculateSingleCrystal(){
         for(const rawRange of asset.ranges){
           const [from,to,offset]=rawRange; if(from===0 && to===0) continue;
           const directBeamCorrection=darkRef==="Direct beam"
-            ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense) : 0;
+            ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,uiSense) : 0;
           const correctedOffset=offset+directBeamCorrection;
           const s1from=correctedOffset+from-Qoffset, s1to=correctedOffset+to-Qoffset;
 
@@ -980,23 +1475,6 @@ function calculateSingleCrystal(){
         x:dot(G,ex),y:dot(G,ey),hkl,label:isOrigin?"":`(${formatHKL(hkl)})`,
         sf2:Number.isFinite(sf2)?sf2:null,sfNorm:null
       });
-
-      for(const q of propagationVectors){
-        const kvec=q.hkl;
-        for(const s of [1,-1]){
-          const hm=add(hkl,scale(kvec,s));
-          const Gm=hklToQ(rl,hm);
-
-          if(norm(Gm)<=QplotLattice){
-            magPoints.push({
-              x:dot(Gm,ex),
-              y:dot(Gm,ey),
-              qIndex:q.index,
-              label:`k${q.index}: (${hm.map(x=>x.toFixed(2)).join(",")})`
-            });
-          }
-        }
-      }
     }
   }
 
@@ -1010,6 +1488,30 @@ function calculateSingleCrystal(){
       for(let j=Gpoints.length-1;j>=0;j--){
         const p=Gpoints[j];
         if(p.label && Number.isFinite(p.sf2) && p.sf2<=sfMax*1e-10) Gpoints.splice(j,1);
+      }
+    }
+  }
+
+  // Generate magnetic satellites only after nuclear systematic/extinction
+  // filtering is complete.  This prevents k-satellites from remaining around
+  // a parent nuclear reflection that has disappeared.  The origin is retained
+  // intentionally, so +/-k around (0,0,0) continue to be shown.
+  for(const parent of Gpoints){
+    const hkl=parent.hkl;
+    for(const q of propagationVectors){
+      const kvec=q.hkl;
+      for(const s of [1,-1]){
+        const hm=add(hkl,scale(kvec,s));
+        const Gm=hklToQ(rl,hm);
+
+        if(norm(Gm)<=QplotLattice){
+          magPoints.push({
+            x:dot(Gm,ex),
+            y:dot(Gm,ey),
+            qIndex:q.index,
+            label:`k${q.index}: (${hm.map(x=>x.toFixed(2)).join(",")})`
+          });
+        }
       }
     }
   }
@@ -1034,7 +1536,7 @@ function calculateSingleCrystal(){
   }
 
   return {
-    inst,lc,latticeCentering,U,V,rl,ex,ey,ez,
+    inst,lc,latticeCentering,sampleSpaceGroup,U,V,rl,ex,ey,ez,
     energyMode,Ei,Ef,lambdaHalf,hwList,
     regions,S2list,QmaxList,darkKF,darkKI,darkFixed,addDark,
     Gpoints,magPoints,ringData,darkAssets,QrefXY,sense,
@@ -1368,7 +1870,7 @@ function renderSingle(cache,index=0){
   const title=`${cache.inst.name||"Instrument"} | ${energyText}${lam}<br>`+
     `a=${cache.lc.a.toFixed(3)}, b=${cache.lc.b.toFixed(3)}, c=${cache.lc.c.toFixed(3)} Å<br>`+
     `α=${cache.lc.alpha.toFixed(1)}, β=${cache.lc.beta.toFixed(1)}, γ=${cache.lc.gamma.toFixed(1)}° | `+
-    `Centering: ${cache.latticeCentering} | Plane: (${cache.U.join(",")})-(${cache.V.join(",")})`;
+    `Space group: #${cache.sampleSpaceGroup?.number ?? 1} ${cache.sampleSpaceGroup?.hm ?? "P1"} (${cache.latticeCentering}) | Plane: (${cache.U.join(",")})-(${cache.V.join(",")})`;
 
   // Plotly draws later traces on top. Keep the nuclear legend entry where it is,
   // but render the actual nuclear markers/labels last so BG1-BG4 and other
@@ -1431,7 +1933,10 @@ function qeGeometryAngles(cache, senseOverride=null){
 
 function renderGeometry(cache,index=0){
   const i=Math.max(0,Math.min(index,cache.hwList.length-1));
-  const sense=cache.sense || checkedValue("sense");
+  // Geometry display follows the user-facing sign directly.
+  // cache.sense is the intentionally swapped INTERNAL numerical branch and
+  // must not determine which configuration picture is shown.
+  const sense=checkedValue("sense");
   const hw=cache.hwList[i] || 0;
   updateGeometrySpurionWarning(cache,num("geomHW"));
   const mirror=sense==="+-+" ? 1 : -1;
@@ -1458,7 +1963,11 @@ function renderGeometry(cache,index=0){
     // Build one canonical (+-+) drawing, then make -+- an exact left/right
     // reflection of it.  This prevents the two sign configurations from drifting
     // to different screen positions because of their signed motor angles.
-    const drawTarget=(sense==="+-+") ? target : qeGeometryAngles(cache,"+-+");
+    // The schematic has its own display convention. Always construct the
+    // canonical user-facing +-+ geometry from the +-+ motor-angle branch, then
+    // apply the existing display mirror below only when the UI selects -+-.
+    // Numerical Angle/Q-E results remain on the intentionally swapped branches.
+    const drawTarget=qeGeometryAngles(cache,"+-+");
     const {angles,ki,kf}=drawTarget;
     source=[-L,0];
     mono=[0,0];
@@ -1499,24 +2008,36 @@ function renderGeometry(cache,index=0){
     qAngle=-mirror*Math.PI/4;
   }
 
-  // Display-only transform: rotate the complete TAS schematic 90 degrees
-  // counterclockwise.  Motor angles and all physical calculations above remain
-  // untouched; only the coordinates/angles used for drawing are transformed.
+  // Display-only transform.  First rotate the canonical TAS drawing so the
+  // instrument develops mainly downward from the monochromator.  For -+-,
+  // reflect the DRAWING coordinates themselves instead of reversing Plotly's
+  // x axis.  This makes subsequent auto-fitting straightforward and keeps all
+  // labels / dark-angle guides in the same coordinate system.
   const rotateCCW90=([x,y])=>[y,-x];
   source=rotateCCW90(source);
   mono=rotateCCW90(mono);
   sample=rotateCCW90(sample);
   analyzer=rotateCCW90(analyzer);
   detector=rotateCCW90(detector);
-  // rotateCCW90() above maps [x,y] -> [y,-x], i.e. a 90° clockwise
-  // screen transform. Rotate all direction angles by the SAME amount so ki/kf/Q
-  // arrows remain aligned with their flight paths. This is display-only.
   thetaKi-=Math.PI/2;
   thetaKf-=Math.PI/2;
   thetaOut-=Math.PI/2;
   monoPlaneAngle-=Math.PI/2;
   anaPlaneAngle-=Math.PI/2;
   qAngle-=Math.PI/2;
+
+  if(sense==="-+-") {
+    const reflectX=([x,y])=>[-x,y];
+    source=reflectX(source); mono=reflectX(mono); sample=reflectX(sample);
+    analyzer=reflectX(analyzer); detector=reflectX(detector);
+    const reflectAngle=a=>Math.PI-a;
+    thetaKi=reflectAngle(thetaKi);
+    thetaKf=reflectAngle(thetaKf);
+    thetaOut=reflectAngle(thetaOut);
+    monoPlaneAngle=reflectAngle(monoPlaneAngle);
+    anaPlaneAngle=reflectAngle(anaPlaneAngle);
+    qAngle=reflectAngle(qAngle);
+  }
 
   const traces=[];
   const addLine=(a,b,color,width=3,dash="solid")=>traces.push({x:[a[0],b[0]],y:[a[1],b[1]],mode:"lines",line:{color,width,dash},hoverinfo:"skip",showlegend:false});
@@ -1546,7 +2067,7 @@ function renderGeometry(cache,index=0){
       const effectiveRef=effectiveOrientationReference(cache.rl,(cache.energyMode==="Ei fixed")?cache.Ei:cache.Ef);
       const phiRef=qPlaneAngle(effectiveRef.hkl);
       const crystalDelta=phiRef-phiTarget;
-      referenceBase=qAngle+(sense==="-+-" ? -crystalDelta : crystalDelta);
+      referenceBase=qAngle-crystalDelta;
       const refS1=effectiveRef.s1;
       if(Number.isFinite(target.angles?.s1)&&Number.isFinite(refS1)) deltaS1=angleDiffDeg(target.angles.s1,refS1);
     }catch(_err){ referenceBase=qAngle; }
@@ -1562,7 +2083,7 @@ function renderGeometry(cache,index=0){
         const phiTarget=qPlaneAngle([target.calc.h,target.calc.k,target.calc.l]);
         const phiDark=qPlaneAngle(asset.refHkl||[1,0,0]);
         const crystalDelta=phiDark-phiTarget;
-        base=qAngle+(sense==="-+-" ? -crystalDelta : crystalDelta);
+        base=qAngle-crystalDelta;
       }catch(_err){}
     }else if(asset.ref==="Direct beam"){
       try{
@@ -1571,7 +2092,13 @@ function renderGeometry(cache,index=0){
         const qRefNorm=norm(qRef), refEnergy=(cache.energyMode==="Ei fixed")?cache.Ei:cache.Ef;
         if(qRefNorm>1e-12&&Number.isFinite(refEnergy)&&refEnergy>0){
           const kRef=Math.sqrt(refEnergy/2.072), thetaRef=Math.asin(clamp(qRefNorm/(2*kRef),-1,1));
-          const qToKi=Math.PI/2-thetaRef; base+=-qToKi;
+          const qToKi=Math.PI/2-thetaRef;
+          // Direct-beam zero must lie on the forward ki extension. Relative
+          // to the crystallographic reference direction the two TAS
+          // configurations are mirror images:
+          //   +-+ : -(90°-theta)
+          //   -+- : +(90°-theta)
+          base+=(sense==="+-+" ? -1 : +1)*qToKi;
           darkReferenceOffset=(sense==="+-+"?-1:+1)*rad2deg(qToKi);
         }
       }catch(_err){}
@@ -1621,15 +2148,14 @@ function renderGeometry(cache,index=0){
     const planePhi=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.atan2(y,x);};
     const targetHKL=target ? [target.calc.h,target.calc.k,target.calc.l] : U;
     const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
-    // U/V are crystallographic guides only.  Their relative handedness is fixed
-    // by the crystal, but the laboratory rotation sense reverses between +-+ and
-    // -+-.  Therefore the angular displacement from the *current target Q* must
-    // reverse as a whole for -+-.  This makes Set U/Set V place the selected
-    // crystallographic vector exactly on Q, including non-orthogonal hexagonal
-    // planes, without changing any numerical TAS / Q-E / dark-angle calculation.
-    const uvSense = sense==="-+-" ? -1 : 1;
-    uArrowAngle=qAngle+uvSense*(phiU-phiT);
-    vArrowAngle=qAngle+uvSense*(phiV-phiT);
+    // U/V should remain a right-handed crystallographic pair in the TAS
+    // geometry display.  planePhi() is measured in the right-handed
+    // (ex=U, ey) scattering-plane basis from makeSpiceScatteringPlaneBasis,
+    // so the displayed U/V offsets from the current target Q must preserve
+    // that sign.  Using the negative sign mirrors the pair into a left-handed
+    // relation; use the positive sign for both +-+ and -+-.
+    uArrowAngle=qAngle+(phiU-phiT);
+    vArrowAngle=qAngle+(phiV-phiT);
   }catch(_err){}
   // Display U and V as vectors, like ki/kf/Q.  Their length is 1.5 times the
   // guide-circle radius so the arrowheads and labels sit clear of the circle.
@@ -1645,10 +2171,9 @@ function renderGeometry(cache,index=0){
   // Place Monochromator and Analyzer labels beside their components rather than
   // directly underneath them. Put the Sample label farther outside the guide
   // circle on the side opposite to Q so the text does not overlap the circle.
-  // Display Monochromator label on the requested screen side.
-  // The x-axis is reversed for -+-, so the same data-space x offset appears
-  // on the right for -+- and on the left for +-+.
-  const monoLabel=[mono[0]-1.15,mono[1]];
+  // Keep the monochromator label on the same screen side as its anchored
+  // component: left for +-+, right for -+-.
+  const monoLabel=[mono[0]+(sense==="+-+"?-1.05:1.05),mono[1]];
   const anaLabel=[analyzer[0]-1.05,analyzer[1]];
   const sampleLabelRadius=1.55;
   const sampleLabel=[
@@ -1675,30 +2200,59 @@ function renderGeometry(cache,index=0){
     {x:qMid[0]-0.18*Math.sin(qAngle),y:qMid[1]+0.18*Math.cos(qAngle),text:"Q",showarrow:false,font:{color:"#000"}}
   ];
 
-  // Fixed display viewport.  Do not auto-fit the current angles: auto-fitting made
-  // identical schematic flight lengths appear different for different instruments.
-  // With the viewport tied only to L, Source-Mono, Mono-Sample, Sample-Analyzer
-  // (0.75 L), and Analyzer-Detector (0.5 L) keep constant on-screen lengths.
-  const span=4.32*L;
-  const cx=mono[0];
-  const cy=mono[1]-0.60*L;
+  // Auto-fit the full TAS drawing to the geometry card, while anchoring
+  // the monochromator at a fixed screen position so changing the hbar-omega
+  // slider does not make the whole schematic jump.  +-+ anchors Mono toward
+  // the left; -+- anchors Mono farther toward the right so the whole mirrored
+  // configuration sits closer to the right edge, as requested.  Sample /
+  // analyzer / detector / guide-circle positions are otherwise free to move
+  // with the calculated angles.
+  const fitPoints=[source,mono,sample,analyzer,detector,kiArrow.tail,kiArrow.head,kfArrow.head,qEnd,uEnd,vEnd,monoLabel,anaLabel,sampleLabel,detLabel];
+  const radial=Math.max(darkRadius,uvVectorLen,qVectorLen,kiVectorLen,kfVectorLen);
+  fitPoints.push(
+    [sample[0]-radial,sample[1]],[sample[0]+radial,sample[1]],
+    [sample[0],sample[1]-radial],[sample[0],sample[1]+radial]
+  );
+  const monoFracX=sense==="+-+" ? 0.23 : 0.85;
+  const monoFracY=0.78;
+  const fitPad=0.32*L;
+  let span=2.5*L;
+  for(const p of fitPoints){
+    const dx=p[0]-mono[0], dy=p[1]-mono[1];
+    if(dx<0) span=Math.max(span,(-dx+fitPad)/monoFracX);
+    else if(dx>0) span=Math.max(span,(dx+fitPad)/(1-monoFracX));
+    if(dy<0) span=Math.max(span,(-dy+fitPad)/monoFracY);
+    else if(dy>0) span=Math.max(span,(dy+fitPad)/(1-monoFracY));
+  }
+  // A small floor avoids excessive zoom-in near simple elastic geometries.
+  span=Math.max(span,4.0*L);
+  const xMin=mono[0]-monoFracX*span, xMax=xMin+span;
+  const yMin=mono[1]-monoFracY*span, yMax=yMin+span;
 
   const angleBox=$("geometryAngles");
   if(angleBox){
     if(target){
       const a=target.angles;
       angleBox.classList.remove("error-text");
-      angleBox.innerHTML=`Ei=${target.Ei.toFixed(3)} meV, Ef=${target.Ef.toFixed(3)} meV &nbsp; | &nbsp; `+
-        `M1=${formatAngle(-a.m1)}°, M2=${formatAngle(-a.m2)}°, S1=${formatAngle(a.s1)}°, S2=${formatAngle(a.s2)}°, A1=${formatAngle(-a.a1)}°, A2=${formatAngle(-a.a2)}°`+
-        (a.warning?`<br>${a.warning}`:"");
+      const energyLine=`Ei=${target.Ei.toFixed(3)} meV, Ef=${target.Ef.toFixed(3)} meV`;
+
+      // Display-only S2 sign in the Angle calculation & TAS geometry card.
+      // Keep target.angles.s2 unchanged because it is used by the geometry.
+      const s2Display=sense==="+-+"
+        ? -Math.abs(Number(a.s2))
+        : +Math.abs(Number(a.s2));
+
+      const angleLine=`M1=${formatAngle(-a.m1)}°, M2=${formatAngle(-a.m2)}°, S1=${formatAngle(a.s1)}°, S2=${formatAngle(s2Display)}°, A1=${formatAngle(-a.a1)}°, A2=${formatAngle(-a.a2)}°`+
+        (a.warning?` &nbsp; | &nbsp; ${a.warning}`:"");
+      angleBox.innerHTML=`<div class="geometry-result-line geometry-energy-line">${energyLine}</div><div class="geometry-result-line geometry-angle-line">${angleLine}</div>`;
     }else{
       angleBox.classList.add("error-text"); angleBox.textContent=`Angle calculation unavailable: ${targetError}`;
     }
   }
 
   Plotly.react("geometryPlot",traces,{
-    xaxis:{range:sense==="+-+" ? [cx-span/2,cx+span/2] : [cx+span/2,cx-span/2],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true},
-    yaxis:{range:[cy-span/2,cy+span/2],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true},
+    xaxis:{range:[xMin,xMax],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true,constrain:"domain"},
+    yaxis:{range:[yMin,yMax],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true,constrain:"domain"},
     annotations,margin:{l:10,r:10,t:12,b:10},showlegend:false
   },{responsive:true,displayModeBar:false});
 }
@@ -1907,14 +2461,23 @@ function setGeometryPerpendicularCondition(mode){
       s1Perp=wrap180(a0.s1-angleDiffDeg(phiTargetPerp,phi0));
     }
     let phiTargetDeg;
-    // For a ki-perpendicular orientation reference, the elastic Q direction
-    // lies by +/-S2/2 from the referenced crystal axis.  +-+ uses the
-    // already-validated negative branch, while -+- is its left/right mirror.
-    // The previous code always used the +-+ branch, which gives the wrong HKL
-    // for -+- when U and V are not orthogonal.
+    // For a matching ki-perpendicular Orientation reference, derive the
+    // quick-target azimuth from the same calibrated S1 relation used by
+    // tasMotorAngles().  At elastic transfer and equal |Q|:
+    //
+    //   S1 = S1_ref + (phi_ref - phi_target)/c2Sign
+    //
+    // Requiring S1=0 gives:
+    //
+    //   phi_target = phi_ref + c2Sign*S1_ref
+    //
+    // This is especially important for user-facing -+-, whose perpendicular
+    // virtual Bragg reference is +S2/2 rather than -S2/2.
     if(orient===mode && (mode==='perpU' || mode==='perpV')){
+      const fixedE=em==="Ei fixed" ? Number(b.config.Ei) : Number(b.config.Ef);
+      const orientationRef=effectiveOrientationReference(b.rl,fixedE);
       const c2Sign=(b.config.sign_config==='+-+') ? +1 : -1;
-      phiTargetDeg=wrap180(phiAxis-c2Sign*0.5*s2Geom);
+      phiTargetDeg=wrap180(phiAxis+c2Sign*orientationRef.s1);
     }else if(orient==='perpU') phiTargetDeg=wrap180(-90+phiU-phiQlab-s1Perp);
     else if(orient==='perpV') phiTargetDeg=wrap180(-90+phiV-phiQlab-s1Perp);
     else{
@@ -2116,7 +2679,7 @@ function buildResolutionLattice(normalizeOrder=false){
 function updateAutoW(){try{buildResolutionLattice();}catch(_e){if($('Wauto'))$('Wauto').textContent='auto: unavailable';}}
 function collectResolutionBase(){
   const {lc,rl}=buildResolutionLattice(true), em=$('energyMode').value,E=num('energy');
-  const config={energy_mode:em,Ei:em==='Ei fixed'?E:null,Ef:em==='Ef fixed'?E:null,geometry:$('geometry').value,sign_config:$('sense').value};
+  const config={energy_mode:em,Ei:em==='Ei fixed'?E:null,Ef:em==='Ef fixed'?E:null,geometry:$('geometry').value,sign_config:calculationTasSense($('sense').value)};
   const approximation={method:$('method').value};
   const focusing={monochromator:{horizontal:{enabled:$('monoHF').checked,blades:num('monoHB')},vertical:{enabled:$('monoVF').checked,blades:num('monoVB')}},analyzer:{horizontal:{enabled:$('anaHF').checked,blades:num('anaHB')},vertical:{enabled:$('anaVF').checked,blades:num('anaVB')}}};
   const col={gm_1st:$('gm1').checked,div_1st_m:num('div1m'),div_1st_h:num('div1h'),div_1st_v:num('div1v'),div_2nd_h:num('div2h'),div_2nd_v:num('div2v'),div_3rd_h:num('div3h'),div_3rd_v:num('div3v'),div_4th_h:num('div4h'),div_4th_v:num('div4v')};
@@ -2241,20 +2804,13 @@ function tasMotorAngles(calc,b){
   //   omega = atan2(Qlab_x,Qlab_z) - atan2(Q0_x,Q0_z).
   // Reference Q determines omega_ref only; the encoder offset is then
   // transferred to the target by S1 = S1_ref + (omega_target-omega_ref).
-  const phiLab=(ki0,kf0,s2deg)=>{
-    const t=deg2rad(s2deg);
-    const qx=-kf0*Math.sin(t);
-    const qz= ki0-kf0*Math.cos(t);
-    return rad2deg(Math.atan2(qx,qz));
-  };
-
   // makeSpiceScatteringPlaneBasis gives ex along entered U and ey along the
   // canonical in-plane transverse direction.  These correspond to PDF z and
   // PDF x respectively, so atan2(ey,ex) is atan2(Q0_x,Q0_z).
   const phiTarget=qAngle(Qt);
   const phiRef=qAngle(Qr,{allowZeroProjection:true});
-  const omegaTarget=wrap180(phiLab(ki,kf,s2ForS1)-phiTarget);
-  const omegaRef=wrap180(phiLab(k0,k0,s2RefForS1)-phiRef);
+  const omegaTarget=wrap180(tasPhiLabDeg(ki,kf,s2ForS1)-phiTarget);
+  const omegaRef=wrap180(tasPhiLabDeg(k0,k0,s2RefForS1)-phiRef);
 
   // The validated Python simulation uses C2_TO_OMEGA_SIGN = +1 for its
   // native scattering sense.  The opposite TAS sign configuration is the
@@ -2306,6 +2862,16 @@ function renderResolution(entry,indexInfo=''){
 
   $('result').classList.remove('hidden');
 
+  // Display-only S2 sign convention for Angle calculation.
+  // Do not modify angles.s2 itself: the internal signed S2 is used by TAS
+  // geometry/calibration logic.  User-facing convention is:
+  //   +-+ -> negative S2
+  //   -+- -> positive S2
+  const uiSense=checkedValue("sense");
+  const s2Display=Number.isFinite(Number(angles.s2))
+    ? (uiSense==="+-+" ? -Math.abs(Number(angles.s2)) : +Math.abs(Number(angles.s2)))
+    : angles.s2;
+
   $('summary').innerHTML=
     `<div><b>Calculation point</b> ℏω=${calc.hw.toFixed(3)} meV, `+
     `h=${calc.h.toFixed(3)}, k=${calc.k.toFixed(3)}, l=${calc.l.toFixed(3)} ${indexInfo}</div>`+
@@ -2315,7 +2881,7 @@ function renderResolution(entry,indexInfo=''){
     `δℏω=${r.display.E.toFixed(4)} (${r.display.Ecoh.toFixed(4)}) meV</div>`+
     `<div><b>Resolution axes</b> U=${fmtAxis(ax.U)}, V=${fmtAxis(ax.V)}, W=${fmtAxis(ax.W)}</div>`+
     `<div><b>Angles (deg)</b> M1=${formatAngle(angles.m1)}, M2=${formatAngle(angles.m2)}, `+
-    `S1=${formatAngle(angles.s1)}, S2=${formatAngle(angles.s2,true)}, `+
+    `S1=${formatAngle(angles.s1)}, S2=${formatAngle(s2Display)}, `+
     `A1=${formatAngle(angles.a1)}, A2=${formatAngle(angles.a2)}`+
     `${angles.warning ? ` &nbsp;⚠ ${angles.warning}` : ''}</div>`;
 
@@ -2543,7 +3109,7 @@ function updatePowderRelation(driver=powderRelationDriver){
 
 function resizeVisiblePlots(){
   if(typeof Plotly === "undefined" || !Plotly.Plots) return;
-  const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel")].find(p=>p && !p.classList.contains("hidden"));
+  const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel"),$("cifGeneratorPanel")].find(p=>p && !p.classList.contains("hidden"));
   if(!panel) return;
   panel.querySelectorAll(".js-plotly-plot").forEach(el=>{
     try{ Plotly.Plots.resize(el); }catch(_err){}
@@ -2551,7 +3117,7 @@ function resizeVisiblePlots(){
 }
 
 function setActiveTab(name){
-  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox';
+  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox', isCifGenerator=name==='cif-generator';
   const sampleMode=$('sampleMode');
   if(isResolution){
     if(sampleMode.value!=="single"){
@@ -2567,7 +3133,8 @@ function setActiveTab(name){
   $('qePanel').classList.toggle('hidden',!isQE);
   $('resolutionPanel').classList.toggle('hidden',!isResolution);
   $('toolboxPanel').classList.toggle('hidden',!isToolbox);
-  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox]]){
+  $('cifGeneratorPanel').classList.toggle('hidden',!isCifGenerator);
+  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox],['tabCifGenerator',isCifGenerator]]){
     $(id).classList.toggle('active',on);
     $(id).setAttribute('aria-selected',String(on));
   }
@@ -2648,7 +3215,7 @@ function restoreRightPanelState(){
 function savedActiveTab(){
   try{
     const name=localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-    return ['qe','resolution','toolbox'].includes(name) ? name : 'qe';
+    return ['qe','resolution','toolbox','cif-generator'].includes(name) ? name : 'qe';
   }catch(_e){ return 'qe'; }
 }
 
@@ -2767,13 +3334,13 @@ async function initialize(){
   for(let slot=1;slot<=3;slot++) updateDarkReferenceUI(slot);
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
-  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls(); updateCifUI();
+  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls(); updateCifUI(); await initializeCifGenerator();
   // Right-side controls are restored only after dynamic Toolbox controls exist and
   // after the default geometry target has been initialized, so saved values win.
   const restoredRightState=restoreRightPanelState();
   syncSfColorMaxControl("restore");
   enableRightPanelPersistence();
-  $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));$('tabToolbox').addEventListener('click',()=>setActiveTab('toolbox'));
+  $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));$('tabToolbox').addEventListener('click',()=>setActiveTab('toolbox'));$('tabCifGenerator').addEventListener('click',()=>setActiveTab('cif-generator'));
   for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity','toolMass','toolField','toolJ','toolCal']) $(id).addEventListener('input',()=>setToolboxFrom(id));
   $('powderQ').addEventListener('input',()=>updatePowderRelation('powderQ'));$('powderTwoTheta').addEventListener('input',()=>updatePowderRelation('powderTwoTheta'));$('powderHW').addEventListener('input',()=>updatePowderRelation(powderRelationDriver));
   $('hwEntry').addEventListener('change',()=>{if(singleCache){const i=nearestHWIndex(singleCache,Number($('hwEntry').value));renderSingle(singleCache,i);saveRightPanelState();}});
@@ -2797,6 +3364,7 @@ async function initialize(){
     saveRightPanelState();
   });
   $('cifSelectButton').addEventListener('click',()=>$('cifFileInput').click());
+  $('cifClearButton')?.addEventListener('click',clearSelectedCif);
   $('cifFileInput').addEventListener('change',async()=>{
     const file=$('cifFileInput').files?.[0];
     if(!file) return;

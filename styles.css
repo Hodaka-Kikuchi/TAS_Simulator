@@ -86,8 +86,8 @@
 /* v63: toolbox and powder relation helper */
 .toolbox-card{max-width:1200px}
 .toolbox-grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px}
-.harmonic-wrap{overflow-x:auto;margin-top:14px}.harmonic-table{display:grid;grid-template-columns:90px repeat(7,minmax(105px,1fr));gap:1px;min-width:850px;border:1px solid #ddd;background:#ddd}
-.harmonic-table>*{background:#fff;padding:8px;text-align:center}
+.harmonic-wrap{overflow-x:auto;margin-top:14px}.harmonic-table{display:grid;grid-template-columns:90px repeat(7,minmax(105px,1fr));gap:0;min-width:850px;border-left:1px solid #ccc;border-top:1px solid #ccc;background:#fff}
+.harmonic-table>*{background:#fff;padding:8px;text-align:center;border-right:1px solid #ccc;border-bottom:1px solid #ccc}
 .harmonic-table>div{font-size:12px;font-weight:650;background:#f7f7f7}
 .tool-note{font-size:12px;color:#666;margin:8px 0 0}
 .powder-relation-card{border:1px solid #ddd;border-radius:8px;padding:9px;margin-bottom:9px}
@@ -144,9 +144,13 @@ textarea:disabled {
 }
 
 /* CIF selection and neutron nuclear structure-factor display. */
-.cif-select-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center;margin:7px 0 2px}
+.cif-select-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;margin:7px 0 2px}
 .cif-select-row button{white-space:nowrap}
 .cif-file-name{font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.sample-spacegroup-row{display:grid;grid-template-columns:minmax(110px,.8fr) minmax(90px,.55fr) minmax(180px,1.65fr);gap:4px;align-items:end}
+#sampleSpaceGroupNumber{width:100%;max-width:none}
+@media(max-width:760px){.sample-spacegroup-row{grid-template-columns:1fr 1fr}.sample-spacegroup-row label:last-child{grid-column:1/-1}}
+
 #sfColorMaxRow{margin-top:-4px}
 
 /* Keep the nuclear structure-factor color control on one line and mirror the
@@ -184,3 +188,80 @@ textarea:disabled {
 .qe-spurion-warning:not(.active){visibility:hidden}
 
 .geometry-spurion-warning{margin:4px 12px 0;min-height:20px}
+
+
+/* CIF generator */
+.cif-generator-card{max-width:none;width:100%;padding:14px}
+.cif-generator-card h3{font-size:14px;margin:16px 0 7px}
+.cif-generator-heading,.cif-atom-heading{display:flex;justify-content:space-between;gap:16px;align-items:flex-end}
+.cif-generator-heading h2,.cif-atom-heading h3{margin-bottom:4px}
+.cif-generator-setup{display:grid;grid-template-columns:minmax(260px,420px) minmax(260px,1fr);gap:14px;align-items:end;margin-top:14px}
+.cif-space-group-info{font-size:12px;color:#555;padding:7px 9px;background:#f7f7f7;border:1px solid #ddd;border-radius:5px;min-height:31px}
+.cif-lattice-grid{display:grid;grid-template-columns:repeat(6,minmax(95px,1fr));gap:9px}
+.cif-lattice-grid input{width:100%;max-width:none}
+.cif-atom-table-wrap{overflow-x:auto;margin-top:8px}
+.cif-atom-table{display:grid;grid-template-columns:minmax(110px,1fr) repeat(4,minmax(105px,1fr)) 78px;min-width:720px;border-left:1px solid #ccc;border-top:1px solid #ccc}
+.cif-atom-header{font-size:12px;font-weight:650;background:#f7f7f7;padding:7px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;text-align:center}
+.cif-atom-rows{display:contents}
+.cif-atom-row{display:contents}
+.cif-atom-cell{padding:5px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;background:#fff}
+.cif-atom-cell input{width:100%;max-width:none}
+.cif-atom-cell button{width:100%;padding:4px}
+.cif-add-atom-wide{display:block;width:100%;margin-top:8px;padding:8px 12px}
+.cif-generator-actions{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:10px;align-items:end;margin-top:14px}
+.cif-generator-actions input[type=text]{width:100%}
+.cif-generator-message{font-size:12px;min-height:20px;margin-top:8px;color:#555}
+.cif-generator-message.error-text{color:#a22}
+@media(max-width:1000px){.cif-lattice-grid{grid-template-columns:repeat(3,minmax(100px,1fr))}.cif-generator-setup{grid-template-columns:1fr}.cif-generator-actions{grid-template-columns:repeat(3,1fr)}.cif-generator-actions label{grid-column:1/-1}}
+@media(max-width:650px){.cif-lattice-grid{grid-template-columns:repeat(2,minmax(100px,1fr))}.cif-generator-heading,.cif-atom-heading{align-items:stretch;flex-direction:column}.cif-generator-actions{grid-template-columns:1fr}}
+
+/* CIF space-group number jump + selector. */
+.cif-space-group-picker{display:grid;grid-template-columns:88px minmax(220px,1fr);gap:8px;align-items:end}
+.cif-space-group-picker label{min-width:0}
+.cif-space-group-picker select,.cif-space-group-picker input{width:100%;max-width:none}
+@media(max-width:650px){.cif-space-group-picker{grid-template-columns:82px minmax(0,1fr)}}
+
+
+/* vNext: wider Q-E workspace, narrower Angle calculation / TAS geometry card. */
+@media(min-width:1051px){
+  #singleMain .chart-grid{grid-template-columns:minmax(620px,2fr) minmax(320px,1fr);align-items:stretch}
+  #singleMain .geometry-card .grid4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #singleMain .geometry-target-all-buttons{flex-wrap:wrap}
+  #geometryPlot.geometry{min-height:620px}
+}
+@media(min-width:1051px) and (max-width:1350px){
+  #singleMain .chart-grid{grid-template-columns:minmax(560px,1.8fr) minmax(300px,1fr)}
+}
+
+/* vNext: wider setup/sample sidebar; keep TAS geometry at roughly half the Q-E width. */
+@media(min-width:1051px){
+  .shell{grid-template-columns:500px minmax(0,1fr)}
+  #singleMain .chart-grid{grid-template-columns:minmax(600px,2fr) minmax(280px,1fr);align-items:stretch}
+  #singleMain .geometry-card .grid4{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(min-width:761px) and (max-width:1050px){
+  .shell{grid-template-columns:400px minmax(0,1fr)}
+}
+
+/* Keep h / k / l / hbar-omega on one row in Angle calculation. */
+#singleMain .geometry-card .geometry-target .grid4{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
+#singleMain .geometry-card .geometry-target .grid4 input[type=number]{
+  width:100%;
+  min-width:0;
+}
+
+
+/* Angle calculation result: always two rows (energy, then motor angles). */
+.geometry-angles{min-height:46px;}
+.geometry-result-line{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.geometry-result-line + .geometry-result-line{margin-top:2px;}
+
+/* Sidebar input sizing: use the full available grid-cell width consistently. */
+.sidebar input[type=number],
+.sidebar input[type=text]{
+  width:100%;
+  min-width:0;
+  max-width:none;
+}

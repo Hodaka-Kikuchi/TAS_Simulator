@@ -270,7 +270,7 @@ export function parseCifStructure(text){
       if([u11,u22,u33,u12,u13,u23].every(Number.isFinite)) anisoByLabel.set(label,[[u11,u12,u13],[u12,u22,u23],[u13,u23,u33]]);
     }
   }
-  const atoms=[], missing=new Set(), warnings=[];
+  const atoms=[], asymmetricSites=[], missing=new Set(), invalidSites=[], warnings=[];
 
   for(const row of atomLoop.rows){
     const typeRaw=row['_atom_site_type_symbol'] ?? row['_atom_site_label'];
@@ -282,8 +282,11 @@ export function parseCifStructure(text){
       parseCifNumber(row['_atom_site_fract_y']),
       parseCifNumber(row['_atom_site_fract_z'])
     ];
-    if(xyz.some(v=>!Number.isFinite(v))) continue;
+    const siteLabel=String(row['_atom_site_label'] ?? typeRaw ?? `site ${asymmetricSites.length+1}`).trim();
+    if(xyz.some(v=>!Number.isFinite(v))){ invalidSites.push(siteLabel || `site ${asymmetricSites.length+1}`); continue; }
     const occupancy=parseCifNumber(row['_atom_site_occupancy'],1);
+    if(!Number.isFinite(occupancy) || occupancy<0 || occupancy>1){ invalidSites.push(`${siteLabel || `site ${asymmetricSites.length+1}`} (occupancy)`); continue; }
+    asymmetricSites.push({label:siteLabel,element,x:xyz[0],y:xyz[1],z:xyz[2],occupancy});
     let Biso=parseCifNumber(row['_atom_site_b_iso_or_equiv'],NaN);
     if(!Number.isFinite(Biso)){
       const Uiso=parseCifNumber(row['_atom_site_u_iso_or_equiv'],NaN);
@@ -308,6 +311,7 @@ export function parseCifStructure(text){
   }
 
   if(missing.size) throw new Error(`No neutron coherent scattering length is available for CIF atom type(s): ${[...missing].join(', ')}`);
+  if(invalidSites.length) throw new Error(`CIF atom site(s) could not be loaded because coordinates or occupancy are invalid: ${invalidSites.join(', ')}`);
   if(!atoms.length) throw new Error('CIF atom sites could not be expanded into a crystal structure.');
   if(symops.length===1 && String(symops[0]).replace(/\s/g,'').toLowerCase()==='x,y,z') warnings.push('No symmetry-operation loop was found; identity symmetry only was used.');
 
@@ -322,10 +326,12 @@ export function parseCifStructure(text){
   };
   const formula=firstScalar(scalar,['_chemical_formula_sum','_chemical_formula_structural']) || '';
   const spaceGroup=firstScalar(scalar,['_space_group_name_h-m_alt','_symmetry_space_group_name_h-m','_space_group_name_hall']) || '';
+  const spaceGroupNumber=parseCifNumber(firstScalar(scalar,['_space_group_it_number','_symmetry_int_tables_number']),NaN);
   const name=firstScalar(scalar,['_chemical_name_common','_chemical_name_mineral']) || formula || doc.dataName || 'CIF structure';
   return {
-    name:String(name), formula:String(formula), spaceGroup:String(spaceGroup), dataName:doc.dataName,
-    lattice, atoms, symmetryOperationCount:symops.length, asymmetricSiteCount:atomLoop.rows.length, warnings
+    name:String(name), formula:String(formula), spaceGroup:String(spaceGroup),
+    spaceGroupNumber:Number.isFinite(spaceGroupNumber)?spaceGroupNumber:null, dataName:doc.dataName,
+    lattice, atoms, asymmetricSites, symmetryOperationCount:symops.length, asymmetricSiteCount:asymmetricSites.length, warnings
   };
 }
 

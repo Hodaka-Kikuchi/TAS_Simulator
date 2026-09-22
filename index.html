@@ -12,14 +12,44 @@
 <div class="shell">
 <aside class="sidebar">
 <section>
-  <h2>Sample</h2>
+  <h2>Instrument setup</h2>
+  <label>Instrument<select id="instrument"><option>Loading...</option></select></label>
   <div class="grid2">
+    <label>Energy mode<select id="energyMode"><option>Ei fixed</option><option selected>Ef fixed</option></select></label>
+    <label id="energyLabel">Ef (meV)<input id="energy" type="number" value="14.7" step="0.1"></label>
+    <label id="geometryRow">Geometry<select id="geometry"><option>W</option><option>anti-W</option></select></label>
+    <label id="senseRow">Sign<select id="sense"><option>+-+</option><option selected>-+-</option></select></label>
+  </div>
+  <div class="grid2">
+    <label class="checkbox-label"><input id="lambdaHalf" type="checkbox"><span>λ/2 (range simulation)</span></label>
+    <span></span>
+  </div>
+  <div class="grid3">
+    <label id="s1minWrap">S1 min (deg)<input id="S1min" type="number" value="-180" step="0.1"></label>
+    <label id="s1maxWrap">S1 max (deg)<input id="S1max" type="number" value="180" step="0.1"></label>
+    <label id="s2Label">S2 min (deg)<input id="S2min" type="number" value="8" step="0.1"></label>
+  </div>
+  <div class="grid3" id="s2MaxControlRow">
+    <label id="s2MaxBaseLabel">JSON S2 max (deg)<input id="S2maxBase" type="number" step="0.1" readonly></label>
+    <label id="s2MaxControlLabel">ΔS2 max (deg)<input id="S2maxUser" type="number" value="0" step="0.1"></label>
+    <label id="s2MaxEffectiveLabel">Effective S2 max (deg)<input id="S2maxEffective" type="number" step="0.1"></label>
+  </div>
+</section>
+<section>
+  <h2>Sample</h2>
+  <div class="sample-spacegroup-row">
     <label>Type<select id="sampleMode"><option value="single" selected>Single crystal</option><option value="powder">Powder</option></select></label>
-    <label>Lattice centering<select id="latticeCentering"><option value="P" selected>P — Primitive</option><option value="I">I — Body-centered</option><option value="F">F — Face-centered</option><option value="A">A — A-centered</option><option value="B">B — B-centered</option><option value="C">C — C-centered</option><option value="R">R — Rhombohedral (hex axes)</option></select></label>
+    <label>Space group #
+      <input id="sampleSpaceGroupNumber" type="number" min="1" max="230" step="1" value="1" inputmode="numeric">
+    </label>
+    <label>Space group
+      <select id="sampleSpaceGroup"><option value="">Loading space groups...</option></select>
+    </label>
   </div>
   <div id="cifSelectRow" class="cif-select-row">
     <button id="cifSelectButton" type="button">Select CIF</button>
     <span id="cifFileName" class="cif-file-name">No file selected</span>
+    <button id="cifClearButton" type="button" disabled>Clear</button>
     <input id="cifFileInput" type="file" accept=".cif,.mcif,text/plain" hidden>
   </div>
   <h3>Lattice parameters</h3>
@@ -51,30 +81,6 @@
     <label><span class="background-label"><i class="bg-swatch bg2"></i>BG2</span><select id="backgroundSelect2"><option value="">None</option></select></label>
     <label><span class="background-label"><i class="bg-swatch bg3"></i>BG3</span><select id="backgroundSelect3"><option value="">None</option></select></label>
     <label><span class="background-label"><i class="bg-swatch bg4"></i>BG4</span><select id="backgroundSelect4"><option value="">None</option></select></label>
-  </div>
-</section>
-<section>
-  <h2>Instrument setup</h2>
-  <label>Instrument<select id="instrument"><option>Loading...</option></select></label>
-  <div class="grid2">
-    <label>Energy mode<select id="energyMode"><option>Ei fixed</option><option selected>Ef fixed</option></select></label>
-    <label id="energyLabel">Ef (meV)<input id="energy" type="number" value="14.7" step="0.1"></label>
-    <label id="geometryRow">Geometry<select id="geometry"><option>W</option><option>anti-W</option></select></label>
-    <label id="senseRow">Sign<select id="sense"><option>+-+</option><option selected>-+-</option></select></label>
-  </div>
-  <div class="grid2">
-    <label class="checkbox-label"><input id="lambdaHalf" type="checkbox"><span>λ/2 (range simulation)</span></label>
-    <span></span>
-  </div>
-  <div class="grid3">
-    <label id="s1minWrap">S1 min (deg)<input id="S1min" type="number" value="-180" step="0.1"></label>
-    <label id="s1maxWrap">S1 max (deg)<input id="S1max" type="number" value="180" step="0.1"></label>
-    <label id="s2Label">S2 min (deg)<input id="S2min" type="number" value="8" step="0.1"></label>
-  </div>
-  <div class="grid3" id="s2MaxControlRow">
-    <label id="s2MaxBaseLabel">JSON S2 max (deg)<input id="S2maxBase" type="number" step="0.1" readonly></label>
-    <label id="s2MaxControlLabel">ΔS2 max (deg)<input id="S2maxUser" type="number" value="0" step="0.1"></label>
-    <label id="s2MaxEffectiveLabel">Effective S2 max (deg)<input id="S2maxEffective" type="number" step="0.1"></label>
   </div>
 </section>
 <details id="darkSection"><summary>Dark angle</summary>
@@ -139,6 +145,7 @@
     <button id="tabQe" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="qePanel" data-tab="qe">Q-E Range</button>
     <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution</button>
     <button id="tabToolbox" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="toolboxPanel" data-tab="toolbox">Toolbox</button>
+    <button id="tabCifGenerator" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="cifGeneratorPanel" data-tab="cif-generator">CIF Generator</button>
   </nav>
 
   <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
@@ -191,6 +198,63 @@
         <strong>3 λ</strong><output id="harmTripleLambda"></output><output id="harmTripleEnergy"></output><output id="harmTripleK"></output><output id="harmTripleTHz"></output><output id="harmTripleTemp"></output><output id="harmTripleCm"></output><output id="harmTripleVelocity"></output>
       </div></div>
       <p class="tool-note">Editing any one of λ, E, k, THz, K, cm⁻¹, or velocity updates all other values and the wavelength-multiple table.</p>
+    </section>
+  </div>
+
+  <div id="cifGeneratorPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabCifGenerator">
+    <section class="calc-card cif-generator-card">
+      <div class="cif-generator-heading">
+        <div>
+          <h2>CIF Generator</h2>
+          <p class="tool-note">Enter the asymmetric-unit atoms only. Standard-setting space-group symmetry operations are written into the generated CIF.</p>
+        </div>
+        <button id="cifCopyLattice" type="button">Copy current lattice</button>
+      </div>
+
+      <div class="cif-generator-setup">
+        <div class="cif-space-group-picker">
+          <label class="cif-space-group-number-label">No.
+            <input id="cifSpaceGroupNumber" type="number" min="1" max="230" step="1" value="1" inputmode="numeric" aria-label="Space group number">
+          </label>
+          <label>Space group
+            <select id="cifSpaceGroup"><option value="">Loading space groups...</option></select>
+          </label>
+        </div>
+        <div id="cifSpaceGroupInfo" class="cif-space-group-info"></div>
+      </div>
+
+      <h3>Lattice parameters</h3>
+      <div class="cif-lattice-grid">
+        <label>a (Å)<input id="cifA" type="number" value="5" step="0.001" min="0"></label>
+        <label>b (Å)<input id="cifB" type="number" value="5" step="0.001" min="0"></label>
+        <label>c (Å)<input id="cifC" type="number" value="5" step="0.001" min="0"></label>
+        <label>α (deg)<input id="cifAlpha" type="number" value="90" step="0.01"></label>
+        <label>β (deg)<input id="cifBeta" type="number" value="90" step="0.01"></label>
+        <label>γ (deg)<input id="cifGamma" type="number" value="90" step="0.01"></label>
+      </div>
+
+      <div class="cif-atom-heading">
+        <div>
+          <h3>Asymmetric-unit atoms</h3>
+          <p class="tool-note">Coordinates are fractional. Symmetry-equivalent atoms are generated by the existing CIF parser after loading.</p>
+        </div>
+      </div>
+      <div class="cif-atom-table-wrap">
+        <div class="cif-atom-table" id="cifAtomTable">
+          <div class="cif-atom-header">Atom</div><div class="cif-atom-header">x</div><div class="cif-atom-header">y</div><div class="cif-atom-header">z</div><div class="cif-atom-header">Occupancy</div><div class="cif-atom-header"></div>
+          <div id="cifAtomRows" class="cif-atom-rows"></div>
+        </div>
+      </div>
+      <button id="cifAddAtom" class="cif-add-atom-wide" type="button">+ Add atom</button>
+
+      <div class="cif-generator-actions">
+        <label>File name<input id="cifGeneratedName" type="text" value="generated_structure.cif"></label>
+        <button id="cifLoadExisting" type="button">Load CIF</button>
+        <input id="cifLoadFile" type="file" accept=".cif,text/plain,chemical/x-cif" class="hidden">
+        <button id="cifGenerateDownload" type="button">Generate & Download</button>
+        <button id="cifApplyToSimulator" type="button">Generate &amp; Set CIF</button>
+      </div>
+      <div id="cifGeneratorMessage" class="cif-generator-message" aria-live="polite"></div>
     </section>
   </div>
 
