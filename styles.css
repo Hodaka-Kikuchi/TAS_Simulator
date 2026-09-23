@@ -1,4 +1,4 @@
-:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#222;background:#fff}*{box-sizing:border-box}body{margin:0}header{position:sticky;top:0;z-index:20;padding:10px 16px;border-bottom:1px solid #ddd;background:#fff;display:flex;align-items:baseline;gap:20px}h1{font-size:22px;margin:0}.status{font-size:12px;color:#666}.shell{display:grid;grid-template-columns:390px minmax(0,1fr);min-height:calc(100vh - 50px)}.sidebar{padding:10px;border-right:1px solid #ddd;overflow:auto;max-height:calc(100vh - 50px)}.sidebar section,.sidebar details,.calc-card,#result{border:1px solid #ddd;border-radius:8px;padding:9px;margin-bottom:9px}.sidebar h2,.calc-card h2,#result h2{font-size:16px;margin:0 0 8px}.sidebar h3{font-size:13px;margin:8px 0 4px}details summary{font-weight:650;cursor:pointer}main{padding:12px;min-width:0}.grid2,.grid3,.grid4,.grid5,.vector,.toolbar{display:grid;gap:4px}.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid4{grid-template-columns:repeat(4,minmax(0,1fr))}.grid5{grid-template-columns:repeat(5,minmax(0,1fr));align-items:end}.vector{grid-template-columns:28px repeat(3,minmax(0,1fr));align-items:center;margin:3px 0}.auto-row{grid-template-columns:28px 1fr}.auto-vector{font-size:12px;padding:4px 0}.toolbar{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:8px}label{font-size:12px;display:flex;flex-direction:column;gap:2px;min-width:0}input,select,button{font:inherit;min-width:0;padding:4px 5px;border:1px solid #bbb;border-radius:4px;background:white}input[type=number]{width:10ch;min-width:8ch;max-width:100%}select{width:100%}input[type=checkbox]{width:auto}.checkbox-label{flex-direction:row;align-items:center;gap:6px;align-self:end;min-height:28px}.compact-checks>div{border:1px solid #eee;padding:5px;border-radius:5px}.compact-checks label:has(input[type=checkbox]){flex-direction:row;align-items:center}.dark-table{display:grid;grid-template-columns:26px repeat(3,minmax(0,1fr));gap:3px;align-items:center;font-size:11px}.chart-grid{display:grid;grid-template-columns:minmax(520px,1.35fr) minmax(430px,1fr);gap:12px}#singleMain .chart-grid>div:first-child,#singleMain .chart-grid>.geometry-card{border:1px solid #ddd;border-radius:8px;padding:9px;margin-bottom:9px}.qe-plot{width:100%;min-height:620px}.geometry{min-height:620px}.powder{min-height:650px}.energy-slider-row{display:flex;gap:12px;align-items:center;padding:0 20px 12px}.energy-slider-row label{flex:1}.energy-slider-row input{width:100%}.calc-card{margin-top:8px}.plots{display:grid;grid-template-columns:1fr 1fr;gap:8px}.plots>div{height:390px;border:1px solid #eee}.summary{font-size:13px;margin-bottom:8px}.error{border:1px solid #c33;background:#fff4f4;padding:10px;margin-bottom:10px;white-space:pre-wrap}.hidden{display:none!important}.scan-nav{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;margin-bottom:8px}pre{overflow:auto;font-size:12px}.scan .grid5{margin-top:5px}button{cursor:pointer}
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#222;background:#fff}*{box-sizing:border-box}body{margin:0}header{position:sticky;top:0;z-index:20;padding:10px 16px;border-bottom:1px solid #ddd;background:#fff;display:flex;align-items:baseline;gap:20px}h1{font-size:22px;margin:0}.status{font-size:12px;color:#666}.shell{display:grid;grid-template-columns:390px minmax(0,1fr);min-height:calc(100vh - 50px)}.sidebar{padding:10px;border-right:1px solid #ddd;overflow:auto;max-height:calc(100vh - 50px)}.sidebar section,.sidebar details,.calc-card,#result{border:1px solid #ddd;border-radius:8px;padding:9px;margin-bottom:9px}.sidebar h2,.calc-card h2,#result h2{font-size:16px;margin:0 0 8px}.sidebar h3{font-size:13px;margin:8px 0 4px}details summary{font-weight:650;cursor:pointer}main{padding:12px;min-width:0}.grid2,.grid3,.grid4,.grid5,.vector,.toolbar{display:grid;gap:4px}.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid4{grid-template-columns:repeat(4,minmax(0,1fr))}.grid5{grid-template-columns:repeat(5,minmax(0,1fr));align-items:end}.vector{grid-template-columns:28px repeat(3,minmax(0,1fr));align-items:center;margin:3px 0}.auto-row{grid-template-columns:28px 1fr}.auto-vector{font-size:12px;padding:4px 0}.toolbar{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:8px}label{font-size:12px;display:flex;flex-direction:column;gap:2px;min-width:0}input,select,button{font:inherit;min-width:0;padding:4px 5px;border:1px solid #bbb;border-radius:4px;background:white}input[type=number]{width:10ch;min-width:8ch;max-width:100%}select{width:100%}input[type=checkbox]{width:auto}.checkbox-label{flex-direction:row;align-items:center;gap:6px;align-self:end;min-height:28px}.compact-checks>div{border:1px solid #eee;padding:5px;border-radius:5px}.compact-checks label:has(input[type=checkbox]){flex-direction:row;align-items:center}.dark-table{display:grid;grid-template-columns:26px repeat(3,minmax(0,1fr)) 70px;gap:3px;align-items:center;font-size:11px}.chart-grid{display:grid;grid-template-columns:minmax(520px,1.35fr) minmax(430px,1fr);gap:12px}#singleMain .chart-grid>div:first-child,#singleMain .chart-grid>.geometry-card{border:1px solid #ddd;border-radius:8px;padding:9px;margin-bottom:9px}.qe-plot{width:100%;min-height:620px}.geometry{min-height:620px}.powder{min-height:650px}.energy-slider-row{display:flex;gap:12px;align-items:center;padding:0 20px 12px}.energy-slider-row label{flex:1}.energy-slider-row input{width:100%}.calc-card{margin-top:8px}.plots{display:grid;grid-template-columns:1fr 1fr;gap:8px}.plots>div{height:390px;border:1px solid #eee}.summary{font-size:13px;margin-bottom:8px}.error{border:1px solid #c33;background:#fff4f4;padding:10px;margin-bottom:10px;white-space:pre-wrap}.hidden{display:none!important}.scan-nav{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;margin-bottom:8px}pre{overflow:auto;font-size:12px}.scan .grid5{margin-top:5px}button{cursor:pointer}
 @media(max-width:1050px){.shell{grid-template-columns:320px minmax(0,1fr)}.chart-grid{grid-template-columns:1fr}.geometry{min-height:420px}.plots{grid-template-columns:1fr}.grid5{grid-template-columns:repeat(2,minmax(0,1fr))}#singleInputs.grid5{grid-template-columns:repeat(5,minmax(0,1fr))}#scanInputs .grid5{grid-template-columns:repeat(5,minmax(0,1fr))}}
 @media(max-width:760px){.shell{display:block}.sidebar{max-height:none;border-right:0;border-bottom:1px solid #ddd}.chart-grid{grid-template-columns:1fr}.qe-plot{min-height:520px}.grid4{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
@@ -74,8 +74,9 @@
 .geometry-card-title{font-size:16px;font-weight:650;padding:9px 8px 2px}
 
 
-/* v58: four fixed background-scattering selectors; no vertical growth as JSON entries increase. */
-.background-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+/* Background-scattering selectors are added/removed dynamically, up to the four existing display colors. */
+.background-rows{display:grid;gap:5px}
+.background-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:5px;align-items:end}
 .background-label{display:flex;align-items:center;gap:4px}
 .bg-swatch{display:inline-block;width:14px;height:3px;border-radius:2px;flex:0 0 auto}
 .bg-swatch.bg1{background:rgb(0,0,128)}
@@ -105,7 +106,7 @@
 
 /* v71: up to three propagation vectors, one compact row per vector. */
 .propagation-vectors{display:grid;gap:5px}
-.propagation-row{display:grid;grid-template-columns:52px repeat(3,minmax(0,1fr));gap:5px;align-items:end}
+.propagation-row{display:grid;grid-template-columns:52px repeat(3,minmax(0,1fr)) 70px;gap:5px;align-items:end}
 .propagation-row label{min-width:0}
 .propagation-row input[type=number]{width:100%;min-width:0}
 .propagation-enable{align-self:center;margin:0;padding-top:15px}
@@ -119,18 +120,12 @@
 
 /* v79: up to three independent dark-angle assets */
 .dark-asset{border:1px solid #e2e2e2;border-radius:6px;padding:7px;margin-top:7px}
-.dark-asset-head{display:grid;grid-template-columns:minmax(105px,.75fr) minmax(150px,1.25fr);gap:6px;align-items:end;margin-bottom:5px}
+.dark-asset-head{display:grid;grid-template-columns:minmax(105px,.75fr) minmax(150px,1.25fr) 70px;gap:6px;align-items:end;margin-bottom:5px}
 .dark-asset .dark-table{margin-top:5px}
 
 /* v90: optional nuclear Bragg-peak labels, between legend/plot and Q-E sliders. */
 .nuclear-label-control{padding:2px 20px 4px;display:flex;align-items:center}
 .nuclear-label-control .checkbox-label{min-height:24px;margin:0}
-
-/* Dark-angle slot colors: match the TAS Geometry arcs (Dark 1/2/3 = red/blue/green). */
-.dark-asset:has(#darkEnable1){border:2px solid #d62728}
-.dark-asset:has(#darkEnable2){border:2px solid #1f77b4}
-.dark-asset:has(#darkEnable3){border:2px solid #2ca02c}
-
 
 /* Visually distinguish non-editable entry boxes from editable inputs. */
 input[readonly],
@@ -264,4 +259,117 @@ textarea:disabled {
   width:100%;
   min-width:0;
   max-width:none;
+}
+
+
+/* Dynamic Propagation-vector / Dark-angle UI. */
+.dynamic-add-wide{
+  display:block;
+  width:100%;
+  margin-top:6px;
+  padding:7px 10px;
+}
+.remove-propagation-vector,
+.remove-background,
+.remove-dark-asset,
+.remove-dark-range{
+  width:100%;
+  padding:4px 5px;
+  white-space:nowrap;
+}
+.dark-asset .dynamic-add-wide{margin-top:6px}
+
+/* All Dark-angle cards and controls use one neutral black UI color. */
+.dark-asset{
+  border:1.5px solid #111 !important;
+}
+.dark-asset input[type=checkbox]{
+  accent-color:#111;
+}
+.dark-asset .checkbox-label span{
+  color:#111 !important;
+}
+
+@media(max-width:760px){
+  .propagation-row{grid-template-columns:52px repeat(3,minmax(0,1fr)) 66px}
+  .background-row{grid-template-columns:minmax(0,1fr) 66px}
+  .dark-asset-head{grid-template-columns:minmax(95px,.7fr) minmax(125px,1.3fr) 66px}
+  .dark-table{grid-template-columns:24px repeat(3,minmax(0,1fr)) 66px}
+}
+
+
+/* Resolution-only instrument details.
+   Common Instrument/Sample controls stay in the permanent left sidebar.
+   The finer resolution-model settings appear only inside the Resolution tab. */
+#resolutionPanel .resolution-workspace{
+  display:grid;
+  grid-template-columns:minmax(300px,360px) minmax(0,1fr);
+  gap:12px;
+  align-items:start;
+}
+#resolutionPanel .resolution-main-column{min-width:0}
+#resolutionInstrumentDetails{
+  min-width:0;
+  border:1px solid #ddd;
+  border-radius:8px;
+  padding:9px;
+  background:#fafafa;
+}
+#resolutionInstrumentDetails .resolution-detail-title{
+  font-size:16px;
+  font-weight:650;
+  margin:0 0 8px;
+}
+#resolutionInstrumentDetails details{
+  border:1px solid #ddd;
+  border-radius:7px;
+  padding:8px;
+  margin-bottom:8px;
+  background:#fff;
+}
+#resolutionInstrumentDetails details:last-child{margin-bottom:0}
+#resolutionInstrumentDetails h3{font-size:13px;margin:8px 0 4px}
+#resolutionInstrumentDetails input[type=number],
+#resolutionInstrumentDetails input[type=text]{
+  width:100%;
+  min-width:0;
+  max-width:none;
+}
+
+/* Use the available Calculation-point width instead of leaving short
+   fixed-width h/k/l/hbar-omega entry boxes surrounded by empty space. */
+#resolutionCalculation #singleInputs{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  align-items:end;
+}
+#resolutionCalculation #singleInputs input[type=number]{
+  width:100%;
+  min-width:0;
+  max-width:none;
+}
+#resolutionCalculation #singleInputs #calc{
+  grid-column:1 / -1;
+  width:100%;
+  padding:7px 10px;
+}
+
+/* Scan entries should also fill their grid cells consistently. */
+#resolutionCalculation #scanInputs input[type=number]{
+  width:100%;
+  min-width:0;
+  max-width:none;
+}
+
+@media(max-width:1250px){
+  #resolutionPanel .resolution-workspace{
+    grid-template-columns:minmax(270px,320px) minmax(0,1fr);
+  }
+}
+@media(max-width:950px){
+  #resolutionPanel .resolution-workspace{grid-template-columns:1fr}
+  #resolutionInstrumentDetails{position:static}
+}
+@media(max-width:600px){
+  #resolutionCalculation #singleInputs{grid-template-columns:repeat(2,minmax(0,1fr))}
 }

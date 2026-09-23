@@ -9,11 +9,11 @@ import {parseCifStructure, nuclearStructureFactorSquared} from "./cif-structure.
 
 const $ = id => document.getElementById(id);
 const instruments = new Map();
-const samples = new Map();
+const backgroundMaterials = new Map();
 const sampleEnvironments = new Map();
 
-// Four fixed background-scattering slots keep the sidebar compact.  Each slot
-// reuses the existing sample JSON data and is assigned a stable display color.
+// Four fixed background-scattering slots keep the sidebar compact. Each slot
+// now selects a CIF structure loaded from BG_material/*.cif.
 const BACKGROUND_SLOTS=[
   {id:"backgroundSelect1",rgb:[0,0,128]},      // navy
   {id:"backgroundSelect2",rgb:[165,42,42]},    // brown
@@ -22,7 +22,7 @@ const BACKGROUND_SLOTS=[
 ];
 function selectedBackgrounds(){
   return BACKGROUND_SLOTS.map((slot,index)=>({slot,index,key:$(slot.id)?.value||""}))
-    .filter(x=>x.key && samples.has(x.key));
+    .filter(x=>x.key && backgroundMaterials.has(x.key));
 }
 
 function updateBackgroundSelectAvailability(){
@@ -58,12 +58,77 @@ function handleBackgroundSelection(changedId){
   scheduleRecalc();
 }
 
+function backgroundRowIndices(){
+  return [...document.querySelectorAll(".background-row[data-background-index]")]
+    .map(row=>Number(row.dataset.backgroundIndex))
+    .filter(Number.isFinite)
+    .sort((a,b)=>a-b);
+}
+
+function backgroundRowValues(){
+  return backgroundRowIndices().map(index=>({key:$( `backgroundSelect${index}` )?.value||""}));
+}
+
+function createBackgroundRow(index,value={}){
+  const slot=BACKGROUND_SLOTS[index-1];
+  if(!slot) return null;
+  const row=document.createElement("div");
+  row.className="background-row";
+  row.dataset.backgroundIndex=String(index);
+  row.innerHTML=`<label><span class="background-label"><i class="bg-swatch bg${index}"></i>BG${index}</span><select id="backgroundSelect${index}"><option value="">None</option></select></label>`+
+    `<button type="button" class="remove-background" data-background-index="${index}">Remove</button>`;
+  const select=row.querySelector(`#backgroundSelect${index}`);
+  refreshBackgroundSelect(select,"None");
+  const requested=String(value.key||"");
+  if([...select.options].some(o=>o.value===requested)) select.value=requested;
+  return row;
+}
+
+function replaceBackgroundRows(values,{recalc=false}={}){
+  const host=$("backgroundRows");
+  if(!host) return;
+  const rows=(Array.isArray(values)&&values.length)?values:[{}];
+  const limited=rows.slice(0,BACKGROUND_SLOTS.length);
+  host.replaceChildren();
+  limited.forEach((value,i)=>{
+    const row=createBackgroundRow(i+1,value);
+    if(row) host.appendChild(row);
+  });
+  if($("backgroundCount")) $("backgroundCount").value=String(limited.length);
+  updateBackgroundSelectAvailability();
+  const add=$("addBackground");
+  if(add) add.disabled=limited.length>=BACKGROUND_SLOTS.length;
+  if(recalc) scheduleRecalc();
+}
+
+function setBackgroundCount(count,{recalc=false}={}){
+  count=Math.max(1,Math.min(BACKGROUND_SLOTS.length,Math.floor(Number(count)||1)));
+  const values=backgroundRowValues();
+  while(values.length<count) values.push({});
+  values.length=count;
+  replaceBackgroundRows(values,{recalc});
+}
+
+function removeBackground(index){
+  const values=backgroundRowValues();
+  const position=backgroundRowIndices().indexOf(Number(index));
+  if(position>=0) values.splice(position,1);
+  replaceBackgroundRows(values,{recalc:true});
+}
+
+function propagationVectorIndices(){
+  return [...document.querySelectorAll(".propagation-row[data-q-index]")]
+    .map(row=>Number(row.dataset.qIndex))
+    .filter(Number.isFinite)
+    .sort((a,b)=>a-b);
+}
+
 function enabledPropagationVectors(){
-  // Global display switch: keep q1/q2/q3 values/enables intact while hiding
+  // Global display switch: keep every entered k-vector intact while hiding
   // all magnetic Bragg peaks when Propagation vectors > show is off.
   if($("showPropagation") && !$("showPropagation").checked) return [];
   const out=[];
-  for(let i=1;i<=3;i++){
+  for(const i of propagationVectorIndices()){
     if($(`q_enable${i}`)?.checked){
       out.push({index:i, hkl:[num(`q${i}_h`),num(`q${i}_k`),num(`q${i}_l`)]});
     }
@@ -85,7 +150,7 @@ function hasSelectedCif(){
 
 function updateCifUI(){
   const row=$("cifSelectRow");
-  if(row) row.classList.toggle("hidden",checkedValue("sampleMode")!=="single");
+  if(row) row.classList.remove("hidden");
   const name=$("cifFileName");
   if(name){
     name.textContent=selectedCifFileName || "No file selected";
@@ -193,12 +258,61 @@ function selectedSampleCentering(){
   return centeringFromSpaceGroup(selectedSampleSpaceGroup());
 }
 
+const SAMPLE_LATTICE_FIELDS={a:"a",b:"b",c:"c",alpha:"alpha",beta:"beta",gamma:"gamma"};
+
+function applySampleLatticeConstraints(){
+  const sg=selectedSampleSpaceGroup();
+  if(!sg) return;
+  const inputs=Object.fromEntries(Object.entries(SAMPLE_LATTICE_FIELDS).map(([key,id])=>[key,$(id)]));
+  for(const input of Object.values(inputs)){
+    if(!input) continue;
+    input.readOnly=false;
+    input.removeAttribute("aria-readonly");
+    input.title="";
+  }
+  const lockValue=(key,value,reason)=>{
+    const input=inputs[key]; if(!input) return;
+    input.value=String(value);
+    input.readOnly=true;
+    input.setAttribute("aria-readonly","true");
+    input.title=reason;
+  };
+  const lockEqual=(key,sourceKey,reason)=>{
+    const source=Number(inputs[sourceKey]?.value);
+    if(Number.isFinite(source)) lockValue(key,source,reason);
+  };
+
+  // Keep the Sample lattice convention identical to the CIF Generator:
+  // standard monoclinic b setting, hexagonal axes for trigonal groups.
+  const cs=String(sg.crystal_system||"").toLowerCase();
+  if(cs==="monoclinic"){
+    lockValue("alpha",90,"Fixed by the standard monoclinic setting.");
+    lockValue("gamma",90,"Fixed by the standard monoclinic setting.");
+  }else if(cs==="orthorhombic"){
+    for(const k of ["alpha","beta","gamma"]) lockValue(k,90,"Fixed by orthorhombic symmetry.");
+  }else if(cs==="tetragonal"){
+    lockEqual("b","a","b = a by tetragonal symmetry.");
+    for(const k of ["alpha","beta","gamma"]) lockValue(k,90,"Fixed by tetragonal symmetry.");
+  }else if(cs==="trigonal" || cs==="hexagonal"){
+    lockEqual("b","a",`${cs==="trigonal"?"Trigonal (hexagonal setting)":"Hexagonal"} symmetry requires b = a.`);
+    lockValue("alpha",90,"Fixed by the standard hexagonal-axis setting.");
+    lockValue("beta",90,"Fixed by the standard hexagonal-axis setting.");
+    lockValue("gamma",120,"Fixed by the standard hexagonal-axis setting.");
+  }else if(cs==="cubic"){
+    lockEqual("b","a","b = a by cubic symmetry.");
+    lockEqual("c","a","c = a by cubic symmetry.");
+    for(const k of ["alpha","beta","gamma"]) lockValue(k,90,"Fixed by cubic symmetry.");
+  }
+}
+
 function setSampleSpaceGroup(number,{recalc=true}={}){
   const sg=sampleSpaceGroupByNumber(number);
   if(!sg) return false;
   const select=$("sampleSpaceGroup"), entry=$("sampleSpaceGroupNumber");
   if(select) select.value=String(sg.number);
   if(entry) entry.value=String(sg.number);
+  applySampleLatticeConstraints();
+  updateAutoW();
   if(recalc) scheduleRecalc();
   return true;
 }
@@ -215,6 +329,8 @@ function jumpToSampleSpaceGroupNumber(){
 function syncSampleSpaceGroupNumberFromSelect(){
   const n=Number($("sampleSpaceGroup")?.value);
   if(Number.isInteger(n) && $("sampleSpaceGroupNumber")) $("sampleSpaceGroupNumber").value=String(n);
+  applySampleLatticeConstraints();
+  updateAutoW();
   scheduleRecalc();
 }
 
@@ -243,6 +359,9 @@ function populateSampleSpaceGroupControls(){
     $("sampleSpaceGroupNumber")?.addEventListener("keydown",ev=>{
       if(ev.key==="Enter"){ ev.preventDefault(); jumpToSampleSpaceGroupNumber(); }
     });
+    // For tetragonal / trigonal / hexagonal / cubic cells, b (and cubic c)
+    // follows the independent a field immediately while the user edits it.
+    $("a")?.addEventListener("input",applySampleLatticeConstraints);
     select.dataset.bound="1";
   }
 }
@@ -623,16 +742,18 @@ function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=
   if(mode==='bragg'){
     return {mode,hkl:[num('refh'),num('refk'),num('refl')],s1:num('refs1')};
   }
-  const hkl=mode==='perpV'
+  const usesV=mode==='perpV' || mode==='parallelV';
+  const isParallel=mode==='parallelU' || mode==='parallelV';
+  const hkl=usesV
     ? [num('Vh'),num('Vk'),num('Vl')]
     : [num('Uh'),num('Uk'),num('Ul')];
   const qNorm=norm(hklToQ(rl,hkl));
   const E=Number(fixedEnergyMeV);
-  if(!(qNorm>1e-12)) throw new Error(`${mode==='perpV'?'V':'U'} must define a non-zero reciprocal-space vector.`);
-  if(!(E>0)) throw new Error('A positive reference energy is required for ki perpendicular U/V orientation.');
+  if(!(qNorm>1e-12)) throw new Error(`${usesV?'V':'U'} must define a non-zero reciprocal-space vector.`);
+  if(!(E>0)) throw new Error('A positive reference energy is required for ki orientation.');
   const k=Math.sqrt(E/2.072);
   const arg=qNorm/(2*k);
-  if(arg>1+1e-10) throw new Error(`${mode==='perpV'?'V':'U'} Bragg peak is inaccessible at the selected reference energy.`);
+  if(arg>1+1e-10) throw new Error(`${usesV?'V':'U'} Bragg peak is inaccessible at the selected reference energy.`);
   const s2Ref=2*rad2deg(Math.asin(clamp(arg,-1,1)));
 
   // S1 is counter-clockwise positive in both configurations.  Starting from
@@ -641,8 +762,12 @@ function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=
   // Using -theta for both configurations shifts the -+- perpendicular
   // condition by 2*theta = S2.
   const uiSense=uiSenseOverride ?? checkedValue("sense");
-  const s1Ref=(uiSense==="-+-" ? +1 : -1)*0.5*s2Ref;
-  return {mode,hkl,s1:s1Ref,s2Ref};
+  const c2Sign=(uiSense==="+-+") ? +1 : -1;
+  let s1Ref=-c2Sign*0.5*s2Ref;
+  // ki ∥ U/V uses the same virtual elastic Bragg reference as ki ⟂ U/V,
+  // but moves the S1=0 sample orientation by +90 degrees about the plane normal.
+  if(isParallel) s1Ref+=c2Sign*90;
+  return {mode,hkl,s1:wrap180(s1Ref),s2Ref};
 }
 
 function updateOrientationReferenceUI(){
@@ -651,31 +776,52 @@ function updateOrientationReferenceUI(){
 }
 
 function applyDarkAngleSlotColors(){
-  const colors={1:"#d62728",2:"#1f77b4",3:"#2ca02c"};
-  for(let slot=1;slot<=3;slot++){
+  // Dark-angle cards/checkbox labels use one neutral black UI style.
+  for(const slot of darkAssetSlots()){
     const label=$(darkAssetIds(slot).enable)?.closest("label");
     const caption=label?.querySelector("span");
-    if(caption){ caption.style.color=colors[slot]; caption.style.fontWeight="700"; }
+    if(caption){ caption.style.color="#111"; caption.style.fontWeight="700"; }
   }
 }
 
 function updateGeometryQuickTargetButtons(){
   const mode=$('orientationReference')?.value || 'perpU';
   const bragg=mode==='bragg';
-  // Show only the perpendicular quick target that matches the selected
-  // Orientation reference.  This makes the button a direct way to display
-  // the currently selected reference orientation.
   $('geomPerpU')?.classList.toggle('hidden',mode!=='perpU');
   $('geomPerpV')?.classList.toggle('hidden',mode!=='perpV');
+  $('geomParallelU')?.classList.toggle('hidden',mode!=='parallelU');
+  $('geomParallelV')?.classList.toggle('hidden',mode!=='parallelV');
   $('geomSetBragg')?.classList.toggle('hidden',!bragg);
   if($('geomPerpU')) $('geomPerpU').textContent='Set ki ⟂ U';
   if($('geomPerpV')) $('geomPerpV').textContent='Set ki ⟂ V';
+  if($('geomParallelU')) $('geomParallelU').textContent='Set ki ∥ U';
+  if($('geomParallelV')) $('geomParallelV').textContent='Set ki ∥ V';
+
+  const container=document.querySelector(".geometry-target-all-buttons");
+  if(!container) return;
+  const slots=darkAssetSlots();
+
+  for(const button of [...container.querySelectorAll(".geom-dark-ref-button")]){
+    const slot=Number(button.dataset.darkSlot);
+    if(!slots.includes(slot)) button.remove();
+  }
 
   const showDark=!!$('addDark')?.checked;
-  for(let slot=1;slot<=3;slot++){
+  for(const slot of slots){
+    let button=$(`geomSetRefQ${slot}`);
+    if(!button){
+      button=document.createElement("button");
+      button.id=`geomSetRefQ${slot}`;
+      button.type="button";
+      button.className="geom-dark-ref-button hidden";
+      button.dataset.darkSlot=String(slot);
+      button.textContent=`Set Ref Q${slot}`;
+      button.addEventListener("click",()=>setGeometryTargetFromDarkRef(slot));
+      container.appendChild(button);
+    }
     const ids=darkAssetIds(slot);
     const visible=showDark && !!$(ids.enable)?.checked && checkedValue(ids.ref)==='Reference Q';
-    $(`geomSetRefQ${slot}`)?.classList.toggle('hidden',!visible);
+    button.classList.toggle('hidden',!visible);
   }
 }
 function formatHKL(v){
@@ -845,6 +991,98 @@ async function loadJsonDirectory(directory, targetMap){
   }
 
   return files.length;
+}
+
+function normalizeCifFileList(value){
+  if(Array.isArray(value)) return value.map(String);
+  if(value && Array.isArray(value.files)) return value.files.map(String);
+  throw new Error("BG_material/index.json must be an array of CIF filenames or {files:[...]}. ");
+}
+
+async function discoverCifFilesFromGitHub(directory){
+  const owner=window.location.hostname.split('.')[0];
+  const parts=window.location.pathname.split('/').filter(Boolean);
+  const repo=parts[0];
+  if(!repo) throw new Error("GitHub Pages repository name could not be inferred. Add BG_material/index.json.");
+  const apiUrl=`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${directory}?ref=main`;
+  const response=await fetch(apiUrl,{cache:"no-store",headers:{"Accept":"application/vnd.github+json"}});
+  if(!response.ok) throw new Error(`GitHub API: ${directory}/ (HTTP ${response.status})`);
+  const items=await response.json();
+  return items
+    .filter(x=>x&&x.type==="file")
+    .map(x=>x.name)
+    .filter(x=>/\.cif$/i.test(x))
+    .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"}));
+}
+
+async function discoverCifFilesFromDirectoryListing(directory){
+  const response=await fetch(`${directory}/`,{cache:"no-store"});
+  if(!response.ok) throw new Error(`${directory}/ could not be loaded (HTTP ${response.status}).`);
+  const html=await response.text();
+  const doc=new DOMParser().parseFromString(html,"text/html");
+  const files=[...doc.querySelectorAll("a[href]")]
+    .map(a=>a.getAttribute("href"))
+    .filter(Boolean)
+    .map(href=>{
+      try{
+        const url=new URL(href,window.location.href);
+        return decodeURIComponent(url.pathname.split("/").filter(Boolean).pop()||"");
+      }catch(_err){ return null; }
+    })
+    .filter(Boolean)
+    .filter(name=>/\.cif$/i.test(name));
+  return [...new Set(files)].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"}));
+}
+
+async function discoverCifFiles(directory){
+  // Optional manifest for static hosts that do not expose directory listings.
+  try{
+    const response=await fetch(`${directory}/index.json`,{cache:"no-store"});
+    if(response.ok){
+      const manifest=await response.json();
+      const files=normalizeCifFileList(manifest).filter(name=>/\.cif$/i.test(name));
+      if(files.length) return files.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"}));
+    }
+  }catch(_err){}
+
+  if(isGitHubPages()) return await discoverCifFilesFromGitHub(directory);
+  return await discoverCifFilesFromDirectoryListing(directory);
+}
+
+async function loadCifDirectory(directory,targetMap){
+  targetMap.clear();
+  const files=await discoverCifFiles(directory);
+  const errors=[];
+  for(const filename of files){
+    try{
+      const response=await fetch(`${directory}/${filename}`,{cache:"no-store"});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      const text=await response.text();
+      const structure=parseCifStructure(text);
+      const key=filename.replace(/\.cif$/i,"");
+      targetMap.set(key,{key,filename,structure});
+    }catch(err){
+      errors.push(`${filename}: ${err?.message||err}`);
+    }
+  }
+  if(errors.length) console.warn("BG_material CIF load warning(s):\n"+errors.join("\n"));
+  return targetMap.size;
+}
+
+function refreshBackgroundSelect(select,emptyLabel="None"){
+  select.innerHTML="";
+  const empty=document.createElement("option");
+  empty.value="";
+  empty.textContent=emptyLabel;
+  select.appendChild(empty);
+  [...backgroundMaterials.keys()]
+    .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"}))
+    .forEach(key=>{
+      const op=document.createElement("option");
+      op.value=key;
+      op.textContent=key;
+      select.appendChild(op);
+    });
 }
 
 function refreshSelect(map,select,emptyLabel){
@@ -1037,11 +1275,331 @@ function applyInstrumentDefaults(){
 
 function darkAssetIds(slot){
   const suffix=slot===1?"":String(slot);
+  const legacyRangeId=(kind,i)=>{
+    if(slot<=3 && i<4) return `dark${kind}${suffix}${i}`;
+    return `dark${kind}${slot}_${i}`;
+  };
   return {
     enable:`darkEnable${slot}`, se:`seSelect${suffix}`, ref:`darkRef${suffix}`, rotation:`darkRotation${suffix}`,
     refH:`darkRefH${slot}`, refK:`darkRefK${slot}`, refL:`darkRefL${slot}`, refRow:`darkRefQRow${slot}`,
-    from:i=>`darkFrom${suffix}${i}`, to:i=>`darkTo${suffix}${i}`, offset:i=>`darkOffset${suffix}${i}`
+    rangeCount:`darkRangeCount${slot}`,
+    from:i=>legacyRangeId("From",i), to:i=>legacyRangeId("To",i), offset:i=>legacyRangeId("Offset",i)
   };
+}
+
+function darkAssetSlots(){
+  return [...document.querySelectorAll(".dark-asset[data-dark-slot]")]
+    .map(el=>Number(el.dataset.darkSlot))
+    .filter(Number.isFinite)
+    .sort((a,b)=>a-b);
+}
+
+function currentDarkRangeCount(slot){
+  const ids=darkAssetIds(slot);
+  const saved=Number($(ids.rangeCount)?.value);
+  if(Number.isInteger(saved) && saved>=1) return saved;
+  return document.querySelectorAll(`.dark-asset[data-dark-slot="${slot}"] .dark-range-number`).length || 1;
+}
+
+function createPropagationVectorRow(index,values={}){
+  const row=document.createElement("div");
+  row.className="propagation-row";
+  row.dataset.qIndex=String(index);
+  row.innerHTML=`<label class="checkbox-label propagation-enable"><input id="q_enable${index}" type="checkbox"><span>k${index}</span></label>`+
+    `<label>k${index}_h<input id="q${index}_h" type="number" value="0" step="0.01"></label>`+
+    `<label>k${index}_k<input id="q${index}_k" type="number" value="0" step="0.01"></label>`+
+    `<label>k${index}_l<input id="q${index}_l" type="number" value="0" step="0.01"></label>`+
+    `<button type="button" class="remove-propagation-vector" data-q-index="${index}">Remove</button>`;
+  row.querySelector(`#q_enable${index}`).checked=values.enabled!==undefined ? !!values.enabled : true;
+  for(const c of ["h","k","l"]){
+    const value=Number(values[c]);
+    row.querySelector(`#q${index}_${c}`).value=Number.isFinite(value)?String(value):"0";
+  }
+  return row;
+}
+
+function propagationVectorValues(){
+  return propagationVectorIndices().map(index=>({
+    enabled:!!$(`q_enable${index}`)?.checked,
+    h:num(`q${index}_h`), k:num(`q${index}_k`), l:num(`q${index}_l`)
+  }));
+}
+
+function replacePropagationVectors(values,{recalc=false}={}){
+  const host=$("propagationVectors");
+  if(!host) return;
+  const rows=(Array.isArray(values)&&values.length)?values:[{}];
+  host.replaceChildren();
+  rows.forEach((value,i)=>host.appendChild(createPropagationVectorRow(i+1,value)));
+  if($("propagationCount")) $("propagationCount").value=String(rows.length);
+  updatePropagationVectorLabels();
+  if(recalc) scheduleRecalc();
+}
+
+function setPropagationVectorCount(count,{recalc=false}={}){
+  count=Math.max(1,Math.floor(Number(count)||1));
+  const values=propagationVectorValues();
+  while(values.length<count) values.push({});
+  values.length=count;
+  replacePropagationVectors(values,{recalc});
+}
+
+function removePropagationVector(index){
+  const values=propagationVectorValues();
+  const position=propagationVectorIndices().indexOf(Number(index));
+  if(position>=0) values.splice(position,1);
+  replacePropagationVectors(values,{recalc:true});
+}
+
+function makeDarkRangeCells(slot,index,values={}){
+  const ids=darkAssetIds(slot);
+  const frag=document.createDocumentFragment();
+  const no=document.createElement("span");
+  no.className="dark-range-number";
+  no.dataset.darkRange=String(index);
+  no.textContent=String(index+1);
+  frag.appendChild(no);
+  for(const [idFor,kind] of [[ids.from,"from"],[ids.to,"to"],[ids.offset,"offset"]]){
+    const input=document.createElement("input");
+    input.id=idFor(index);
+    input.dataset.darkRange=String(index);
+    input.dataset.darkField=kind;
+    input.type="number";
+    const value=Number(values[kind]);
+    input.value=Number.isFinite(value)?String(value):"0";
+    frag.appendChild(input);
+  }
+  const remove=document.createElement("button");
+  remove.type="button";
+  remove.className="remove-dark-range";
+  remove.dataset.darkSlot=String(slot);
+  remove.dataset.darkRange=String(index);
+  remove.textContent="Remove";
+  frag.appendChild(remove);
+  return frag;
+}
+
+function darkRangeValues(slot){
+  const ids=darkAssetIds(slot);
+  const count=currentDarkRangeCount(slot);
+  const out=[];
+  for(let i=0;i<count;i++){
+    out.push({from:num(ids.from(i)),to:num(ids.to(i)),offset:num(ids.offset(i))});
+  }
+  return out;
+}
+
+function replaceDarkRanges(slot,ranges,{recalc=false}={}){
+  const asset=document.querySelector(`.dark-asset[data-dark-slot="${slot}"]`);
+  const table=asset?.querySelector(".dark-table");
+  if(!asset || !table) return;
+  const rows=(Array.isArray(ranges)&&ranges.length)?ranges:[{}];
+  table.replaceChildren();
+  for(const label of ["No.","From","To","Offset",""]){
+    const head=document.createElement("div");
+    head.textContent=label;
+    table.appendChild(head);
+  }
+  rows.forEach((value,i)=>table.appendChild(makeDarkRangeCells(slot,i,value)));
+  const countInput=$(darkAssetIds(slot).rangeCount);
+  if(countInput) countInput.value=String(rows.length);
+  if(recalc) scheduleRecalc();
+}
+
+function setDarkRangeCount(slot,count,{recalc=false}={}){
+  count=Math.max(1,Math.floor(Number(count)||1));
+  const ranges=darkRangeValues(slot);
+  while(ranges.length<count) ranges.push({});
+  ranges.length=count;
+  replaceDarkRanges(slot,ranges,{recalc});
+}
+
+function removeDarkRange(slot,index){
+  const ranges=darkRangeValues(slot);
+  const i=Math.max(0,Math.min(ranges.length-1,Number(index)||0));
+  ranges.splice(i,1);
+  replaceDarkRanges(slot,ranges,{recalc:true});
+}
+
+function createDarkAsset(slot,values={}){
+  const ids=darkAssetIds(slot);
+  const asset=document.createElement("div");
+  asset.className="dark-asset";
+  asset.dataset.darkSlot=String(slot);
+  asset.innerHTML=`
+    <div class="dark-asset-head">
+      <label class="checkbox-label"><input id="${ids.enable}" type="checkbox" checked><span>Dark angle ${slot}</span></label>
+      <label>Sample environment<select id="${ids.se}"><option value="">Standard</option></select></label>
+      <button type="button" class="remove-dark-asset" data-dark-slot="${slot}">Remove</button>
+    </div>
+    <div class="grid2">
+      <label>Reference<select id="${ids.ref}"><option>Reference Q</option><option>Direct beam</option><option>Fixed</option></select></label>
+      <label>Rotation (deg)<input id="${ids.rotation}" type="number" value="0" step="1"></label>
+    </div>
+    <div id="${ids.refRow}" class="grid3">
+      <label>h<input id="${ids.refH}" type="number" value="1" step="0.1"></label>
+      <label>k<input id="${ids.refK}" type="number" value="0" step="0.1"></label>
+      <label>l<input id="${ids.refL}" type="number" value="0" step="0.1"></label>
+    </div>
+    <input id="${ids.rangeCount}" type="hidden" value="1">
+    <div class="dark-table" data-dark-range-table="${slot}"></div>
+    <button type="button" class="add-dark-range dynamic-add-wide" data-dark-slot="${slot}">+ Add range</button>`;
+  return asset;
+}
+
+function refreshDarkEnvironmentSelect(slot){
+  const select=$(darkAssetIds(slot).se);
+  if(!select) return;
+  const keep=select.value;
+  refreshSelect(sampleEnvironments,select,"Standard");
+  if([...select.options].some(o=>o.value===keep)) select.value=keep;
+}
+
+function snapshotDarkAsset(slot){
+  const ids=darkAssetIds(slot);
+  return {
+    enabled:!!$(ids.enable)?.checked,
+    se:$(ids.se)?.value||"",
+    ref:checkedValue(ids.ref)||"Reference Q",
+    rotation:num(ids.rotation),
+    refH:num(ids.refH), refK:num(ids.refK), refL:num(ids.refL),
+    ranges:darkRangeValues(slot)
+  };
+}
+
+function applyDarkAssetValues(slot,values={}){
+  const ids=darkAssetIds(slot);
+  refreshDarkEnvironmentSelect(slot);
+  if($(ids.enable)) $(ids.enable).checked=values.enabled!==undefined ? !!values.enabled : true;
+  if($(ids.se)){
+    const requested=String(values.se||"");
+    $(ids.se).value=[...$(ids.se).options].some(o=>o.value===requested)?requested:"";
+  }
+  setRadio(ids.ref,values.ref||"Reference Q");
+  if($(ids.rotation)) $(ids.rotation).value=Number.isFinite(Number(values.rotation))?String(values.rotation):"0";
+  if($(ids.refH)) $(ids.refH).value=Number.isFinite(Number(values.refH))?String(values.refH):"1";
+  if($(ids.refK)) $(ids.refK).value=Number.isFinite(Number(values.refK))?String(values.refK):"0";
+  if($(ids.refL)) $(ids.refL).value=Number.isFinite(Number(values.refL))?String(values.refL):"0";
+  replaceDarkRanges(slot,values.ranges);
+  updateDarkReferenceUI(slot);
+}
+
+function darkAssetValues(){
+  return darkAssetSlots().map(slot=>snapshotDarkAsset(slot));
+}
+
+function replaceDarkAssets(values,{recalc=false}={}){
+  const host=$("darkAssets");
+  if(!host) return;
+  const cards=(Array.isArray(values)&&values.length)?values:[{}];
+  host.replaceChildren();
+  cards.forEach((value,i)=>{
+    const slot=i+1;
+    host.appendChild(createDarkAsset(slot,value));
+    applyDarkAssetValues(slot,value);
+  });
+  if($("darkAssetCount")) $("darkAssetCount").value=String(cards.length);
+  applyDarkAngleSlotColors();
+  updateGeometryQuickTargetButtons();
+  if(recalc) scheduleRecalc();
+}
+
+function setDarkAssetCount(count,{recalc=false}={}){
+  count=Math.max(1,Math.floor(Number(count)||1));
+  const values=darkAssetValues();
+  while(values.length<count) values.push({});
+  values.length=count;
+  replaceDarkAssets(values,{recalc});
+}
+
+function removeDarkAsset(slot){
+  const values=darkAssetValues();
+  const position=darkAssetSlots().indexOf(Number(slot));
+  if(position>=0) values.splice(position,1);
+  replaceDarkAssets(values,{recalc:true});
+}
+
+function bindDynamicSidebarUI(){
+  const propagationHost=$("propagationVectors");
+  if(propagationHost && !propagationHost.dataset.bound){
+    const recalc=()=>scheduleRecalc();
+    propagationHost.addEventListener("input",recalc);
+    propagationHost.addEventListener("change",recalc);
+    propagationHost.addEventListener("click",ev=>{
+      const remove=ev.target.closest(".remove-propagation-vector");
+      if(remove) removePropagationVector(Number(remove.dataset.qIndex));
+    });
+    propagationHost.dataset.bound="1";
+  }
+
+  $("addPropagationVector")?.addEventListener("click",()=>{
+    const values=propagationVectorValues();
+    values.push({});
+    replacePropagationVectors(values,{recalc:true});
+  });
+
+  const backgroundHost=$("backgroundRows");
+  if(backgroundHost && !backgroundHost.dataset.bound){
+    backgroundHost.addEventListener("change",ev=>{
+      const select=ev.target.closest('select[id^="backgroundSelect"]');
+      if(select) handleBackgroundSelection(select.id);
+    });
+    backgroundHost.addEventListener("click",ev=>{
+      const remove=ev.target.closest(".remove-background");
+      if(remove) removeBackground(Number(remove.dataset.backgroundIndex));
+    });
+    backgroundHost.dataset.bound="1";
+  }
+  $("addBackground")?.addEventListener("click",()=>{
+    const values=backgroundRowValues();
+    if(values.length>=BACKGROUND_SLOTS.length) return;
+    values.push({});
+    replaceBackgroundRows(values,{recalc:true});
+  });
+
+  const darkHost=$("darkAssets");
+  if(darkHost && !darkHost.dataset.bound){
+    darkHost.addEventListener("input",ev=>{
+      if(ev.target.matches("input,select")) scheduleRecalc();
+    });
+    darkHost.addEventListener("change",ev=>{
+      const asset=ev.target.closest(".dark-asset[data-dark-slot]");
+      const slot=Number(asset?.dataset.darkSlot);
+      if(!Number.isFinite(slot)) return;
+      const ids=darkAssetIds(slot);
+      if(ev.target.id===ids.se){
+        applySampleEnvironmentDefaults(slot);
+      }else if(ev.target.id===ids.ref){
+        updateDarkReferenceUI(slot);
+        scheduleRecalc();
+      }else{
+        scheduleRecalc();
+      }
+      if(ev.target.id===ids.enable || ev.target.id===ids.ref) updateGeometryQuickTargetButtons();
+    });
+    darkHost.addEventListener("click",ev=>{
+      const add=ev.target.closest(".add-dark-range");
+      const removeRange=ev.target.closest(".remove-dark-range");
+      const removeAsset=ev.target.closest(".remove-dark-asset");
+      if(add){
+        const slot=Number(add.dataset.darkSlot);
+        const ranges=darkRangeValues(slot);
+        ranges.push({});
+        replaceDarkRanges(slot,ranges,{recalc:true});
+      }else if(removeRange){
+        removeDarkRange(Number(removeRange.dataset.darkSlot),Number(removeRange.dataset.darkRange));
+      }else if(removeAsset){
+        removeDarkAsset(Number(removeAsset.dataset.darkSlot));
+      }
+    });
+    darkHost.dataset.bound="1";
+  }
+
+  $("addDarkAsset")?.addEventListener("click",()=>{
+    const values=darkAssetValues();
+    values.push({});
+    replaceDarkAssets(values,{recalc:true});
+  });
 }
 
 function updateDarkReferenceUI(slot){
@@ -1059,13 +1617,12 @@ function updateDarkReferenceUI(slot){
 
 function applySampleEnvironmentDefaults(slot=1){
   const ids=darkAssetIds(slot);
-  const key=$(ids.se).value;
+  const key=$(ids.se)?.value || "";
   if(!key || !sampleEnvironments.has(key)){
     setRadio(ids.ref,"Reference Q");
     updateDarkReferenceUI(slot);
-    for(let i=0;i<4;i++){
-      $(ids.from(i)).value=0; $(ids.to(i)).value=0; $(ids.offset(i)).value=0;
-    }
+    setDarkRangeCount(slot,1);
+    $(ids.from(0)).value=0; $(ids.to(0)).value=0; $(ids.offset(0)).value=0;
     scheduleRecalc();
     return;
   }
@@ -1075,7 +1632,8 @@ function applySampleEnvironmentDefaults(slot=1){
   if(rq&&rq.length>=3){ $(ids.refH).value=rq[0]; $(ids.refK).value=rq[1]; $(ids.refL).value=rq[2]; }
   updateDarkReferenceUI(slot);
   const ranges=Array.isArray(se.dark_angle_ranges)?se.dark_angle_ranges:[];
-  for(let i=0;i<4;i++){
+  setDarkRangeCount(slot,Math.max(1,ranges.length));
+  for(let i=0;i<Math.max(1,ranges.length);i++){
     const r=ranges[i] || {from:0,to:0,offset:0};
     $(ids.from(i)).value=Number(r.from||0);
     $(ids.to(i)).value=Number(r.to||0);
@@ -1114,12 +1672,14 @@ function latticeParams(){
 
 function getDarkAssets(){
   const assets=[];
-  for(let slot=1;slot<=3;slot++){
+  for(const slot of darkAssetSlots()){
     const ids=darkAssetIds(slot);
     if(!$(ids.enable)?.checked) continue;
     const rotation=num(ids.rotation);
     const ranges=[];
-    for(let i=0;i<4;i++) ranges.push([num(ids.from(i)),num(ids.to(i)),num(ids.offset(i))+rotation]);
+    for(let i=0;i<currentDarkRangeCount(slot);i++){
+      ranges.push([num(ids.from(i)),num(ids.to(i)),num(ids.offset(i))+rotation]);
+    }
     assets.push({slot,key:$(ids.se)?.value||"",ref:checkedValue(ids.ref)||"Reference Q",refHkl:[num(ids.refH),num(ids.refK),num(ids.refL)],ranges});
   }
   return assets;
@@ -1214,7 +1774,7 @@ function directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense){
   const orientationMode=$('orientationReference')?.value || 'bragg';
   if(orientationMode==='bragg') return 0;
 
-  const refHkl=orientationMode==='perpV'
+  const refHkl=(orientationMode==='perpV' || orientationMode==='parallelV')
     ? [num("Vh"),num("Vk"),num("Vl")]
     : [num("Uh"),num("Uk"),num("Ul")];
   const qRef=norm(hklToQ(rl,refHkl));
@@ -1230,7 +1790,8 @@ function directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense){
   // The geometric Direct-beam axis is already mirrored in renderGeometry().
   // Do not mirror this half-S2 calibration a second time.  Changing +theta to
   // -theta shifts the -+- zero by 2*theta = S2, exactly the observed offset.
-  return +halfS2Ref;
+  const parallelOffset=(orientationMode==='parallelU' || orientationMode==='parallelV') ? -90 : 0;
+  return +halfS2Ref+parallelOffset;
 }
 
 function darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef){
@@ -1598,18 +2159,15 @@ function calculateSingleCrystal(){
   const ringData=[];
   const qlimit=Math.max(...QmaxList);
   for(const bg of selectedBackgrounds()){
-    const sample=samples.get(bg.key);
-    const peaks=Array.isArray(sample.peaks)?sample.peaks:[];
-    const maxI=peaks.length?Math.max(...peaks.map(p=>Number(p.intensity)||0)):0;
+    const material=backgroundMaterials.get(bg.key);
+    const peaks=backgroundPowderPeaks(material,qlimit);
     for(const p of peaks){
-      const q=2*PI/Number(p.d);
-      if(!Number.isFinite(q) || q>qlimit) continue;
       const phi=linspace(0,2*PI,361);
-      const ratio=maxI>0?(Number(p.intensity)||0)/maxI:0;
+      const ratio=p.relativeIntensity;
       ringData.push({
-        x:phi.map(t=>q*Math.cos(t)), y:phi.map(t=>q*Math.sin(t)),
+        x:phi.map(t=>p.q*Math.cos(t)), y:phi.map(t=>p.q*Math.sin(t)),
         color:backgroundColor(bg.slot,0.20+0.75*ratio),
-        hover:`BG${bg.index+1}: ${sample.name||bg.key} (${p.h}${p.k}${p.l})<br>Q = ${q.toFixed(3)} Å⁻¹<br>I = ${Number(p.intensity).toFixed(1)}`
+        hover:`BG${bg.index+1}: ${bg.key}<br>${representativePowderHklText(p)}<br>Q = ${p.q.toFixed(3)} Å⁻¹<br>S2(elastic) = ${p.elasticS2.toFixed(3)}°<br>I/Imax = ${ratio.toFixed(3)}`
       });
     }
   }
@@ -1698,7 +2256,7 @@ function bindSingleZoomMarkerScaling(cache,Qplot){
     const updates=[],indices=[];
     (gd.data||[]).forEach((tr,j)=>{
       if(tr.name==="Nuclear Bragg peaks"){updates.push(sizes.nuclear);indices.push(j);}
-      else if(/^Magnetic Bragg peaks: k[123]$/.test(tr.name||"")){
+      else if(/^Magnetic Bragg peaks: k\d+$/.test(tr.name||"")){
         const k=Number((tr.name||"").match(/k([123])$/)?.[1]||1);
         updates.push(k===3?sizes.star:sizes.magnetic);indices.push(j);
       }
@@ -1853,7 +2411,8 @@ function renderSingle(cache,index=0){
       x:[null], y:[null], mode:"markers", name:"Nuclear Bragg peaks",
       marker:{color:"black",size:initialMarkerSizes.nuclear},
       hoverinfo:"skip",
-      meta:"nuclear-legend"
+      meta:"nuclear-legend",
+      zorder:0
     },
     {
       x:visibleGpoints.map(p=>p.x),
@@ -1862,6 +2421,7 @@ function renderSingle(cache,index=0){
       name:"Nuclear Bragg peaks",
       showlegend:false,
       meta:"nuclear-data",
+      zorder:0,
       marker:cache.cifStructure ? {
         color:visibleGpoints.map(p=>Number.isFinite(p.sfNorm)?p.sfNorm:0),
         colorscale:[[0,"rgb(245,245,245)"],[0.25,"rgb(205,205,205)"],[0.5,"rgb(150,150,150)"],[0.75,"rgb(85,85,85)"],[1,"rgb(0,0,0)"]],
@@ -1891,18 +2451,24 @@ function renderSingle(cache,index=0){
       textfont:{color:"black",size:labelStyle.fontSize},
       showlegend:false,
       hoverinfo:"skip",
-      meta:"nuclear-labels"
+      meta:"nuclear-labels",
+      zorder:0
     });
   }
-  // Keep k1/k2/k3 visually distinct while retaining one magnetic-peak color.
-  const magneticSymbols={1:"circle",2:"x",3:"star"};
-  for(let qIndex=1;qIndex<=3;qIndex++){
+  // Keep propagation vectors visually distinct by marker shape while retaining
+  // one magnetic-peak color.  The symbol sequence cycles only if many k vectors
+  // are added; the propagation-vector index remains explicit in the legend.
+  const magneticSymbols=["circle","x","star","diamond","cross","triangle-up","square","diamond-open","triangle-down","pentagon"];
+  const magneticIndices=[...new Set(cache.magPoints.map(p=>Number(p.qIndex)).filter(Number.isFinite))].sort((a,b)=>a-b);
+  for(const qIndex of magneticIndices){
     const pts=cache.magPoints.filter(p=>p.qIndex===qIndex);
     if(!pts.length) continue;
+    const symbol=magneticSymbols[(qIndex-1)%magneticSymbols.length];
     traces.push({
       x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",name:`Magnetic Bragg peaks: k${qIndex}`,
-      marker:{color:"red",size:qIndex===3?initialMarkerSizes.star:initialMarkerSizes.magnetic,symbol:magneticSymbols[qIndex]},
-      hovertext:pts.map(p=>p.label),hovertemplate:"%{hovertext}<extra></extra>"
+      marker:{color:"red",size:symbol==="star"?initialMarkerSizes.star:initialMarkerSizes.magnetic,symbol},
+      hovertext:pts.map(p=>p.label),hovertemplate:"%{hovertext}<extra></extra>",
+      zorder:10
     });
   }
   const selectedS2=syncSingleNavigation(cache,i);
@@ -1920,10 +2486,9 @@ function renderSingle(cache,index=0){
   // Match the Powder view: show one legend entry for each selected BG slot
   // without duplicating a legend item for every individual powder ring.
   for(const bg of selectedBackgrounds()){
-    const sample=samples.get(bg.key);
     traces.push({
       x:[null],y:[null],mode:"lines",
-      name:`BG${bg.index+1}: ${sample.name||bg.key}`,
+      name:`BG${bg.index+1}: ${bg.key}`,
       line:{color:backgroundColor(bg.slot,1),width:1.5},
       hoverinfo:"skip",showlegend:true
     });
@@ -2208,12 +2773,12 @@ function renderGeometry(cache,index=0){
 
       let a0=offset+from+geometryDirectBeamCorrection,a1=offset+to+geometryDirectBeamCorrection; if(a1<a0)a1+=360;
       const aa=linspace(a0,a1,120).map(d=>base-deg2rad(d));
-      // Display-only differentiation: Dark 1/2/3 use 1.0/1.1/1.2 x radius
-      // and red/blue/green respectively. Numerical dark-angle calculations are unchanged.
-      const slotIndex=Math.max(1,Math.min(3,Number(asset.slot)||1));
+      // Display-only differentiation: every Dark angle is red.  Slots are
+      // separated radially (1.0, 1.1, 1.2, ... x radius), so color no longer
+      // needs to encode the slot number. Numerical dark-angle calculations are unchanged.
+      const slotIndex=Math.max(1,Number(asset.slot)||1);
       const assetRadius=darkRadius*(1+0.1*(slotIndex-1));
-      const darkColors={1:"#d62728",2:"#1f77b4",3:"#2ca02c"};
-      const assetColor=darkColors[slotIndex];
+      const assetColor="#d62728";
       traces.push({x:aa.map(t=>sample[0]+assetRadius*Math.cos(t)),y:aa.map(t=>sample[1]+assetRadius*Math.sin(t)),mode:"lines",line:{color:assetColor,width:4},name:`Dark ${asset.slot}-${j+1}`,hovertemplate:`Dark angle ${asset.slot}-${j+1}<br>Reference=${asset.ref}<br>ΔS1=${deltaS1.toFixed(2)}°<br>Ref offset=${darkReferenceOffset.toFixed(2)}°<extra></extra>`,showlegend:false});
     });
   }
@@ -2379,29 +2944,208 @@ function renderGeometry(cache,index=0){
   },{responsive:true,displayModeBar:false});
 }
 
+function powderS2ForQAtHW(q,hw){
+  const wv=powderWavevectors(hw);
+  if(!wv) return NaN;
+  const {ki,kf}=wv;
+  const denom=2*ki*kf;
+  if(!(denom>0)) return NaN;
+  const c=(ki*ki+kf*kf-q*q)/denom;
+  if(c < -1-1e-10 || c > 1+1e-10) return NaN;
+  return rad2deg(Math.acos(clamp(c,-1,1)));
+}
+
+function powderSfText(sf2){
+  if(!Number.isFinite(sf2)) return "N/A";
+  const a=Math.abs(sf2);
+  const s=(a!==0 && (a>=1e5 || a<1e-3)) ? sf2.toExponential(4) : sf2.toFixed(4).replace(/\.?0+$/,"");
+  return `|F_N|² = ${s} fm²`;
+}
+
+function groupPowderReflectionsByQ(entries){
+  const groups=new Map();
+  for(const e of entries){
+    const key=Number(e.q).toFixed(6);
+    let g=groups.get(key);
+    if(!g){
+      g={q:Number(e.q),entries:[]};
+      groups.set(key,g);
+    }
+    g.entries.push(e);
+  }
+  return [...groups.values()].sort((a,b)=>a.q-b.q);
+}
+
+function backgroundPowderCorrectionAtElasticQ(q){
+  // Background nuclear Bragg scattering is treated as elastic.  The selected
+  // fixed TAS energy therefore sets the constant wavelength with Ei = Ef = E,
+  // for both "Ef fixed" and "Ei fixed" UI modes.
+  //
+  // FullProf constant-wavelength neutron powder (K=0) uses
+  //   Lp = 1 / (2 sin^2(theta) cos(theta))
+  //      = 1 / (sin(theta) sin(2 theta)).
+  //
+  // Calculate the elastic powder pattern all the way through S2 = 180 deg
+  // (Q = 2k).  The geometrical factor is singular exactly at 180 deg, so only
+  // the numerical denominator is protected at machine precision; S2 itself
+  // remains exactly 180 deg at the endpoint.
+  const E=num("energy");
+  if(!(E>0) || !(q>0)) return null;
+  const k=Math.sqrt(E/2.072);
+  const sinTheta=q/(2*k);
+  if(!(sinTheta>0) || sinTheta>1+1e-10) return null;
+  const theta=Math.asin(clamp(sinTheta,0,1));
+  const s2=2*theta;
+  const denomRaw=Math.abs(Math.sin(theta)*Math.sin(s2));
+  const denom=Math.max(denomRaw,Number.EPSILON);
+  return {
+    s2Deg:Math.min(180,rad2deg(s2)),
+    lorentzDebye:1/denom
+  };
+}
+
+function backgroundPowderPeaks(material,qLimit){
+  const structure=material?.structure;
+  const lc=structure?.lattice;
+  if(!lc) return [];
+  const vals=[lc.a,lc.b,lc.c,lc.alpha,lc.beta,lc.gamma].map(Number);
+  if(!vals.every(Number.isFinite)) return [];
+
+  // Build/normalize the BG powder pattern over the complete elastic
+  // backscattering interval S2 = 0..180 deg, irrespective of the current
+  // instrument S2 limit.  Rendering is still clipped to the current plot Q
+  // window below.
+  const E=num("energy");
+  if(!(E>0)) return [];
+  const kElastic=Math.sqrt(E/2.072);
+  const qCalcLimit=2*kElastic; // S2 = 180 deg.
+
+  const rv=reciprocalVectors(...vals);
+  const hmax=Math.max(1,Math.ceil(lc.a*qCalcLimit/(2*PI))+1);
+  const kmax=Math.max(1,Math.ceil(lc.b*qCalcLimit/(2*PI))+1);
+  const lmax=Math.max(1,Math.ceil(lc.c*qCalcLimit/(2*PI))+1);
+  const entries=[];
+
+  for(let h=-hmax;h<=hmax;h++){
+    for(let k=-kmax;k<=kmax;k++){
+      for(let l=-lmax;l<=lmax;l++){
+        if(h===0 && k===0 && l===0) continue;
+        const hkl=[h,k,l];
+        const G=add(add(scale(rv.astar,h),scale(rv.bstar,k)),scale(rv.cstar,l));
+        const q=norm(G);
+        if(!(q>1e-8) || q>qCalcLimit+1e-10) continue;
+        const sf2=nuclearStructureFactorSquared(structure,hkl,q);
+        if(Number.isFinite(sf2)) entries.push({hkl,q,sf2});
+      }
+    }
+  }
+
+  if(!entries.length) return [];
+  const sfMax=Math.max(0,...entries.map(p=>p.sf2));
+  const surviving=sfMax>0 ? entries.filter(p=>p.sf2>sfMax*1e-10) : entries;
+  const groups=groupPowderReflectionsByQ(surviving);
+
+  const corrected=[];
+  for(const g of groups){
+    const correction=backgroundPowderCorrectionAtElasticQ(g.q);
+    // A constant-wavelength elastic powder Bragg peak has no real 2theta when
+    // q > 2k, so it is not part of the corresponding FullProf-like pattern.
+    if(!correction) continue;
+
+    // Coincident powder reflections are summed first, so the represented hkl
+    // multiplicity contributes directly.  Then apply the neutron powder
+    // Lorentz / Debye-cone correction at the elastic S2.
+    g.sf2Sum=g.entries.reduce((sum,p)=>sum+Math.max(0,Number(p.sf2)||0),0);
+    g.elasticS2=correction.s2Deg;
+    g.lorentzDebye=correction.lorentzDebye;
+    g.intensity=g.sf2Sum*g.lorentzDebye;
+    corrected.push(g);
+  }
+
+  const maxIntensity=Math.max(0,...corrected.map(g=>g.intensity));
+  for(const g of corrected) g.relativeIntensity=maxIntensity>0 ? g.intensity/maxIntensity : 0;
+
+  // Keep the full 0..180-deg calculation for normalization, but only return
+  // peaks that lie inside the Q range currently being drawn.
+  return corrected.filter(g=>g.q<=qLimit+1e-10);
+}
+
+function representativePowderHklText(group){
+  const entries=(group?.entries||[]).slice().sort((a,b)=>
+    formatHKL(a.hkl).localeCompare(formatHKL(b.hkl))
+  );
+  if(!entries.length) return "N/A";
+  const label=`(${formatHKL(entries[0].hkl)})`;
+  return entries.length>1 ? `${label} & equivalent` : label;
+}
+
+function powderS2HoverText(q,hw){
+  const s2=powderS2ForQAtHW(q,hw);
+  return Number.isFinite(s2) ? `${s2.toFixed(3)}°` : "N/A";
+}
+
+function appendPowderBackgroundCurve(target,q,hwList,detailHtml){
+  let open=false;
+  for(const w of hwList){
+    const s2=powderS2ForQAtHW(q,w);
+    if(!Number.isFinite(s2)){
+      if(open){
+        target.x.push(null); target.y.push(null); target.customdata.push(null);
+        open=false;
+      }
+      continue;
+    }
+    target.x.push(q);
+    target.y.push(w);
+    target.customdata.push([detailHtml,q,`${s2.toFixed(3)}°`]);
+    open=true;
+  }
+  if(open){
+    target.x.push(null); target.y.push(null); target.customdata.push(null);
+  }
+}
+
+function appendPowderBraggLine(target,q,hwList,detailHtml){
+  // Draw every Bragg line over the exact same hbar-omega span.  The yellow
+  // accessible region shows where the instrument can actually reach the peak;
+  // S2 is still evaluated point-by-point for hover and becomes N/A only when
+  // no real scattering angle exists at that (Q,hbar-omega).
+  for(const w of hwList){
+    target.x.push(q);
+    target.y.push(w);
+    target.customdata.push([detailHtml,q,powderS2HoverText(q,w)]);
+  }
+  target.x.push(null);
+  target.y.push(null);
+  target.customdata.push(null);
+}
+
 function calculatePowder(){
   const inst=currentInstrument();
   const lc=latticeParams();
   const rv=reciprocalVectors(lc.a,lc.b,lc.c,lc.alpha,lc.beta,lc.gamma);
-  const al=norm(rv.astar), bl=norm(rv.bstar), cl=norm(rv.cstar);
   const energyMode=checkedValue("energyMode");
   const E=num("energy"), S2min=num("S2min");
-  const qmin=[],qmax=[],hw=[];
-  let fixedE=E;
+
+  const qmin=[],qmax=[],hw=[],s2minList=[],s2maxList=[];
 
   if(energyMode==="Ef fixed"){
     const Ef=E;
     const EiMax=Math.max(...rangeTable(inst).map(x=>Number(x.Ei)));
     for(const Ei of arange(Ef+0.01,EiMax,0.1)){
-      const s2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,Ei,false),S2min,Ei), ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
+      const s2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,Ei,false),S2min,Ei);
+      const ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
       const tmin=deg2rad(S2min),tmax=deg2rad(s2max);
       qmin.push(Math.sqrt(ki*ki+kf*kf-2*ki*kf*Math.cos(tmin)));
       qmax.push(Math.sqrt(ki*ki+kf*kf-2*ki*kf*Math.cos(tmax)));
       hw.push(Ei-Ef);
+      s2minList.push(S2min);
+      s2maxList.push(s2max);
     }
   } else {
     const Ei=E;
-    const s2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,Ei,false),S2min,Ei),ki=0.6947*Math.sqrt(Ei);
+    const s2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,Ei,false),S2min,Ei);
+    const ki=0.6947*Math.sqrt(Ei);
     for(const w of arange(0,Ei-0.01,0.1)){
       const Ef=Ei-w;
       if(Ef<=0) continue;
@@ -2409,6 +3153,8 @@ function calculatePowder(){
       qmin.push(Math.sqrt(ki*ki+kf*kf-2*ki*kf*Math.cos(tmin)));
       qmax.push(Math.sqrt(ki*ki+kf*kf-2*ki*kf*Math.cos(tmax)));
       hw.push(w);
+      s2minList.push(S2min);
+      s2maxList.push(s2max);
     }
   }
   if(!qmax.length) throw new Error("No accessible powder range was generated.");
@@ -2416,95 +3162,165 @@ function calculatePowder(){
   const traces=[{
     x:[...qmin,...[...qmax].reverse()],
     y:[...hw,...[...hw].reverse()],
-    fill:"toself",fillcolor:"rgba(255,215,0,0.20)",
-    line:{width:0},name:"Accessible QE range"
+    fill:"toself",
+    fillcolor:"rgba(255,215,0,0.20)",
+    line:{width:0},
+    name:"Accessible QE range",
+    legendrank:0,
+    hoverinfo:"skip"
   }];
-  const shapes=[],annotations=[];
-  const Qlim=Math.max(...qmax), hwmax=Math.max(...hw);
-  // Powder nuclear reciprocal-lattice guides: keep all harmonics as thin solid
-  // lines, but use one compact legend item per reciprocal axis (a*, b*, c*).
-  [[al,"#ff69b4","a*"],[bl,"#66ccff","b*"],[cl,"#7CFC00","c*"]].forEach(([base,color,label])=>{
-    traces.push({x:[null],y:[null],mode:"lines",name:`Nuclear ${label}`,line:{color,width:1,dash:"solid"},hoverinfo:"skip",showlegend:true});
-    for(let n=1;n<20;n++){
-      const q=n*base;
-      if(q>Qlim) break;
-      shapes.push({type:"line",x0:q,x1:q,y0:0,y1:1,yref:"paper",line:{color,dash:"solid",width:1}});
-    }
-  });
 
-  // Powder-only magnetic peak styling: distinguish k1/k2/k3 with
-  // one-dot / two-dot / three-dot dash-chain patterns.  Keep the same
-  // circle/x/star symbol vocabulary as the Single Crystal view, but place
-  // one symbol only at the top of each vertical magnetic line and stagger
-  // its height to reduce overlap between k1/k2/k3.
-  const powderMagStyles={
-    1:{dash:"10px,4px,2px,4px",symbol:"circle",symbolY:1.02},
-    2:{dash:"10px,4px,2px,4px,2px,4px",symbol:"x",symbolY:1.04},
-    3:{dash:"10px,4px,2px,4px,2px,4px,2px,4px",symbol:"star",symbolY:1.06}
-  };
-  for(const kv of enabledPropagationVectors()){
-    const vals=new Set();
-    const K=hklToQ({astar:rv.astar,bstar:rv.bstar,cstar:rv.cstar},kv.hkl);
-    for(let h=-20;h<=20;h++) for(let k=-20;k<=20;k++) for(let l=-20;l<=20;l++){
-      const G=add(add(scale(rv.astar,h),scale(rv.bstar,k)),scale(rv.cstar,l));
-      for(const sign of [1,-1]){
-        const q=norm(add(G,scale(K,sign)));
-        if(q>=1e-6&&q<=Qlim) vals.add(q.toFixed(6));
+  const Qlim=Math.max(...qmax), hwmin=Math.min(...hw), hwmax=Math.max(...hw);
+  const latticeCentering=selectedSampleCentering();
+
+  // Enumerate genuine powder reciprocal-lattice reflections rather than only
+  // plotting integer multiples of a*, b*, c*.  The exact index bounds follow
+  // |h| <= a|Q|/(2π), etc., from h = a·Q/(2π), so non-orthogonal cells are
+  // covered without relying on an orthogonal-axis approximation.
+  const propagation=enabledPropagationVectors()
+    .map(kv=>({...kv,K:hklToQ({astar:rv.astar,bstar:rv.bstar,cstar:rv.cstar},kv.hkl)}))
+    .filter(kv=>norm(kv.K)>1e-10);
+  const maxK=propagation.length ? Math.max(...propagation.map(kv=>norm(kv.K))) : 0;
+  const parentQlim=Qlim+maxK+1e-8;
+  const hmax=Math.max(1,Math.ceil(lc.a*parentQlim/(2*PI))+1);
+  const kmax=Math.max(1,Math.ceil(lc.b*parentQlim/(2*PI))+1);
+  const lmax=Math.max(1,Math.ceil(lc.c*parentQlim/(2*PI))+1);
+
+  const parentCandidates=[];
+  for(let h=-hmax;h<=hmax;h++){
+    for(let k=-kmax;k<=kmax;k++){
+      for(let l=-lmax;l<=lmax;l++){
+        const hkl=[h,k,l];
+        const isOrigin=h===0&&k===0&&l===0;
+        if(!isOrigin && !isAllowedByCentering(hkl,latticeCentering)) continue;
+        const G=add(add(scale(rv.astar,h),scale(rv.bstar,k)),scale(rv.cstar,l));
+        const q=norm(G);
+        if(q>parentQlim+1e-10) continue;
+        const sf2=selectedCifStructure && !isOrigin
+          ? nuclearStructureFactorSquared(selectedCifStructure,hkl,q)
+          : null;
+        parentCandidates.push({hkl,q,isOrigin,sf2:Number.isFinite(sf2)?sf2:null});
       }
     }
-    const qs=[...vals].map(Number).sort((a,b)=>a-b), style=powderMagStyles[kv.index];
-    qs.forEach((q,j)=>traces.push({x:[q,q],y:[0,hwmax],mode:"lines",name:`Magnetic Bragg peaks: k${kv.index}`,legendgroup:`powder-k${kv.index}`,showlegend:j===0,line:{color:"red",dash:style.dash,width:1},hovertemplate:`k${kv.index}<br>Q = ${q.toFixed(3)} Å⁻¹<extra></extra>`}));
-    // Put a single symbol at the top of each line.  k1/k2/k3 use slightly
-    // different heights so nearby magnetic peaks remain distinguishable.
-    if(qs.length) traces.push({x:qs,y:qs.map(()=>hwmax*style.symbolY),mode:"markers",showlegend:false,legendgroup:`powder-k${kv.index}`,marker:{color:"red",size:kv.index===3?9:7,symbol:style.symbol},hoverinfo:"skip",cliponaxis:false});
   }
 
+  // Match the existing Single-crystal CIF extinction handling: remove
+  // effectively extinct nuclear parents only when a CIF structure factor is
+  // available.  Keep the origin as a valid magnetic-satellite parent.
+  if(selectedCifStructure){
+    const sfMax=Math.max(0,...parentCandidates.filter(p=>!p.isOrigin).map(p=>Number.isFinite(p.sf2)?p.sf2:0));
+    if(sfMax>0){
+      for(let i=parentCandidates.length-1;i>=0;i--){
+        const p=parentCandidates[i];
+        if(!p.isOrigin && Number.isFinite(p.sf2) && p.sf2<=sfMax*1e-10) parentCandidates.splice(i,1);
+      }
+    }
+  }
+
+  // Background powder peaks are calculated directly from BG_material CIFs.
+  // Intensity is multiplicity-weighted Σ|F_N|² times the FullProf-like
+  // constant-wavelength neutron Lorentz / Debye-cone factor
+  // 1 / (sin(theta) sin(2theta)), normalized within each BG material.
   for(const bg of selectedBackgrounds()){
-    const sample=samples.get(bg.key);
-    const peaks=Array.isArray(sample.peaks)?sample.peaks:[];
-    const visiblePeaks=peaks
-      .map(p=>({...p,q:2*PI/Number(p.d)}))
-      .filter(p=>Number.isFinite(p.q) && p.q>0 && p.q<=Qlim);
-    const maxI=visiblePeaks.length
-      ? Math.max(...visiblePeaks.map(p=>Number(p.intensity)||0))
-      : 0;
+    const material=backgroundMaterials.get(bg.key);
+    const visiblePeaks=backgroundPowderPeaks(material,Qlim);
 
     visiblePeaks.forEach((p,index)=>{
-      const intensity=Number(p.intensity)||0;
-      const ratio=maxI>0?intensity/maxI:0;
-      const hkl=[p.h,p.k,p.l].every(v=>v!==undefined)
-        ? ` (${p.h}${p.k}${p.l})`
-        : "";
+      const ratio=p.relativeIntensity;
+      const data={x:[],y:[],customdata:[]};
+      appendPowderBackgroundCurve(
+        data,p.q,hw,
+        `BG${bg.index+1}: ${bg.key}<br>${representativePowderHklText(p)}<br>I/Imax = ${ratio.toFixed(3)}`
+      );
+      if(!data.x.length) return;
       traces.push({
-        x:[p.q,p.q],y:[0,hwmax],mode:"lines",
-        name:`BG${bg.index+1}: ${sample.name||bg.key}`,
-        legendgroup:`background-scattering-${bg.index}`,showlegend:index===0,
-        line:{color:backgroundColor(bg.slot,0.20+0.75*ratio),width:1.5},
-        hovertemplate:`BG${bg.index+1}: ${sample.name||bg.key}${hkl}<br>Q = ${p.q.toFixed(3)} Å⁻¹<br>I = ${intensity.toFixed(1)}<extra></extra>`
+        ...data,
+        mode:"lines",
+        name:`BG${bg.index+1}: ${bg.key}`,
+        legendgroup:`background-scattering-${bg.index}`,
+        showlegend:index===0,
+        legendrank:30+bg.index,
+        line:{
+          color:backgroundColor(bg.slot,0.20+0.75*ratio),
+          width:1.5
+        },
+        hovertemplate:`%{customdata[0]}<br>Q = %{customdata[1]:.4f} Å⁻¹<br>ħω = %{y:.3f} meV<br>S2 = %{customdata[2]}<extra></extra>`
       });
     });
   }
 
-  // Selected S2 guide: Q changes with energy transfer, so draw the full
-  // constant-S2 trajectory Q(hw) rather than a vertical line fixed at hw=0.
-  let pS2=Number($('powderS2Entry')?.value);
-  if(!Number.isFinite(pS2)) pS2=Math.max(0,S2min);
-  pS2=Math.max(0,Math.min(180,pS2));
-  if($('powderS2Slider')){$('powderS2Slider').min=0;$('powderS2Slider').max=180;$('powderS2Slider').step=0.1;$('powderS2Slider').value=pS2;}
-  if($('powderS2Entry')) $('powderS2Entry').value=pS2.toFixed(1);
-  if($('powderS2Value')) $('powderS2Value').textContent=`${pS2.toFixed(1)}°`;
-  const s2CurveQ=[], s2CurveHW=[];
-  for(const w of hw){
-    let Ei,Ef;
-    if(energyMode==='Ef fixed'){ Ef=E; Ei=E+w; }
-    else { Ei=E; Ef=E-w; }
-    if(!(Ei>0&&Ef>0)) continue;
-    const ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
-    const q=Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(pS2))));
-    s2CurveQ.push(q); s2CurveHW.push(w);
+  // Nuclear Bragg peaks: all black solid lines have the same hbar-omega
+  // length.  Reflections with the same powder Q are merged into one line, and
+  // the hover text lists every contributing index and its own |F_N|².
+  const nuclearGroups=groupPowderReflectionsByQ(
+    parentCandidates.filter(p=>!p.isOrigin && p.q>1e-8 && p.q<=Qlim+1e-10)
+  );
+  const nuclearData={x:[],y:[],customdata:[]};
+  for(const group of nuclearGroups){
+    const entries=[...group.entries]
+      .sort((a,b)=>formatHKL(a.hkl).localeCompare(formatHKL(b.hkl)));
+    const rep=entries[0];
+    const hklText=representativePowderHklText(group);
+    const details=`${hklText}<br>${powderSfText(rep?.sf2)}`;
+    appendPowderBraggLine(nuclearData,group.q,hw,details);
   }
-  if(s2CurveQ.length){
-    traces.push({x:s2CurveQ,y:s2CurveHW,mode:'lines',name:`S2 = ${pS2.toFixed(1)}°`,showlegend:false,line:{color:'black',width:1.2,dash:'solid'},hovertemplate:`S2 = ${pS2.toFixed(1)}°<br>Q = %{x:.3f} Å⁻¹<br>ħω = %{y:.1f} meV<extra></extra>`});
+  if(nuclearData.x.length){
+    traces.push({
+      ...nuclearData,
+      mode:"lines",
+      name:"Nuclear Bragg peaks",
+      legendgroup:"powder-nuclear",
+      showlegend:true,
+      legendrank:10,
+      line:{color:"black",width:1.25,dash:"solid"},
+      hovertemplate:`Nuclear Bragg peaks<br>%{customdata[0]}<br>Q = %{customdata[1]:.4f} Å⁻¹<br>ħω = %{y:.3f} meV<br>S2 = %{customdata[2]}<extra></extra>`,
+      zorder:0
+    });
+  }
+
+  // Magnetic Bragg peaks: use surviving nuclear parents, exactly as the
+  // Single-crystal path does conceptually.  Magnetic structure factors are
+  // intentionally not invented here; the current application does not
+  // calculate them.  All k1/k2/k3 satellites share one red solid-line style,
+  // one compact legend entry, and the same hbar-omega line length.
+  const magneticUnique=new Map();
+  for(const parent of parentCandidates){
+    for(const kv of propagation){
+      for(const sign of [1,-1]){
+        const hm=add(parent.hkl,scale(kv.hkl,sign));
+        const Gm=hklToQ({astar:rv.astar,bstar:rv.bstar,cstar:rv.cstar},hm);
+        const q=norm(Gm);
+        if(!(q>1e-8) || q>Qlim+1e-10) continue;
+        const hklKey=hm.map(x=>Number(x).toFixed(8)).join(",");
+        const key=`${kv.index}:${hklKey}`;
+        if(!magneticUnique.has(key)){
+          magneticUnique.set(key,{q,hkl:hm,qIndex:kv.index});
+        }
+      }
+    }
+  }
+  const magneticGroups=groupPowderReflectionsByQ([...magneticUnique.values()]);
+  const magneticData={x:[],y:[],customdata:[]};
+  for(const group of magneticGroups){
+    const entries=[...group.entries]
+      .sort((a,b)=>a.qIndex-b.qIndex || formatHKL(a.hkl).localeCompare(formatHKL(b.hkl)));
+    const rep=entries[0];
+    const suffix=entries.length>1 ? " & equivalent" : "";
+    const details=rep ? `k${rep.qIndex}: (${formatHKL(rep.hkl)})${suffix}` : "N/A";
+    appendPowderBraggLine(magneticData,group.q,hw,details);
+  }
+  if(magneticData.x.length){
+    traces.push({
+      ...magneticData,
+      mode:"lines",
+      name:"Magnetic Bragg peaks",
+      legendgroup:"powder-magnetic",
+      showlegend:true,
+      legendrank:20,
+      line:{color:"red",width:1.25,dash:"solid"},
+      hovertemplate:`Magnetic Bragg peaks<br>%{customdata[0]}<br>Q = %{customdata[1]:.4f} Å⁻¹<br>ħω = %{y:.3f} meV<br>S2 = %{customdata[2]}<extra></extra>`,
+      zorder:10
+    });
   }
 
   const qMargin=0.1*Qlim;
@@ -2513,14 +3329,32 @@ function calculatePowder(){
     `α=${lc.alpha.toFixed(1)}, β=${lc.beta.toFixed(1)}, γ=${lc.gamma.toFixed(1)}°`;
 
   const keptPowderView=currentPlotRanges("powderPlot");
+
   Plotly.react("powderPlot",traces,{
-    // Preserve user zoom/pan when controls trigger a recalculation.
-    uirevision:"powderPlot",
+    uirevision:"powderPlot-q",
     title:{text:title,x:0.5,xanchor:"center",font:{size:16}},
-    xaxis:{title:"Q (Å⁻¹)",range:keptPowderView.x||[0,Qlim+qMargin],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
-    yaxis:{title:"ħω (meV)",range:keptPowderView.y||[0,hwmax*1.1||1],showgrid:true,gridcolor:"lightgray",zeroline:false,showline:true,mirror:true,linecolor:"black",linewidth:1,automargin:true},
-    plot_bgcolor:"white",paper_bgcolor:"white",legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"},
-    shapes,annotations,margin:{l:66,r:34,t:80,b:110}
+    xaxis:{
+      title:"Q (Å⁻¹)",
+      // Powder Q is non-negative by definition.  Always anchor the displayed
+      // x-axis at Q = 0; preserve only a previously zoomed positive upper edge.
+      range:[0,(keptPowderView.x && keptPowderView.x[1]>0) ? keptPowderView.x[1] : Qlim+qMargin],
+      showgrid:true,gridcolor:"lightgray",zeroline:false,
+      // Draw a complete rectangular plotting frame on all four sides.
+      showline:true,mirror:"allticks",ticks:"outside",linecolor:"black",linewidth:1.5,automargin:true
+    },
+    yaxis:{
+      title:"ħω (meV)",
+      // Keep the displayed hbar-omega range exactly on the generated
+      // accessible-range endpoints; no extra top/bottom padding.
+      range:[hwmin,hwmax],
+      showgrid:true,gridcolor:"lightgray",zeroline:false,
+      // Match the x-axis with a complete rectangular plotting frame.
+      showline:true,mirror:"allticks",ticks:"outside",linecolor:"black",linewidth:1.5,automargin:true
+    },
+    plot_bgcolor:"white",paper_bgcolor:"white",
+    legend:{orientation:"h",x:0.5,xanchor:"center",y:-0.16,yanchor:"top"},
+    margin:{l:66,r:34,t:80,b:110},
+    hovermode:"closest"
   },{responsive:true});
 }
 
@@ -2541,7 +3375,7 @@ function setGeometryTargetHKL(hkl){
 }
 function setGeometryTargetFromU(){ setGeometryTargetHKL([num("Uh"),num("Uk"),num("Ul")]); }
 function setGeometryTargetFromV(){ setGeometryTargetHKL([num("Vh"),num("Vk"),num("Vl")]); }
-function setGeometryPerpendicularCondition(mode){
+function setGeometryKiOrientationCondition(mode){
   try{
     const b=collectResolutionBase();
     const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
@@ -2549,20 +3383,22 @@ function setGeometryPerpendicularCondition(mode){
     const qU=hklToQ(b.rl,U), qV=hklToQ(b.rl,V);
     const ux=dot(qU,ex), uy=dot(qU,ey), vx=dot(qV,ex), vy=dot(qV,ey);
     const phiU=rad2deg(Math.atan2(uy,ux)), phiV=rad2deg(Math.atan2(vy,vx));
-    const phiAxis=mode==="perpV"?phiV:phiU;
+    const usesV=mode==="perpV" || mode==="parallelV";
+    const isParallel=mode==="parallelU" || mode==="parallelV";
+    const phiAxis=usesV?phiV:phiU;
 
     // Perpendicular-condition buttons are absolute quick targets, not operations
     // on the previously entered Q.  Start from the corresponding fundamental
     // U/V Bragg position at elastic transfer so a previous high-Q target cannot
     // select a higher-|Q| solution.
-    const currentHKL=(mode==="perpV"?V:U).slice();
+    const currentHKL=(usesV?V:U).slice();
     const hw=0;
     $("geomH").value=currentHKL[0];
     $("geomK").value=currentHKL[1];
     $("geomL").value=currentHKL[2];
     $("geomHW").value=0;
     const qCurrent=hklToQ(b.rl,currentHKL), qNorm=norm(qCurrent);
-    if(!(qNorm>1e-12)) throw new Error(`${mode==="perpV"?"V":"U"} must be non-zero.`);
+    if(!(qNorm>1e-12)) throw new Error(`${usesV?"V":"U"} must be non-zero.`);
     const em=b.config.energy_mode;
     const Ei=em==="Ei fixed"?Number(b.config.Ei):Number(b.config.Ef)+hw;
     const Ef=em==="Ei fixed"?Number(b.config.Ei)-hw:Number(b.config.Ef);
@@ -2595,7 +3431,7 @@ function setGeometryPerpendicularCondition(mode){
     //
     // This is especially important for user-facing -+-, whose perpendicular
     // virtual Bragg reference is +S2/2 rather than -S2/2.
-    if(orient===mode && (mode==='perpU' || mode==='perpV')){
+    if(orient===mode && ['perpU','perpV','parallelU','parallelV'].includes(mode)){
       const fixedE=em==="Ei fixed" ? Number(b.config.Ei) : Number(b.config.Ef);
       const orientationRef=effectiveOrientationReference(b.rl,fixedE);
       const c2Sign=(b.config.sign_config==='+-+') ? +1 : -1;
@@ -2613,9 +3449,25 @@ function setGeometryPerpendicularCondition(mode){
     setGeometryTargetHKL([aa*U[0]+bb*V[0],aa*U[1]+bb*V[1],aa*U[2]+bb*V[2]].map(x=>Number(x.toFixed(3))));
   }catch(err){ console.error(err); alert(err?.message||String(err)); }
 }
-function setGeometryKiPerpU(){ setGeometryPerpendicularCondition("perpU"); }
-function setGeometryKiPerpV(){ setGeometryPerpendicularCondition("perpV"); }
+function setGeometryKiPerpU(){ setGeometryKiOrientationCondition("perpU"); }
+function setGeometryKiPerpV(){ setGeometryKiOrientationCondition("perpV"); }
+function setGeometryKiParallelU(){ setGeometryKiOrientationCondition("parallelU"); }
+function setGeometryKiParallelV(){ setGeometryKiOrientationCondition("parallelV"); }
 function setGeometryTargetFromBragg(){ setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]); }
+
+// Keep the Angle calculation & TAS geometry target synchronized with the
+// selected Sample orientation reference.  This intentionally reuses the exact
+// same functions as the visible quick-target buttons, so changing the
+// orientation reference is equivalent to clicking the corresponding
+// Set ki ⟂ U/V, Set ki ∥ U/V, or Set Bragg peak button.
+function syncGeometryTargetToOrientationReference(){
+  const mode=$('orientationReference')?.value || 'perpU';
+  if(mode==='perpU') return setGeometryKiPerpU();
+  if(mode==='perpV') return setGeometryKiPerpV();
+  if(mode==='parallelU') return setGeometryKiParallelU();
+  if(mode==='parallelV') return setGeometryKiParallelV();
+  if(mode==='bragg') return setGeometryTargetFromBragg();
+}
 function setGeometryTargetFromDarkRef(slot){
   const ids=darkAssetIds(slot);
   setGeometryTargetHKL([num(ids.refH),num(ids.refK),num(ids.refL)]);
@@ -2674,15 +3526,6 @@ function ensureQESliderControls(){
       row.remove();
     }
   }
-  if(!$('powderS2Slider')){
-    const card=$('powderPlot')?.closest('.powder-plot-card');
-    if(card){
-      const row=document.createElement('div'); row.className='energy-slider-row'; row.style.display='grid'; row.style.gridTemplateColumns='1fr auto auto'; row.style.gap='10px'; row.style.alignItems='end'; row.style.marginBottom='8px';
-      row.innerHTML='<label>S2<input id="powderS2Slider" type="range" min="0" max="180" step="0.1" value="0"></label><output id="powderS2Value">0.0°</output><label>S2 (deg)<input id="powderS2Entry" type="number" step="0.1" value="0.0" style="width:88px"></label>';
-      // Keep the Powder S2 control below the plot.
-      $('powderPlot').insertAdjacentElement('afterend',row);
-    }
-  }
 }
 function nearestHWIndex(cache,value){
   let best=0, d=Infinity; cache.hwList.forEach((x,i)=>{const di=Math.abs(x-value); if(di<d){d=di;best=i;}}); return best;
@@ -2706,7 +3549,6 @@ function selectedQAtS2(cache,index,s2){
   const ki=0.6947*Math.sqrt(Ei), kf=0.6947*Math.sqrt(Ef);
   return Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
 }
-function updatePowderS2Line(){ calculatePowder(); }
 function recalculate(){
   clearError();
   updateEnergyLabel();
@@ -2736,8 +3578,8 @@ $("instrument").addEventListener("change",()=>{
   scheduleRecalc();
 });
 
-for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.se).addEventListener("change",()=>applySampleEnvironmentDefaults(slot)); $(ids.ref).addEventListener("change",()=>{updateDarkReferenceUI(slot);scheduleRecalc();}); }
-BACKGROUND_SLOTS.forEach(slot=>$(slot.id).addEventListener("change",()=>handleBackgroundSelection(slot.id)));
+bindDynamicSidebarUI();
+
 
 $("hwSlider").addEventListener("input",()=>{ if(singleCache) renderSingle(singleCache,Number($("hwSlider").value)); });
 
@@ -2756,8 +3598,9 @@ $("geomSetU").addEventListener("click",setGeometryTargetFromU);
 $("geomSetV").addEventListener("click",setGeometryTargetFromV);
 $("geomPerpU").addEventListener("click",setGeometryKiPerpU);
 $("geomPerpV").addEventListener("click",setGeometryKiPerpV);
+$("geomParallelU").addEventListener("click",setGeometryKiParallelU);
+$("geomParallelV").addEventListener("click",setGeometryKiParallelV);
 $("geomSetBragg").addEventListener("click",setGeometryTargetFromBragg);
-for(let slot=1;slot<=3;slot++) $(`geomSetRefQ${slot}`).addEventListener("click",()=>setGeometryTargetFromDarkRef(slot));
 
 // Either S2 control may be used as the user's entry point.  Effective is an
 // absolute value; convert it to Delta before the normal recalculation handler
@@ -3065,14 +3908,15 @@ function doScanResolution(){clearError();try{const n=Math.max(2,Math.round(num('
 function renderResolutionScan(i){i=Math.max(1,Math.min(scanResults.length,Number(i)));$('scanSlider').value=i;$('scanIndex').textContent=`${i} / ${scanResults.length}`;renderResolution(scanResults[i-1],`| scan ${i}/${scanResults.length}`);}
 
 
-// Display-only terminology: magnetic propagation vectors are k1/k2/k3.
+// Display-only terminology: magnetic propagation vectors are k1, k2, ...
 function updatePropagationVectorLabels(){
-  for(let i=1;i<=3;i++){
-    const enable=$( `q_enable${i}` );
+  const symbols=["●","×","★","◆","+","▲","■","◇","▼","⬟"];
+  for(const i of propagationVectorIndices()){
+    const enable=$(`q_enable${i}`);
     const row=enable?.closest('.propagation-row');
     if(!row) continue;
     const span=enable.closest('label')?.querySelector('span');
-    if(span) span.textContent=`k${i} (${i===1?'●':i===2?'×':'★'})`;
+    if(span) span.textContent=`k${i} (${symbols[(i-1)%symbols.length]})`;
     const labels=[...row.querySelectorAll('label')].filter(x=>x!==enable.closest('label'));
     ['h','k','l'].forEach((c,j)=>{
       if(labels[j] && labels[j].firstChild) labels[j].firstChild.nodeValue=`k${i}_${c}`;
@@ -3362,6 +4206,11 @@ function leftPanelControls(){
   return [...document.querySelectorAll('.sidebar input[id], .sidebar select[id]')].filter(el=>el.type!=='file');
 }
 
+function resolutionInstrumentDetailControls(){
+  return [...document.querySelectorAll('#resolutionInstrumentDetails input[id], #resolutionInstrumentDetails select[id]')]
+    .filter(el=>el.type!=='file');
+}
+
 function saveLeftPanelState(){
   if(restoringLeftPanel) return;
   try{
@@ -3394,9 +4243,56 @@ function restoreLeftPanelState(){
     // 1) The instrument must exist before its dependent defaults can be applied.
     if(setSavedControl('instrument',v.instrument)) applyInstrumentDefaults();
 
+    // Recreate the dynamic Propagation/Dark UI before restoring individual
+    // controls.  For legacy fixed-3/fixed-4 saves, only actually used extra
+    // slots/ranges are expanded.
+    const nonzero=x=>Number.isFinite(Number(x)) && Math.abs(Number(x))>1e-12;
+    let propagationCount=Number(v.propagationCount);
+    if(!(propagationCount>=1)){
+      propagationCount=1;
+      for(let i=2;i<=3;i++){
+        if(v[`q_enable${i}`] || ["h","k","l"].some(c=>nonzero(v[`q${i}_${c}`]))) propagationCount=i;
+      }
+    }
+    setPropagationVectorCount(propagationCount);
+
+    let backgroundCount=Number(v.backgroundCount);
+    if(!(backgroundCount>=1)){
+      backgroundCount=1;
+      for(let i=2;i<=BACKGROUND_SLOTS.length;i++) if(v[`backgroundSelect${i}`]) backgroundCount=i;
+    }
+    setBackgroundCount(backgroundCount);
+
+    let darkCount=Number(v.darkAssetCount);
+    if(!(darkCount>=1)){
+      darkCount=1;
+      for(let slot=2;slot<=3;slot++){
+        const ids=darkAssetIds(slot);
+        const used=!!v[ids.enable] || !!v[ids.se] || (v[ids.ref] && v[ids.ref]!=="Reference Q") ||
+          nonzero(v[ids.rotation]) || (v[ids.refH]!==undefined && Math.abs(Number(v[ids.refH])-1)>1e-12) || nonzero(v[ids.refK]) || nonzero(v[ids.refL]) ||
+          [0,1,2,3].some(i=>nonzero(v[ids.from(i)])||nonzero(v[ids.to(i)])||nonzero(v[ids.offset(i)]));
+        if(used) darkCount=slot;
+      }
+    }
+    setDarkAssetCount(darkCount);
+    for(const slot of darkAssetSlots()){
+      const ids=darkAssetIds(slot);
+      let rangeCount=Number(v[ids.rangeCount]);
+      if(!(rangeCount>=1)){
+        rangeCount=1;
+        if(slot<=3){
+          for(let i=1;i<4;i++){
+            if(nonzero(v[ids.from(i)])||nonzero(v[ids.to(i)])||nonzero(v[ids.offset(i)])) rangeCount=i+1;
+          }
+        }
+      }
+      setDarkRangeCount(slot,rangeCount);
+      refreshDarkEnvironmentSelect(slot);
+    }
+
     // 2) The sample-environment JSON can populate dark-angle fields, so apply it
     //    before restoring the user's individual left-panel values.
-    for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); if(setSavedControl(ids.se,v[ids.se])) applySampleEnvironmentDefaults(slot); }
+    for(const slot of darkAssetSlots()){ const ids=darkAssetIds(slot); if(setSavedControl(ids.se,v[ids.se])) applySampleEnvironmentDefaults(slot); }
 
     // Migrate the v57 single background selection into BG1 once, if present.
     if(v.backgroundSelect1===undefined && v.sampleSelect!==undefined) v.backgroundSelect1=v.sampleSelect;
@@ -3416,8 +4312,13 @@ function restoreLeftPanelState(){
 
     // 3) Restore every left-side parameter.  For crystal selectors, run their
     //    existing UI handler first; dMono/dAna are restored afterwards in DOM order.
-    for(const el of leftPanelControls()){
-      if(el.id==='instrument'||['seSelect','seSelect2','seSelect3'].includes(el.id)) continue;
+    const darkSeIds=new Set(darkAssetSlots().map(slot=>darkAssetIds(slot).se));
+    // The Resolution-only instrument details used to live in the permanent
+    // sidebar. Include them here only for migration of the old left-panel
+    // localStorage values; subsequent edits are persisted by resolutionPanel.
+    const legacyRestoreControls=[...leftPanelControls(),...resolutionInstrumentDetailControls()];
+    for(const el of legacyRestoreControls){
+      if(el.id==='instrument'||darkSeIds.has(el.id)) continue;
       setSavedControl(el.id,v[el.id],{dispatchChange:el.id==='monoCrystal'||el.id==='anaCrystal'});
     }
 
@@ -3430,6 +4331,7 @@ document.querySelector('.sidebar').addEventListener('input',saveLeftPanelState);
 document.querySelector('.sidebar').addEventListener('change',saveLeftPanelState);
 
 async function tryLoadDir(directory,map){try{return await loadJsonDirectory(directory,map);}catch(_e){map.clear();return 0;}}
+async function tryLoadCifDir(directory,map){try{return await loadCifDirectory(directory,map);}catch(_e){map.clear();return 0;}}
 function mergeLegacyRangeData(){
   for(const [key,inst] of instruments){
     if(Array.isArray(inst.S2_limits)||(inst.qe_range&&(Array.isArray(inst.qe_range.S2_limits)||Array.isArray(inst.qe_range.configuration)))) continue;
@@ -3440,23 +4342,23 @@ function mergeLegacyRangeData(){
 }
 async function initialize(){
   clearError(); fillCrystal('monoCrystal','dMono');fillCrystal('anaCrystal','dAna');updateModeVisibility();updateEnergyLabel();updateCalcMode();updateSupermirrorUI();updateAutoW();
-  setStatus('instrument / sample / sample_environments loading...');
+  setStatus('instrument / BG_material / sample_environments loading...');
   const nInstrument=await loadJsonDirectory('instrument',instruments);
-  const [nSample,nSE]=await Promise.all([tryLoadDir('sample',samples),tryLoadDir('sample_environments',sampleEnvironments)]);
+  const [nBG,nSE]=await Promise.all([tryLoadCifDir('BG_material',backgroundMaterials),tryLoadDir('sample_environments',sampleEnvironments)]);
   await tryLoadDir('instruments',legacyRangeInstruments); // migration compatibility only
   mergeLegacyRangeData();
-  refreshSelect(instruments,$('instrument'),null);BACKGROUND_SLOTS.forEach(slot=>refreshSelect(samples,$(slot.id),'None'));for(let slot=1;slot<=3;slot++) refreshSelect(sampleEnvironments,$(darkAssetIds(slot).se),'Standard');
+  refreshSelect(instruments,$('instrument'),null);setBackgroundCount(Number($('backgroundCount')?.value)||1);for(const slot of darkAssetSlots()) refreshDarkEnvironmentSelect(slot);
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
-  $('instrument').selectedIndex=0;BACKGROUND_SLOTS.forEach(slot=>$(slot.id).value='');for(let slot=1;slot<=3;slot++) $(darkAssetIds(slot).se).value='';applyInstrumentDefaults();for(let slot=1;slot<=3;slot++) applySampleEnvironmentDefaults(slot);updateBackgroundSelectAvailability();
+  $('instrument').selectedIndex=0;for(const i of backgroundRowIndices()) $(`backgroundSelect${i}`).value='';for(const slot of darkAssetSlots()) $(darkAssetIds(slot).se).value='';applyInstrumentDefaults();for(const slot of darkAssetSlots()) applySampleEnvironmentDefaults(slot);updateBackgroundSelectAvailability();
   // JSON configuration is now fully loaded.  Only at this point is it safe to
   // overlay browser-local user parameters (including the selected instrument).
   const restoredLocalState=restoreLeftPanelState();
   // Restoring sidebar values can change Dark-angle Reference after the sample-
   // environment defaults were applied.  Re-sync the h/k/l row explicitly.
-  for(let slot=1;slot<=3;slot++) updateDarkReferenceUI(slot);
+  for(const slot of darkAssetSlots()) updateDarkReferenceUI(slot);
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
-  updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls(); updateCifUI(); await initializeCifGenerator();
+  setPropagationVectorCount(propagationVectorIndices().length); setDarkAssetCount(darkAssetSlots().length); updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls(); updateCifUI(); await initializeCifGenerator();
   // Right-side controls are restored only after dynamic Toolbox controls exist and
   // after the default geometry target has been initialized, so saved values win.
   const restoredRightState=restoreRightPanelState();
@@ -3468,8 +4370,6 @@ async function initialize(){
   $('hwEntry').addEventListener('change',()=>{if(singleCache){const i=nearestHWIndex(singleCache,Number($('hwEntry').value));renderSingle(singleCache,i);saveRightPanelState();}});
   $('s2Slider').addEventListener('input',()=>{$('s2Entry').value=Number($('s2Slider').value).toFixed(1);if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
   $('s2Entry').addEventListener('change',()=>{if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
-  $('powderS2Slider').addEventListener('input',()=>{$('powderS2Entry').value=Number($('powderS2Slider').value).toFixed(1);updatePowderS2Line();});
-  $('powderS2Entry').addEventListener('change',updatePowderS2Line);
   $('displayNuclearLabels').addEventListener('change',()=>{if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));saveRightPanelState();});
   $('sfColorMaxSlider')?.addEventListener('input',()=>{
     syncSfColorMaxControl("slider");
@@ -3497,9 +4397,19 @@ async function initialize(){
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
-  updateOrientationReferenceUI(); applyDarkAngleSlotColors(); updateGeometryQuickTargetButtons(); $('orientationReference')?.addEventListener('change',()=>{updateOrientationReferenceUI();updateGeometryQuickTargetButtons();recalculate();});
+  updateOrientationReferenceUI(); applyDarkAngleSlotColors(); updateGeometryQuickTargetButtons(); $('orientationReference')?.addEventListener('change',()=>{
+    updateOrientationReferenceUI();
+    updateGeometryQuickTargetButtons();
+
+    // Changing the sample orientation reference defines an elastic
+    // configuration.  Reset only the TAS-geometry energy transfer here; the
+    // visible quick-target button functions themselves keep their existing
+    // behavior.
+    if($('geomHW')) $('geomHW').value='0';
+
+    syncGeometryTargetToOrientationReference();
+  });
   $('addDark')?.addEventListener('change',updateGeometryQuickTargetButtons);
-  for(let slot=1;slot<=3;slot++){ const ids=darkAssetIds(slot); $(ids.enable)?.addEventListener('change',updateGeometryQuickTargetButtons); $(ids.ref)?.addEventListener('change',updateGeometryQuickTargetButtons); }
-  setStatus(`${nInstrument} instrument(s), ${nSample} sample(s), ${nSE} sample environment(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
+  setStatus(`${nInstrument} instrument(s), ${nBG} BG CIF material(s), ${nSE} sample environment(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
 }
 initialize().catch(err=>{showError(err);setStatus('Configuration loading failed. Open the project through an HTTP server.');});

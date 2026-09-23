@@ -12,7 +12,7 @@
 <div class="shell">
 <aside class="sidebar">
 <section>
-  <h2>Instrument setup</h2>
+  <h2>Instrument configuration</h2>
   <label>Instrument<select id="instrument"><option>Loading...</option></select></label>
   <div class="grid2">
     <label>Energy mode<select id="energyMode"><option>Ei fixed</option><option selected>Ef fixed</option></select></label>
@@ -65,57 +65,75 @@
   </div>
   <h3>Propagation vectors</h3>
   <label class="checkbox-label"><input id="showPropagation" type="checkbox" checked><span>show</span></label>
-  <div class="propagation-vectors">
-    <div class="propagation-row"><label class="checkbox-label propagation-enable"><input id="q_enable1" type="checkbox"><span>q1</span></label><label>q1_h<input id="q1_h" type="number" value="0" step="0.01"></label><label>q1_k<input id="q1_k" type="number" value="0" step="0.01"></label><label>q1_l<input id="q1_l" type="number" value="0" step="0.01"></label></div>
-    <div class="propagation-row"><label class="checkbox-label propagation-enable"><input id="q_enable2" type="checkbox"><span>q2</span></label><label>q2_h<input id="q2_h" type="number" value="0" step="0.01"></label><label>q2_k<input id="q2_k" type="number" value="0" step="0.01"></label><label>q2_l<input id="q2_l" type="number" value="0" step="0.01"></label></div>
-    <div class="propagation-row"><label class="checkbox-label propagation-enable"><input id="q_enable3" type="checkbox"><span>q3</span></label><label>q3_h<input id="q3_h" type="number" value="0" step="0.01"></label><label>q3_k<input id="q3_k" type="number" value="0" step="0.01"></label><label>q3_l<input id="q3_l" type="number" value="0" step="0.01"></label></div>
+  <input id="propagationCount" type="hidden" value="1">
+  <div id="propagationVectors" class="propagation-vectors">
+    <div class="propagation-row" data-q-index="1"><label class="checkbox-label propagation-enable"><input id="q_enable1" type="checkbox" checked><span>k1</span></label><label>k1_h<input id="q1_h" type="number" value="0" step="0.01"></label><label>k1_k<input id="q1_k" type="number" value="0" step="0.01"></label><label>k1_l<input id="q1_l" type="number" value="0" step="0.01"></label><button type="button" class="remove-propagation-vector" data-q-index="1">Remove</button></div>
   </div>
+  <button id="addPropagationVector" class="dynamic-add-wide" type="button">+ Add propagation vector</button>
   <div id="referenceSection">
     <h3>Sample orientation</h3>
-    <label>Orientation reference<select id="orientationReference"><option value="perpU" selected>k<sub>i</sub> ⟂ U</option><option value="perpV">k<sub>i</sub> ⟂ V</option><option value="bragg">Bragg peak position</option></select></label>
+    <label>Orientation reference<select id="orientationReference"><option value="perpU" selected>k<sub>i</sub> ⟂ U</option><option value="perpV">k<sub>i</sub> ⟂ V</option><option value="parallelU">k<sub>i</sub> ∥ U</option><option value="parallelV">k<sub>i</sub> ∥ V</option><option value="bragg">Bragg peak position</option></select></label>
     <div id="braggReferenceInputs" class="grid4 hidden"><label>h<input id="refh" type="number" value="1" step="0.1"></label><label>k<input id="refk" type="number" value="0" step="0.1"></label><label>l<input id="refl" type="number" value="0" step="0.1"></label><label>S1 (deg)<input id="refs1" type="number" value="0" step="0.1"></label></div>
   </div>
   <h3>Background scattering</h3>
-  <div class="background-grid">
-    <label><span class="background-label"><i class="bg-swatch bg1"></i>BG1</span><select id="backgroundSelect1"><option value="">None</option></select></label>
-    <label><span class="background-label"><i class="bg-swatch bg2"></i>BG2</span><select id="backgroundSelect2"><option value="">None</option></select></label>
-    <label><span class="background-label"><i class="bg-swatch bg3"></i>BG3</span><select id="backgroundSelect3"><option value="">None</option></select></label>
-    <label><span class="background-label"><i class="bg-swatch bg4"></i>BG4</span><select id="backgroundSelect4"><option value="">None</option></select></label>
+  <input id="backgroundCount" type="hidden" value="1">
+  <div id="backgroundRows" class="background-rows">
+    <div class="background-row" data-background-index="1"><label><span class="background-label"><i class="bg-swatch bg1"></i>BG1</span><select id="backgroundSelect1"><option value="">None</option></select></label><button type="button" class="remove-background" data-background-index="1">Remove</button></div>
   </div>
+  <button id="addBackground" class="dynamic-add-wide" type="button">+ Add background</button>
 </section>
-<details id="darkSection"><summary>Dark angle</summary>
+<section id="darkSection"><h2>Dark angle</h2>
   <label class="checkbox-label"><input id="addDark" type="checkbox"><span>show</span></label>
-  <div class="dark-asset">
-    <div class="dark-asset-head"><label class="checkbox-label"><input id="darkEnable1" type="checkbox" checked><span>Dark angle 1</span></label><label>Sample environment<select id="seSelect"><option value="">Standard</option></select></label></div>
-    <div class="grid2"><label>Reference<select id="darkRef"><option>Reference Q</option><option>Direct beam</option><option>Fixed</option></select></label><label>Rotation (deg)<input id="darkRotation" type="number" value="0" step="1"></label></div>
-    <div id="darkRefQRow1" class="grid3"><label>h<input id="darkRefH1" type="number" value="1" step="0.1"></label><label>k<input id="darkRefK1" type="number" value="0" step="0.1"></label><label>l<input id="darkRefL1" type="number" value="0" step="0.1"></label></div>
-    <div class="dark-table"><div>No.</div><div>From</div><div>To</div><div>Offset</div>
-      <span>1</span><input id="darkFrom0" type="number" value="0"><input id="darkTo0" type="number" value="0"><input id="darkOffset0" type="number" value="0">
-      <span>2</span><input id="darkFrom1" type="number" value="0"><input id="darkTo1" type="number" value="0"><input id="darkOffset1" type="number" value="0">
-      <span>3</span><input id="darkFrom2" type="number" value="0"><input id="darkTo2" type="number" value="0"><input id="darkOffset2" type="number" value="0">
-      <span>4</span><input id="darkFrom3" type="number" value="0"><input id="darkTo3" type="number" value="0"><input id="darkOffset3" type="number" value="0"></div>
+  <input id="darkAssetCount" type="hidden" value="1">
+  <div id="darkAssets">
+    <div class="dark-asset" data-dark-slot="1">
+      <div class="dark-asset-head"><label class="checkbox-label"><input id="darkEnable1" type="checkbox" checked><span>Dark angle 1</span></label><label>Sample environment<select id="seSelect"><option value="">Standard</option></select></label><button type="button" class="remove-dark-asset" data-dark-slot="1">Remove</button></div>
+      <div class="grid2"><label>Reference<select id="darkRef"><option>Reference Q</option><option>Direct beam</option><option>Fixed</option></select></label><label>Rotation (deg)<input id="darkRotation" type="number" value="0" step="1"></label></div>
+      <div id="darkRefQRow1" class="grid3"><label>h<input id="darkRefH1" type="number" value="1" step="0.1"></label><label>k<input id="darkRefK1" type="number" value="0" step="0.1"></label><label>l<input id="darkRefL1" type="number" value="0" step="0.1"></label></div>
+      <input id="darkRangeCount1" type="hidden" value="1">
+      <div class="dark-table" data-dark-range-table="1"><div>No.</div><div>From</div><div>To</div><div>Offset</div><div></div>
+        <span class="dark-range-number" data-dark-range="0">1</span><input id="darkFrom0" data-dark-range="0" type="number" value="0"><input id="darkTo0" data-dark-range="0" type="number" value="0"><input id="darkOffset0" data-dark-range="0" type="number" value="0"><button type="button" class="remove-dark-range" data-dark-slot="1" data-dark-range="0">Remove</button>
+      </div>
+      <button type="button" class="add-dark-range dynamic-add-wide" data-dark-slot="1">+ Add range</button>
+    </div>
   </div>
-  <div class="dark-asset">
-    <div class="dark-asset-head"><label class="checkbox-label"><input id="darkEnable2" type="checkbox"><span>Dark angle 2</span></label><label>Sample environment<select id="seSelect2"><option value="">Standard</option></select></label></div>
-    <div class="grid2"><label>Reference<select id="darkRef2"><option>Reference Q</option><option>Direct beam</option><option>Fixed</option></select></label><label>Rotation (deg)<input id="darkRotation2" type="number" value="0" step="1"></label></div>
-    <div id="darkRefQRow2" class="grid3"><label>h<input id="darkRefH2" type="number" value="1" step="0.1"></label><label>k<input id="darkRefK2" type="number" value="0" step="0.1"></label><label>l<input id="darkRefL2" type="number" value="0" step="0.1"></label></div>
-    <div class="dark-table"><div>No.</div><div>From</div><div>To</div><div>Offset</div>
-      <span>1</span><input id="darkFrom20" type="number" value="0"><input id="darkTo20" type="number" value="0"><input id="darkOffset20" type="number" value="0">
-      <span>2</span><input id="darkFrom21" type="number" value="0"><input id="darkTo21" type="number" value="0"><input id="darkOffset21" type="number" value="0">
-      <span>3</span><input id="darkFrom22" type="number" value="0"><input id="darkTo22" type="number" value="0"><input id="darkOffset22" type="number" value="0">
-      <span>4</span><input id="darkFrom23" type="number" value="0"><input id="darkTo23" type="number" value="0"><input id="darkOffset23" type="number" value="0"></div>
+  <button id="addDarkAsset" class="dynamic-add-wide" type="button">+ Add dark angle</button>
+</section>
+</aside>
+<main>
+  <div id="errorBox" class="error hidden"></div>
+
+  <nav class="main-tabs" role="tablist" aria-label="Simulator view">
+    <button id="tabQe" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="qePanel" data-tab="qe">Q-E Range</button>
+    <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution</button>
+    <button id="tabToolbox" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="toolboxPanel" data-tab="toolbox">Toolbox</button>
+    <button id="tabCifGenerator" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="cifGeneratorPanel" data-tab="cif-generator">CIF Generator</button>
+  </nav>
+
+  <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
+    <div id="singleMain">
+      <div class="chart-grid"><div><div id="singlePlot" class="qe-plot"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div class="geometry-card"><div class="geometry-card-title">Angle calculation & TAS geometry</div><div id="geometrySpurionWarning" class="qe-spurion-warning geometry-spurion-warning" aria-live="polite"></div><div class="geometry-target"><div class="geometry-target-row"><div class="grid4"><label>h<input id="geomH" type="number" value="1" step="0.1"></label><label>k<input id="geomK" type="number" value="0" step="0.1"></label><label>l<input id="geomL" type="number" value="0" step="0.1"></label><label>ħω (meV)<input id="geomHW" type="number" value="0" step="0.1"></label></div><div class="geometry-target-buttons"><div class="geometry-target-all-buttons"><button id="geomSetU" type="button">Set U</button><button id="geomSetV" type="button">Set V</button><button id="geomPerpU" type="button">ki ⟂ U</button><button id="geomPerpV" type="button">ki ⟂ V</button><button id="geomParallelU" type="button" class="hidden">ki ∥ U</button><button id="geomParallelV" type="button" class="hidden">ki ∥ V</button><button id="geomSetBragg" type="button" class="hidden">Set Bragg peak</button></div></div></div><div class="geometry-hw-slider-row"><label>ħω<input id="geomHWSlider" type="range" min="0" max="0" step="0.1" value="0"></label><output id="geomHWValue">0.0 meV</output></div><div id="geometryAngles" class="geometry-angles">Enter a target Q and ħω to calculate TAS angles.</div></div><div id="geometryPlot" class="qe-plot geometry"></div></div></div>
+    </div>
+    <div id="powderMain" class="hidden">
+      <section class="powder-relation-card">
+        <div class="geometry-card-title">Powder Q / ħω / 2θ calculator</div>
+        <div class="powder-relation-grid">
+          <label>Q (Å⁻¹)<input id="powderQ" type="number" value="1.000000" step="0.001"></label>
+          <label>ħω (meV)<input id="powderHW" type="number" value="0" step="0.1"></label>
+          <label>2θ (deg)<input id="powderTwoTheta" type="number" value="30" step="0.1"></label>
+          <div id="powderRelationNote" class="tool-note"></div>
+        </div>
+      </section>
+      <section class="powder-plot-card">
+        <div id="powderPlot" class="qe-plot powder"></div>
+      </section>
+    </div>
   </div>
-  <div class="dark-asset">
-    <div class="dark-asset-head"><label class="checkbox-label"><input id="darkEnable3" type="checkbox"><span>Dark angle 3</span></label><label>Sample environment<select id="seSelect3"><option value="">Standard</option></select></label></div>
-    <div class="grid2"><label>Reference<select id="darkRef3"><option>Reference Q</option><option>Direct beam</option><option>Fixed</option></select></label><label>Rotation (deg)<input id="darkRotation3" type="number" value="0" step="1"></label></div>
-    <div id="darkRefQRow3" class="grid3"><label>h<input id="darkRefH3" type="number" value="1" step="0.1"></label><label>k<input id="darkRefK3" type="number" value="0" step="0.1"></label><label>l<input id="darkRefL3" type="number" value="0" step="0.1"></label></div>
-    <div class="dark-table"><div>No.</div><div>From</div><div>To</div><div>Offset</div>
-      <span>1</span><input id="darkFrom30" type="number" value="0"><input id="darkTo30" type="number" value="0"><input id="darkOffset30" type="number" value="0">
-      <span>2</span><input id="darkFrom31" type="number" value="0"><input id="darkTo31" type="number" value="0"><input id="darkOffset31" type="number" value="0">
-      <span>3</span><input id="darkFrom32" type="number" value="0"><input id="darkTo32" type="number" value="0"><input id="darkOffset32" type="number" value="0">
-      <span>4</span><input id="darkFrom33" type="number" value="0"><input id="darkTo33" type="number" value="0"><input id="darkOffset33" type="number" value="0"></div>
-  </div>
-</details>
+
+  <div id="resolutionPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabResolution">
+    <div class="resolution-workspace">
+      <aside id="resolutionInstrumentDetails" class="resolution-instrument-details">
+        <div class="resolution-detail-title">Instrument details</div>
 <details><summary>Focusing conditions</summary>
   <div class="grid2 compact-checks">
     <div><b>Monochromator</b><label><input id="monoHF" type="checkbox"> Horizontal</label><label><input id="monoVF" type="checkbox" checked> Vertical</label><label>H blades<input id="monoHB" type="number" value="1" min="1"></label><label>V blades<input id="monoVB" type="number" value="1" min="1"></label></div>
@@ -137,38 +155,8 @@
   <h3>Analyzer per piece</h3><div class="grid3"><label>Width<input id="anaW" type="number" value="0.02" step="0.001"></label><label>Height<input id="anaH" type="number" value="0.02" step="0.001"></label><label>Thickness<input id="anaT" type="number" value="0.002" step="0.001"></label></div>
   <h3>Detector</h3><div class="grid2"><label>Width<input id="detW" type="number" value="0.02" step="0.001"></label><label>Height<input id="detH" type="number" value="0.02" step="0.001"></label></div>
 </details>
-</aside>
-<main>
-  <div id="errorBox" class="error hidden"></div>
-
-  <nav class="main-tabs" role="tablist" aria-label="Simulator view">
-    <button id="tabQe" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="qePanel" data-tab="qe">Q-E Range</button>
-    <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution</button>
-    <button id="tabToolbox" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="toolboxPanel" data-tab="toolbox">Toolbox</button>
-    <button id="tabCifGenerator" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="cifGeneratorPanel" data-tab="cif-generator">CIF Generator</button>
-  </nav>
-
-  <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
-    <div id="singleMain">
-      <div class="chart-grid"><div><div id="singlePlot" class="qe-plot"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div class="geometry-card"><div class="geometry-card-title">Angle calculation & TAS geometry</div><div id="geometrySpurionWarning" class="qe-spurion-warning geometry-spurion-warning" aria-live="polite"></div><div class="geometry-target"><div class="geometry-target-row"><div class="grid4"><label>h<input id="geomH" type="number" value="1" step="0.1"></label><label>k<input id="geomK" type="number" value="0" step="0.1"></label><label>l<input id="geomL" type="number" value="0" step="0.1"></label><label>ħω (meV)<input id="geomHW" type="number" value="0" step="0.1"></label></div><div class="geometry-target-buttons"><div class="geometry-target-all-buttons"><button id="geomSetU" type="button">Set U</button><button id="geomSetV" type="button">Set V</button><button id="geomPerpU" type="button">ki ⟂ U</button><button id="geomPerpV" type="button">ki ⟂ V</button><button id="geomSetBragg" type="button" class="hidden">Set Bragg peak</button><button id="geomSetRefQ1" type="button" class="hidden">Set Ref Q1</button><button id="geomSetRefQ2" type="button" class="hidden">Set Ref Q2</button><button id="geomSetRefQ3" type="button" class="hidden">Set Ref Q3</button></div></div></div><div class="geometry-hw-slider-row"><label>ħω<input id="geomHWSlider" type="range" min="0" max="0" step="0.1" value="0"></label><output id="geomHWValue">0.0 meV</output></div><div id="geometryAngles" class="geometry-angles">Enter a target Q and ħω to calculate TAS angles.</div></div><div id="geometryPlot" class="qe-plot geometry"></div></div></div>
-    </div>
-    <div id="powderMain" class="hidden">
-      <section class="powder-relation-card">
-        <div class="geometry-card-title">Powder Q / ħω / 2θ calculator</div>
-        <div class="powder-relation-grid">
-          <label>Q (Å⁻¹)<input id="powderQ" type="number" value="1.000000" step="0.001"></label>
-          <label>ħω (meV)<input id="powderHW" type="number" value="0" step="0.1"></label>
-          <label>2θ (deg)<input id="powderTwoTheta" type="number" value="30" step="0.1"></label>
-          <div id="powderRelationNote" class="tool-note"></div>
-        </div>
-      </section>
-      <section class="powder-plot-card">
-        <div id="powderPlot" class="qe-plot powder"></div>
-      </section>
-    </div>
-  </div>
-
-  <div id="resolutionPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabResolution">
+      </aside>
+      <div class="resolution-main-column">
     <section class="calc-card" id="resolutionCalculation">
       <h2>Calculation point</h2>
       <div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
@@ -176,6 +164,8 @@
       <div id="scanInputs" class="scan hidden"><div class="grid5"><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>ℏω final<input id="hw1" type="number" value="10"></label><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><button id="calcScan">Calculate</button></div></div>
     </section>
     <section id="result" class="hidden"><h2>Resolution</h2><div id="summary" class="summary"></div><div id="scanNav" class="scan-nav hidden"><button id="prev">◀ Prev</button><input id="scanSlider" type="range" min="1" max="1" value="1"><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
+      </div>
+    </div>
   </div>
   <div id="toolboxPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabToolbox">
     <section class="calc-card toolbox-card">
