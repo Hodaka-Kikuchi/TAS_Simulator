@@ -2245,14 +2245,30 @@ function renderGeometry(cache,index=0){
     const planePhi=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.atan2(y,x);};
     const targetHKL=target ? [target.calc.h,target.calc.k,target.calc.l] : U;
     const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
-    // U/V should remain a right-handed crystallographic pair in the TAS
-    // geometry display.  planePhi() is measured in the right-handed
-    // (ex=U, ey) scattering-plane basis from makeSpiceScatteringPlaneBasis,
-    // so the displayed U/V offsets from the current target Q must preserve
-    // that sign.  Using the negative sign mirrors the pair into a left-handed
-    // relation; use the positive sign for both +-+ and -+-.
-    uArrowAngle=qAngle+(phiU-phiT);
-    vArrowAngle=qAngle+(phiV-phiT);
+    // Display-only U/V convention.
+    //
+    // -+- is already validated and remains exactly on the existing
+    // right-handed formula:
+    //   qAngle + (phiAxis - phiTarget)
+    //
+    // For +-+, U/V must rotate with the already-validated sample-attached
+    // Dark-angle motion, BUT the U->V crystallographic separation must keep
+    // its original right-handed sign.  Therefore do not negate each
+    // (phiAxis-phiTarget) offset (that mirrors U/V into a left-handed pair).
+    // Instead:
+    //   1) rotate a common crystallographic reference axis with the Dark angle;
+    //   2) add the original right-handed U/V offsets from that reference axis.
+    if(sense==="+-+"){
+      const fixedRefEnergy=(cache.energyMode==="Ei fixed") ? cache.Ei : cache.Ef;
+      const orientationRef=effectiveOrientationReference(cache.rl,fixedRefEnergy);
+      const phiRef=planePhi(orientationRef.hkl);
+      const crystalBase=qAngle-(phiRef-phiT);
+      uArrowAngle=crystalBase+(phiU-phiRef);
+      vArrowAngle=crystalBase+(phiV-phiRef);
+    }else{
+      uArrowAngle=qAngle+(phiU-phiT);
+      vArrowAngle=qAngle+(phiV-phiT);
+    }
   }catch(_err){}
   // Display U and V as vectors, like ki/kf/Q.  Their length is 1.5 times the
   // guide-circle radius so the arrowheads and labels sit clear of the circle.
@@ -2310,10 +2326,19 @@ function renderGeometry(cache,index=0){
     [sample[0]-radial,sample[1]],[sample[0]+radial,sample[1]],
     [sample[0],sample[1]-radial],[sample[0],sample[1]+radial]
   );
-  const monoFracX=sense==="+-+" ? 0.23 : 0.85;
+  // Display layout only.
+  // Keep +-+ at its established left-side anchor.  The mirrored -+- drawing was
+  // effectively pushed to ~90% of the card width (0.85 anchor + 5% viewport
+  // shift), which could clip labels.  Bring it back to a safer ~80% position.
+  const monoFracX=sense==="+-+" ? 0.23 : 0.80;
   const monoFracY=0.78;
-  const fitPad=0.32*L;
-  let span=2.5*L;
+
+  // Reduce the auto-fit whitespace by about 1.5x.  Fit constraints below still
+  // win whenever the actual TAS geometry/labels need more room, so this enlarges
+  // roomy drawings without blindly cropping wide configurations.
+  const geometryDisplayScale=1.5;
+  const fitPad=(0.32/geometryDisplayScale)*L;
+  let span=(2.5/geometryDisplayScale)*L;
   for(const p of fitPoints){
     const dx=p[0]-mono[0], dy=p[1]-mono[1];
     if(dx<0) span=Math.max(span,(-dx+fitPad)/monoFracX);
@@ -2321,19 +2346,10 @@ function renderGeometry(cache,index=0){
     if(dy<0) span=Math.max(span,(-dy+fitPad)/monoFracY);
     else if(dy>0) span=Math.max(span,(dy+fitPad)/(1-monoFracY));
   }
-  // A small floor avoids excessive zoom-in near simple elastic geometries.
-  span=Math.max(span,4.0*L);
-  let xMin=mono[0]-monoFracX*span, xMax=xMin+span;
+  // Keep the same anti-overzoom floor, but at ~1.5x larger display scale.
+  span=Math.max(span,(4.0/geometryDisplayScale)*L);
+  const xMin=mono[0]-monoFracX*span, xMax=xMin+span;
   const yMin=mono[1]-monoFracY*span, yMax=yMin+span;
-
-  // Display-only parallel translation for the mirrored -+- TAS Geometry.
-  // Shift the viewport left by 5% of its span, which moves the entire drawing
-  // right on screen without changing its scale, geometry, or relative positions.
-  if(sense==="-+-"){
-    const rightShift=0.05*span;
-    xMin-=rightShift;
-    xMax-=rightShift;
-  }
 
   const angleBox=$("geometryAngles");
   if(angleBox){
