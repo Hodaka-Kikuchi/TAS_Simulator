@@ -770,6 +770,33 @@ function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=
   return {mode,hkl,s1:wrap180(s1Ref),s2Ref};
 }
 
+function canonicalizeScatteringPlaneInputsForOrientation(){
+  try{
+    const U=[num('Uh'),num('Uk'),num('Ul')];
+    const V=[num('Vh'),num('Vk'),num('Vl')];
+    const lc={...latticeParams(),sv1:U,sv2:V};
+    const rl=RLRes(lc);
+    const ordered=normalizeScatteringPlaneHKL(rl,U,V);
+    if(!ordered.swapped) return false;
+
+    // Orientation-reference modes are defined in the SPICE/canonical
+    // scattering-plane convention.  Rewrite the visible shared U/V inputs
+    // before the user chooses a reference so every downstream calculation
+    // (Q-E range, dark angles, S1, TAS geometry and resolution) starts from
+    // exactly the same U/V definition.
+    ['Uh','Uk','Ul'].forEach((id,i)=>{ $(id).value=String(ordered.U[i]); });
+    ['Vh','Vk','Vl'].forEach((id,i)=>{ $(id).value=String(ordered.V[i]); });
+    updateAutoW();
+    saveLeftPanelState();
+    scheduleRecalc();
+    return true;
+  }catch(err){
+    console.error(err);
+    showError(err);
+    return false;
+  }
+}
+
 function updateOrientationReferenceUI(){
   const mode=$('orientationReference')?.value || 'bragg';
   $('braggReferenceInputs')?.classList.toggle('hidden',mode!=='bragg');
@@ -4397,7 +4424,14 @@ async function initialize(){
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
-  updateOrientationReferenceUI(); applyDarkAngleSlotColors(); updateGeometryQuickTargetButtons(); $('orientationReference')?.addEventListener('change',()=>{
+  updateOrientationReferenceUI(); applyDarkAngleSlotColors(); updateGeometryQuickTargetButtons();
+  // Normalize the visible U/V entries before the native select opens. This
+  // avoids choosing an orientation reference against a non-SPICE U/V order.
+  $('checkSpiceUV')?.addEventListener('click',canonicalizeScatteringPlaneInputsForOrientation);
+  $('orientationReference')?.addEventListener('pointerdown',canonicalizeScatteringPlaneInputsForOrientation);
+  // Keyboard users can focus the combobox without a pointer event.
+  $('orientationReference')?.addEventListener('focus',canonicalizeScatteringPlaneInputsForOrientation);
+  $('orientationReference')?.addEventListener('change',()=>{
     updateOrientationReferenceUI();
     updateGeometryQuickTargetButtons();
 
