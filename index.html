@@ -59,9 +59,12 @@
   </div>
   <div id="singleCrystalInputs">
     <h3>Scattering plane</h3>
-    <div class="vector"><span>U</span><input id="Uh" type="number" value="1"><input id="Uk" type="number" value="0"><input id="Ul" type="number" value="0"></div>
-    <div class="vector"><span>V</span><input id="Vh" type="number" value="0"><input id="Vk" type="number" value="1"><input id="Vl" type="number" value="0"></div>
-    <div class="vector auto-row"><span>W</span><span id="Wauto" class="auto-vector">auto: (0, 0, 1)</span><button id="checkSpiceUV" type="button">Check SPICE U/V</button></div>
+    <div class="uv-entry-grid">
+      <div class="vector uv-vector-u"><span>U</span><input id="Uh" type="number" value="1"><input id="Uk" type="number" value="0"><input id="Ul" type="number" value="0"></div>
+      <div class="vector uv-vector-v"><span>V</span><input id="Vh" type="number" value="0"><input id="Vk" type="number" value="1"><input id="Vl" type="number" value="0"></div>
+      <button id="flipUV" class="uv-flip-button" type="button" title="Swap U and V" aria-label="Swap U and V">↕</button>
+    </div>
+    <div class="vector auto-row"><span>W</span><span id="Wauto" class="auto-vector">auto: (0, 0, 1)</span></div>
   </div>
   <h3>Propagation vectors</h3>
   <label class="checkbox-label"><input id="showPropagation" type="checkbox" checked><span>show</span></label>

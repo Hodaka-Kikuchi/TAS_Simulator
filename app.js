@@ -4,7 +4,7 @@ import {
   RL_calc, UB_calc, makeSpiceScatteringPlaneBasis, reciprocalVectors,
   linspace, arange, interpExtrap
 } from "./tas-core.js";
-import {RL_calc as RLRes, inferOutOfPlaneHKL, normalizeScatteringPlaneHKL, calcResolution} from "./resolution-core.js";
+import {RL_calc as RLRes, inferOutOfPlaneHKL, calcResolution} from "./resolution-core.js";
 import {parseCifStructure, nuclearStructureFactorSquared} from "./cif-structure.js";
 
 const $ = id => document.getElementById(id);
@@ -768,33 +768,6 @@ function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=
   // but moves the S1=0 sample orientation by +90 degrees about the plane normal.
   if(isParallel) s1Ref+=c2Sign*90;
   return {mode,hkl,s1:wrap180(s1Ref),s2Ref};
-}
-
-function canonicalizeScatteringPlaneInputsForOrientation(){
-  try{
-    const U=[num('Uh'),num('Uk'),num('Ul')];
-    const V=[num('Vh'),num('Vk'),num('Vl')];
-    const lc={...latticeParams(),sv1:U,sv2:V};
-    const rl=RLRes(lc);
-    const ordered=normalizeScatteringPlaneHKL(rl,U,V);
-    if(!ordered.swapped) return false;
-
-    // Orientation-reference modes are defined in the SPICE/canonical
-    // scattering-plane convention.  Rewrite the visible shared U/V inputs
-    // before the user chooses a reference so every downstream calculation
-    // (Q-E range, dark angles, S1, TAS geometry and resolution) starts from
-    // exactly the same U/V definition.
-    ['Uh','Uk','Ul'].forEach((id,i)=>{ $(id).value=String(ordered.U[i]); });
-    ['Vh','Vk','Vl'].forEach((id,i)=>{ $(id).value=String(ordered.V[i]); });
-    updateAutoW();
-    saveLeftPanelState();
-    scheduleRecalc();
-    return true;
-  }catch(err){
-    console.error(err);
-    showError(err);
-    return false;
-  }
 }
 
 function updateOrientationReferenceUI(){
@@ -3652,25 +3625,27 @@ document.querySelectorAll("input,select").forEach(el=>{
 // ==================== Resolution calculator ====================
 let scanResults=[];
 function formatAutoHKL(v){return v.map(x=>{if(Math.abs(x)<1e-10)return '0';const r=Math.round(x);if(Math.abs(x-r)<1e-10)return String(r);return Number(x.toPrecision(6)).toString();}).join(', ');}
-function buildResolutionLattice(normalizeOrder=false){
+function buildResolutionLattice(){
   const lc={...latticeParams(),sv1:[num('Uh'),num('Uk'),num('Ul')],sv2:[num('Vh'),num('Vk'),num('Vl')]};
   const rl=RLRes(lc);
-  if(normalizeOrder){
-    const ordered=normalizeScatteringPlaneHKL(rl,lc.sv1,lc.sv2);
-    if(ordered.swapped){
-      // Resolution uses the canonical U/V order internally, but the shared
-      // Scattering Plane inputs belong to both Q-E Range and Resolution.
-      // Keep the user's entered vectors untouched in the left panel.
-      lc.sv1=ordered.U; lc.sv2=ordered.V;
-    }
-  }
+  // Preserve the entered U/V order exactly.  Their order defines the
+  // scattering-plane handedness used by W, UB, TAS geometry and resolution.
   lc.sv3=inferOutOfPlaneHKL(rl,lc.sv1,lc.sv2);
   $('Wauto').textContent=`auto: (${formatAutoHKL(lc.sv3)})`;
   return {lc,rl};
 }
 function updateAutoW(){try{buildResolutionLattice();}catch(_e){if($('Wauto'))$('Wauto').textContent='auto: unavailable';}}
+function flipScatteringPlaneUV(){
+  const idsU=['Uh','Uk','Ul'], idsV=['Vh','Vk','Vl'];
+  const u=idsU.map(id=>$(id).value);
+  const v=idsV.map(id=>$(id).value);
+  idsU.forEach((id,i)=>{$(id).value=v[i];});
+  idsV.forEach((id,i)=>{$(id).value=u[i];});
+  updateAutoW();
+  scheduleRecalc();
+}
 function collectResolutionBase(){
-  const {lc,rl}=buildResolutionLattice(true), em=$('energyMode').value,E=num('energy');
+  const {lc,rl}=buildResolutionLattice(), em=$('energyMode').value,E=num('energy');
   const config={energy_mode:em,Ei:em==='Ei fixed'?E:null,Ef:em==='Ef fixed'?E:null,geometry:$('geometry').value,sign_config:calculationTasSense($('sense').value)};
   const approximation={method:$('method').value};
   const focusing={monochromator:{horizontal:{enabled:$('monoHF').checked,blades:num('monoHB')},vertical:{enabled:$('monoVF').checked,blades:num('monoVB')}},analyzer:{horizontal:{enabled:$('anaHF').checked,blades:num('anaHB')},vertical:{enabled:$('anaVF').checked,blades:num('anaVB')}}};
@@ -3797,7 +3772,7 @@ function tasMotorAngles(calc,b){
   // Reference Q determines omega_ref only; the encoder offset is then
   // transferred to the target by S1 = S1_ref + (omega_target-omega_ref).
   // makeSpiceScatteringPlaneBasis gives ex along entered U and ey along the
-  // canonical in-plane transverse direction.  These correspond to PDF z and
+  // entered-V side of the in-plane transverse direction.  These correspond to PDF z and
   // PDF x respectively, so atan2(ey,ex) is atan2(Q0_x,Q0_z).
   const phiTarget=qAngle(Qt);
   const phiRef=qAngle(Qr,{allowZeroProjection:true});
@@ -4424,13 +4399,8 @@ async function initialize(){
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
+  $('flipUV')?.addEventListener('click',flipScatteringPlaneUV);
   updateOrientationReferenceUI(); applyDarkAngleSlotColors(); updateGeometryQuickTargetButtons();
-  // Normalize the visible U/V entries before the native select opens. This
-  // avoids choosing an orientation reference against a non-SPICE U/V order.
-  $('checkSpiceUV')?.addEventListener('click',canonicalizeScatteringPlaneInputsForOrientation);
-  $('orientationReference')?.addEventListener('pointerdown',canonicalizeScatteringPlaneInputsForOrientation);
-  // Keyboard users can focus the combobox without a pointer event.
-  $('orientationReference')?.addEventListener('focus',canonicalizeScatteringPlaneInputsForOrientation);
   $('orientationReference')?.addEventListener('change',()=>{
     updateOrientationReferenceUI();
     updateGeometryQuickTargetButtons();
