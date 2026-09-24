@@ -729,6 +729,46 @@ function hklToQ(rl,hkl){
   return add(add(scale(rl.astar,hkl[0]),scale(rl.bstar,hkl[1])),scale(rl.cstar,hkl[2]));
 }
 
+// Resolve orientation labels to a canonical physical orientation before any
+// TAS / Q-E / Dark-angle calculation. Parallel and perpendicular are NOT
+// separate numerical branches: when two labels describe the same directed
+// ki axis in the entered scattering plane, they share exactly the same
+// downstream calculation.
+//
+// The perpendicular direction is chosen from the other entered plane vector
+// so the U/V handedness fixes the sign unambiguously:
+//   ki ⟂ U : V-side component perpendicular to U
+//   ki ⟂ V : U-side component perpendicular to V
+//
+// Therefore, for an orthogonal U/V plane:
+//   ki ∥ V == ki ⟂ U
+//   ki ∥ U == ki ⟂ V
+function canonicalOrientationMode(rl, rawMode=null){
+  const mode=rawMode ?? ($('orientationReference')?.value || 'bragg');
+  if(mode==='bragg' || mode==='perpU' || mode==='perpV') return mode;
+  if(mode!=='parallelU' && mode!=='parallelV') return mode;
+
+  const U=[num('Uh'),num('Uk'),num('Ul')];
+  const V=[num('Vh'),num('Vk'),num('Vl')];
+  const qU=hklToQ(rl,U), qV=hklToQ(rl,V);
+  const u2=dot(qU,qU), v2=dot(qV,qV);
+  if(!(u2>1e-20) || !(v2>1e-20)) return mode;
+
+  const perpToU=sub(qV,scale(qU,dot(qV,qU)/u2)); // entered V side
+  const perpToV=sub(qU,scale(qV,dot(qU,qV)/v2)); // entered U side
+  if(norm(perpToU)<=1e-12 || norm(perpToV)<=1e-12) return mode;
+
+  const parallelAxis=normalize(mode==='parallelU' ? qU : qV);
+  const equivalentPerpAxis=normalize(mode==='parallelU' ? perpToV : perpToU);
+
+  // Collapse only when the two labels really are the same directed physical
+  // orientation. Non-orthogonal U/V cases remain distinct.
+  if(dot(parallelAxis,equivalentPerpAxis) > 1-1e-10){
+    return mode==='parallelU' ? 'perpV' : 'perpU';
+  }
+  return mode;
+}
+
 // Convert every orientation-reference mode into the original Reference-Q
 // calibration pair {HKL, S1}.  Downstream geometry intentionally stays on the
 // validated Reference-Q pipeline.
@@ -738,7 +778,8 @@ function hklToQ(rl,hkl){
 // ki-perpendicular condition.  Therefore, if ki perpendicular U/V is defined as
 // the new S1=0, that virtual Bragg observation has S1_ref = -S2_ref/2.
 function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=null){
-  const mode=$('orientationReference')?.value || 'bragg';
+  const rawMode=$('orientationReference')?.value || 'bragg';
+  const mode=canonicalOrientationMode(rl,rawMode);
   if(mode==='bragg'){
     return {mode,hkl:[num('refh'),num('refk'),num('refl')],s1:num('refs1')};
   }
@@ -1771,7 +1812,9 @@ function calcQDark(s1,s2,ki,kf,s1Offset,QrefXY,sense,energyMode=null){
 // The orientation-reference calibration itself uses the same +theta=S2/2
 // correction for both user-facing configurations.
 function directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense){
-  const orientationMode=$('orientationReference')?.value || 'bragg';
+  const orientationMode=canonicalOrientationMode(
+    rl,$('orientationReference')?.value || 'bragg'
+  );
   if(orientationMode==='bragg') return 0;
 
   const refHkl=(orientationMode==='perpV' || orientationMode==='parallelV')
@@ -3378,6 +3421,9 @@ function setGeometryTargetFromV(){ setGeometryTargetHKL([num("Vh"),num("Vk"),num
 function setGeometryKiOrientationCondition(mode){
   try{
     const b=collectResolutionBase();
+    // Geometry target selection uses the same canonical physical orientation as
+    // Angle / Q-E / Dark-angle, so equivalent labels execute the same path.
+    mode=canonicalOrientationMode(b.rl,mode);
     const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
     const {ex,ey}=makeSpiceScatteringPlaneBasis(b.rl,U,V);
     const qU=hklToQ(b.rl,U), qV=hklToQ(b.rl,V);
@@ -3408,7 +3454,9 @@ function setGeometryKiOrientationCondition(mode){
     if(cosS2<-1-1e-10||cosS2>1+1e-10) throw new Error("Current |Q| is not accessible at this energy transfer.");
     const s2Geom=rad2deg(Math.acos(clamp(cosS2,-1,1))), t=deg2rad(s2Geom);
     const phiQlab=rad2deg(Math.atan2(-kf*Math.sin(t),ki-kf*Math.cos(t)));
-    const orient=$('orientationReference')?.value||'perpU';
+    const orient=canonicalOrientationMode(
+      b.rl,$('orientationReference')?.value||'perpU'
+    );
     let s1Perp;
     if(orient==='perpU') s1Perp=wrap180(-(phiAxis-phiU));
     else if(orient==='perpV') s1Perp=wrap180(-(phiAxis-phiV));
