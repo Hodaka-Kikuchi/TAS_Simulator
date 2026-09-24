@@ -313,21 +313,48 @@ textarea:disabled {
   border:1px solid #ddd;
   border-radius:8px;
   padding:9px;
-  background:#fafafa;
+  background:#fff;
 }
 #resolutionInstrumentDetails .resolution-detail-title{
   font-size:16px;
   font-weight:650;
   margin:0 0 8px;
 }
+/* Match the permanent sidebar cards (Instrument configuration / Sample):
+   white card, thin border, rounded corners, plain title with no divider line. */
 #resolutionInstrumentDetails details{
   border:1px solid #ddd;
-  border-radius:7px;
-  padding:8px;
-  margin-bottom:8px;
+  border-radius:8px;
+  padding:9px;
+  margin-bottom:9px;
   background:#fff;
 }
+#resolutionInstrumentDetails details > summary{
+  margin:0;
+  padding:0;
+  background:#fff;
+  border:0;
+  font-size:16px;
+  font-weight:650;
+}
+#resolutionInstrumentDetails details[open] > summary{margin-bottom:8px}
+#resolutionInstrumentDetails details:not([open]) > summary{margin-bottom:0}
 #resolutionInstrumentDetails details:last-child{margin-bottom:0}
+#resolutionInstrumentDetails .instrument-fixed-section{
+  border:1px solid #ddd;
+  border-radius:8px;
+  padding:9px;
+  margin-bottom:9px;
+  background:#fff;
+}
+#resolutionInstrumentDetails .instrument-fixed-heading{
+  margin:0 0 8px;
+  padding:0;
+  background:#fff;
+  border:0;
+  font-size:16px;
+  font-weight:650;
+}
 #resolutionInstrumentDetails h3{font-size:13px;margin:8px 0 4px}
 #resolutionInstrumentDetails input[type=number],
 #resolutionInstrumentDetails input[type=text]{
@@ -361,14 +388,27 @@ textarea:disabled {
   max-width:none;
 }
 
+/* On tablet-sized screens, do not let Instrument details consume a permanent
+   side column. Move it above the calculation/results area so the resolution
+   plots can use the full available width. The detail cards themselves become
+   a compact two-column grid where space permits. */
 @media(max-width:1250px){
-  #resolutionPanel .resolution-workspace{
-    grid-template-columns:minmax(270px,320px) minmax(0,1fr);
-  }
-}
-@media(max-width:950px){
   #resolutionPanel .resolution-workspace{grid-template-columns:1fr}
-  #resolutionInstrumentDetails{position:static}
+  #resolutionInstrumentDetails{
+    position:static;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+  }
+  #resolutionInstrumentDetails .resolution-detail-title{
+    grid-column:1 / -1;
+    margin-bottom:0;
+  }
+  #resolutionInstrumentDetails details{margin-bottom:0}
+  #resolutionInstrumentDetails .instrument-fixed-section{margin-bottom:0}
+}
+@media(max-width:1050px){
+  #resolutionInstrumentDetails{grid-template-columns:1fr}
 }
 @media(max-width:600px){
   #resolutionCalculation #singleInputs{grid-template-columns:repeat(2,minmax(0,1fr))}

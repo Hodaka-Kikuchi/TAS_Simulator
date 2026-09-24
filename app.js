@@ -3624,6 +3624,7 @@ document.querySelectorAll("input,select").forEach(el=>{
 
 // ==================== Resolution calculator ====================
 let scanResults=[];
+let scanResolutionPlotLimits=null;
 function formatAutoHKL(v){return v.map(x=>{if(Math.abs(x)<1e-10)return '0';const r=Math.round(x);if(Math.abs(x-r)<1e-10)return String(r);return Number(x.toPrecision(6)).toString();}).join(', ');}
 function buildResolutionLattice(){
   const lc={...latticeParams(),sv1:[num('Uh'),num('Uk'),num('Ul')],sv2:[num('Vh'),num('Vk'),num('Vl')]};
@@ -3797,7 +3798,14 @@ function tasMotorAngles(calc,b){
 
 function calcOne(calc){
   const b=collectResolutionBase();
-  const result=calcResolution(b.lc,b.rl,b.col,b.mos,b.config,b.approximation,b.focusing,b.geom,calc,b.unitMode);
+
+  // Resolution sense convention:
+  // The resolution core already defines the physical +-+ / -+- branches.
+  // Pass the user-facing selection directly here.  Keep b.config unchanged,
+  // because Angle calculation / TAS geometry and Q-E calculations retain the
+  // previously validated internal sense mapping via calculationTasSense().
+  const resolutionConfig={...b.config,sign_config:checkedValue('sense')};
+  const result=calcResolution(b.lc,b.rl,b.col,b.mos,resolutionConfig,b.approximation,b.focusing,b.geom,calc,b.unitMode);
   let angles;
   try{
     angles=tasMotorAngles(calc,b);
@@ -3811,15 +3819,49 @@ function calcOne(calc){
 }
 function matrixText(M){return M.map(r=>'[ '+r.map(x=>Number(x).toExponential(6).padStart(14)).join('  ')+' ]').join('\n');}
 function traceEllipse(p,name,dash='solid'){return{x:p.x,y:p.y,mode:'lines',name,line:{dash},hoverinfo:'skip'};}
-function baseLayout(title,xlabel,ylabel,xlim,ylim,equal=false,plotId=null){const kept=plotId?currentPlotRanges(plotId):{x:null,y:null};return{uirevision:plotId||'resolutionPlots',title:{text:title,font:{size:14}},margin:{l:60,r:20,t:45,b:55},xaxis:{title:xlabel,range:kept.x||[-xlim,xlim],zeroline:true,showgrid:true},yaxis:{title:ylabel,range:kept.y||[-ylim,ylim],zeroline:true,showgrid:true,...(equal?{scaleanchor:'x',scaleratio:1}:{})},showlegend:false};}
+
+// Resolution plots use explicit symmetric limits around the calculation point.
+// A single Calc always resets to the current ellipse size so the ellipse cannot
+// remain clipped by a viewport left over from an earlier calculation.  A Scan
+// supplies limits precomputed over every scan point; those same limits are then
+// reused for every slider position so the apparent ellipse evolution is not
+// contaminated by changing plot scales.
+function baseLayout(title,xlabel,ylabel,xlim,ylim,equal=false,plotId=null){
+  const safe=(v,fallback=1)=>Number.isFinite(Number(v))&&Number(v)>0?Number(v):fallback;
+  const xl=safe(xlim), yl=safe(ylim);
+  return {
+    uirevision:plotId||'resolutionPlots',
+    title:{text:title,font:{size:14}},
+    margin:{l:60,r:20,t:45,b:55},
+    xaxis:{title:xlabel,range:[-xl,xl],zeroline:true,showgrid:true},
+    yaxis:{title:ylabel,range:[-yl,yl],zeroline:true,showgrid:true,...(equal?{scaleanchor:'x',scaleratio:1}:{})},
+    showlegend:false
+  };
+}
+
+function resolutionPlotLimitsFromEntries(entries){
+  const valid=Array.isArray(entries)?entries.filter(Boolean):[];
+  if(!valid.length) return null;
+  const maxLim=key=>{
+    let m=0;
+    for(const entry of valid){
+      const v=Number(entry?.result?.lim?.[key]);
+      if(Number.isFinite(v) && v>m) m=v;
+    }
+    return m>0?m:null;
+  };
+  const U=maxLim('U'), V=maxLim('V'), W=maxLim('W'), E=maxLim('E');
+  return {U,V,W,E};
+}
 function formatAngle(value,absolute=false){
   if(value===null || value===undefined || !Number.isFinite(Number(value))) return '';
   const v=absolute ? Math.abs(Number(value)) : Number(value);
   return v.toFixed(3);
 }
 
-function renderResolution(entry,indexInfo=''){
+function renderResolution(entry,indexInfo='',plotLimits=null){
   const {result:r,calc,unitMode,lc,angles}=entry;
+  const limits=plotLimits || r.lim;
   const qUnit=unitMode==='rlu'?'r.l.u.':'Å⁻¹';
   const ax=r.displayAxes || {U:lc.sv1,V:lc.sv2,W:lc.sv3};
   const fmtAxis=v=>`(${v.map(x=>{
@@ -3864,21 +3906,21 @@ function renderResolution(entry,indexInfo=''){
   Plotly.react(
     'plotUE',
     [traceEllipse(r.ellipses.projUE,'projection'),traceEllipse(r.ellipses.sliceUE,'slice','dash')],
-    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,'δℏω (meV)',r.lim.U,r.lim.E,false,'plotUE'),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.U)} (${qUnit})`,'δℏω (meV)',limits.U,limits.E,false,'plotUE'),
     {responsive:true}
   );
 
   Plotly.react(
     'plotVE',
     [traceEllipse(r.ellipses.projVE,'projection'),traceEllipse(r.ellipses.sliceVE,'slice','dash')],
-    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,'δℏω (meV)',r.lim.V,r.lim.E,false,'plotVE'),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.V)} (${qUnit})`,'δℏω (meV)',limits.V,limits.E,false,'plotVE'),
     {responsive:true}
   );
 
   Plotly.react(
     'plotWE',
     [traceEllipse(r.ellipses.projWE,'projection'),traceEllipse(r.ellipses.sliceWE,'slice','dash')],
-    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.W)} (${qUnit})`,'δℏω (meV)',r.lim.W,r.lim.E,false,'plotWE'),
+    baseLayout('δQ vs ℏω ellipse',`δQ ∥ ${fmtAxis(ax.W)} (${qUnit})`,'δℏω (meV)',limits.W,limits.E,false,'plotWE'),
     {responsive:true}
   );
 
@@ -3888,8 +3930,8 @@ function renderResolution(entry,indexInfo=''){
   // - Å^-1: both axes are physical reciprocal-space lengths, so keep a common
   //   range and a 1:1 aspect ratio.
   const uvEqual=(unitMode!=='rlu');
-  const uLim=uvEqual ? Math.max(r.lim.U,r.lim.V) : r.lim.U;
-  const vLim=uvEqual ? uLim : r.lim.V;
+  const uLim=uvEqual ? Math.max(limits.U,limits.V) : limits.U;
+  const vLim=uvEqual ? uLim : limits.V;
   const uline={x:[-uLim,uLim],y:[0,0],mode:'lines',line:{width:1},hoverinfo:'skip'};
   const vline={x:[0,0],y:[-vLim,vLim],mode:'lines',line:{width:1},hoverinfo:'skip'};
 
@@ -3905,9 +3947,41 @@ function renderResolution(entry,indexInfo=''){
     {responsive:true}
   );
 }
-function doSingleResolution(){clearError();try{const e=calcOne({hw:num('hw'),h:num('h'),k:num('k'),l:num('l')});$('scanNav').classList.add('hidden');renderResolution(e);}catch(e){showError(e);}}
-function doScanResolution(){clearError();try{const n=Math.max(2,Math.round(num('npts'))),xs=(a,b)=>linspace(a,b,n),hs=xs(num('h0'),num('h1')),ks=xs(num('k0'),num('k1')),ls=xs(num('l0'),num('l1')),ws=xs(num('hw0'),num('hw1'));scanResults=Array.from({length:n},(_,i)=>calcOne({hw:ws[i],h:hs[i],k:ks[i],l:ls[i]}));$('scanSlider').min=1;$('scanSlider').max=n;$('scanSlider').value=1;$('scanNav').classList.remove('hidden');renderResolutionScan(1);}catch(e){showError(e);}}
-function renderResolutionScan(i){i=Math.max(1,Math.min(scanResults.length,Number(i)));$('scanSlider').value=i;$('scanIndex').textContent=`${i} / ${scanResults.length}`;renderResolution(scanResults[i-1],`| scan ${i}/${scanResults.length}`);}
+function doSingleResolution(){
+  clearError();
+  try{
+    const e=calcOne({hw:num('hw'),h:num('h'),k:num('k'),l:num('l')});
+    scanResolutionPlotLimits=null;
+    $('scanNav').classList.add('hidden');
+    // Single-point Calc: always fit to this calculation's resolution ellipse.
+    renderResolution(e,'',e.result.lim);
+  }catch(e){showError(e);}
+}
+function doScanResolution(){
+  clearError();
+  try{
+    const n=Math.max(2,Math.round(num('npts'))),xs=(a,b)=>linspace(a,b,n),hs=xs(num('h0'),num('h1')),ks=xs(num('k0'),num('k1')),ls=xs(num('l0'),num('l1')),ws=xs(num('hw0'),num('hw1'));
+    scanResults=Array.from({length:n},(_,i)=>calcOne({hw:ws[i],h:hs[i],k:ks[i],l:ls[i]}));
+    // Use the largest required extent across the complete scan.  This is
+    // especially important for constant-E Q scans, where the ellipse shape can
+    // change strongly with Q; the slider must not rescale the plot underneath it.
+    scanResolutionPlotLimits=resolutionPlotLimitsFromEntries(scanResults);
+    $('scanSlider').min=1;
+    $('scanSlider').max=n;
+    $('scanSlider').value=1;
+    $('scanNav').classList.remove('hidden');
+    renderResolutionScan(1);
+  }catch(e){
+    scanResolutionPlotLimits=null;
+    showError(e);
+  }
+}
+function renderResolutionScan(i){
+  i=Math.max(1,Math.min(scanResults.length,Number(i)));
+  $('scanSlider').value=i;
+  $('scanIndex').textContent=`${i} / ${scanResults.length}`;
+  renderResolution(scanResults[i-1],`| scan ${i}/${scanResults.length}`,scanResolutionPlotLimits || scanResults[i-1].result.lim);
+}
 
 
 // Display-only terminology: magnetic propagation vectors are k1, k2, ...

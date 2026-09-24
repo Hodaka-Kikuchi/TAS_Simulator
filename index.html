@@ -137,15 +137,15 @@
     <div class="resolution-workspace">
       <aside id="resolutionInstrumentDetails" class="resolution-instrument-details">
         <div class="resolution-detail-title">Instrument details</div>
-<details><summary>Focusing conditions</summary>
+<section class="instrument-fixed-section"><div class="instrument-fixed-heading">Focusing conditions</div>
   <div class="grid2 compact-checks">
     <div><b>Monochromator</b><label><input id="monoHF" type="checkbox"> Horizontal</label><label><input id="monoVF" type="checkbox" checked> Vertical</label><label>H blades<input id="monoHB" type="number" value="1" min="1"></label><label>V blades<input id="monoVB" type="number" value="1" min="1"></label></div>
     <div><b>Analyzer</b><label><input id="anaHF" type="checkbox"> Horizontal</label><label><input id="anaVF" type="checkbox" checked> Vertical</label><label>H blades<input id="anaHB" type="number" value="1" min="1"></label><label>V blades<input id="anaVB" type="number" value="1" min="1"></label></div>
   </div>
-</details>
-<details><summary>Collimator conditions <small>(min)</small></summary><div class="grid2">
+</section>
+<section class="instrument-fixed-section"><div class="instrument-fixed-heading">Collimator conditions <small>(min)</small></div><div class="grid2">
   <label class="checkbox-label"><input id="gm1" type="checkbox"><span>1st supermirror</span></label><label>m-value<input id="div1m" type="number" value="2" step="0.1"></label>
-  <label>1st H<input id="div1h" type="number" value="40"></label><label>1st V<input id="div1v" type="number" value="40"></label><label>2nd H<input id="div2h" type="number" value="40"></label><label>2nd V<input id="div2v" type="number" value="40"></label><label>3rd H<input id="div3h" type="number" value="40"></label><label>3rd V<input id="div3v" type="number" value="40"></label><label>4th H<input id="div4h" type="number" value="80"></label><label>4th V<input id="div4v" type="number" value="80"></label></div></details>
+  <label>1st H<input id="div1h" type="number" value="40"></label><label>1st V<input id="div1v" type="number" value="40"></label><label>2nd H<input id="div2h" type="number" value="40"></label><label>2nd V<input id="div2v" type="number" value="40"></label><label>3rd H<input id="div3h" type="number" value="40"></label><label>3rd V<input id="div3v" type="number" value="40"></label><label>4th H<input id="div4h" type="number" value="80"></label><label>4th V<input id="div4v" type="number" value="80"></label></div></section>
 <details><summary>Crystal & Mosaic <small>(min)</small></summary>
   <h3>Monochromator</h3><div class="grid2"><label>Crystal<select id="monoCrystal"></select></label><label>d (Å)<input id="dMono" type="number" value="3.355" step="0.001"></label><label>Mosaic H<input id="mosMonoH" type="number" value="30"></label><label>Mosaic V<input id="mosMonoV" type="number" value="30"></label></div>
   <h3>Sample</h3><div class="grid2"><label>Mosaic H<input id="mosSamH" type="number" value="60"></label><label>Mosaic V<input id="mosSamV" type="number" value="60"></label></div>
