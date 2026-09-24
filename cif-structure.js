@@ -7,22 +7,29 @@ const TWO_PI=2*Math.PI;
 const EIGHT_PI2=8*Math.PI*Math.PI;
 const SIXTEEN_PI2=16*Math.PI*Math.PI;
 
-// [real, imaginary] coherent bound scattering length in fm.
-// Values are for the natural isotopic composition unless an isotope is named.
-export const NEUTRON_B_FM=Object.freeze({
-  H:[-3.7390,0], D:[6.671,0], '2H':[6.671,0], He:[3.26,0], Li:[-1.90,0], Be:[7.79,0], B:[5.30,-0.213],
-  C:[6.6460,0], N:[9.36,0], O:[5.803,0], F:[5.654,0], Ne:[4.566,0], Na:[3.63,0], Mg:[5.375,0], Al:[3.449,0],
-  Si:[4.1491,0], P:[5.13,0], S:[2.847,0], Cl:[9.5770,0], Ar:[1.909,0], K:[3.67,0], Ca:[4.70,0], Sc:[12.29,0],
-  Ti:[-3.438,0], V:[-0.3824,0], Cr:[3.635,0], Mn:[-3.73,0], Fe:[9.45,0], Co:[2.49,0], Ni:[10.3,0], Cu:[7.718,0],
-  Zn:[5.680,0], Ga:[7.288,0], Ge:[8.185,0], As:[6.58,0], Se:[7.970,0], Br:[6.795,0], Kr:[7.81,0], Rb:[7.09,0],
-  Sr:[7.02,0], Y:[7.75,0], Zr:[7.16,0], Nb:[7.054,0], Mo:[6.715,0], Tc:[6.8,0], Ru:[7.03,0], Rh:[5.88,0],
-  Pd:[5.91,0], Ag:[5.922,0], Cd:[4.87,-0.70], In:[4.065,-0.0539], Sn:[6.225,0], Sb:[5.57,0], Te:[5.80,0], I:[5.28,0],
-  Xe:[4.92,0], Cs:[5.42,0], Ba:[5.07,0], La:[8.24,0], Ce:[4.84,0], Pr:[4.58,0], Nd:[7.69,0], Pm:[12.6,0],
-  Sm:[0.80,-1.65], Eu:[7.22,-1.26], Gd:[6.5,-13.82], Tb:[7.38,0], Dy:[16.9,-0.276], Ho:[8.01,0], Er:[7.79,0],
-  Tm:[7.07,0], Yb:[12.43,0], Lu:[7.21,0], Hf:[7.7,0], Ta:[6.91,0], W:[4.86,0], Re:[9.2,0], Os:[10.7,0],
-  Ir:[10.6,0], Pt:[9.60,0], Au:[7.63,0], Hg:[12.692,0], Tl:[8.776,0], Pb:[9.405,0], Bi:[8.532,0],
-  Ra:[10.0,0], Th:[10.31,0], Pa:[9.1,0], U:[8.417,0]
-});
+// Neutron data are loaded from neutron-data.json by app.js at startup.
+// Keeping the table external makes scattering and absorption data easier to
+// maintain and keeps the CIF parser/calculator on one shared data source.
+export const NEUTRON_B_FM=Object.create(null);
+const NEUTRON_DATA=Object.create(null);
+let NEUTRON_DATA_META=null;
+
+export function setNeutronData(payload){
+  const src=payload?.elements || payload || {};
+  for(const key of Object.keys(NEUTRON_B_FM)) delete NEUTRON_B_FM[key];
+  for(const key of Object.keys(NEUTRON_DATA)) delete NEUTRON_DATA[key];
+  for(const [key,record] of Object.entries(src)){
+    if(!record || typeof record!=="object") continue;
+    NEUTRON_DATA[key]=record;
+    const b=record.b_coherent_fm;
+    const re=Number(b?.real), im=Number(b?.imag||0);
+    if(Number.isFinite(re) && Number.isFinite(im)) NEUTRON_B_FM[key]=[re,im];
+  }
+  NEUTRON_DATA_META=payload?.source || null;
+}
+
+export function neutronDataRecord(key){ return NEUTRON_DATA[String(key||"")] || null; }
+export function neutronDataSource(){ return NEUTRON_DATA_META; }
 
 function tokenizeCifLine(line){
   const out=[];
@@ -332,6 +339,175 @@ export function parseCifStructure(text){
     name:String(name), formula:String(formula), spaceGroup:String(spaceGroup),
     spaceGroupNumber:Number.isFinite(spaceGroupNumber)?spaceGroupNumber:null, dataName:doc.dataName,
     lattice, atoms, asymmetricSites, symmetryOperationCount:symops.length, asymmetricSiteCount:asymmetricSites.length, warnings
+  };
+}
+
+export function unitCellVolumeA3(lattice){
+  if(!lattice) return NaN;
+  const a=Number(lattice.a), b=Number(lattice.b), c=Number(lattice.c);
+  const alpha=Number(lattice.alpha)*Math.PI/180;
+  const beta=Number(lattice.beta)*Math.PI/180;
+  const gamma=Number(lattice.gamma)*Math.PI/180;
+  if(![a,b,c,alpha,beta,gamma].every(Number.isFinite) || !(a>0&&b>0&&c>0)) return NaN;
+  const ca=Math.cos(alpha), cb=Math.cos(beta), cg=Math.cos(gamma);
+  const factor=1+2*ca*cb*cg-ca*ca-cb*cb-cg*cg;
+  return factor>0 ? a*b*c*Math.sqrt(factor) : NaN;
+}
+
+function energyDependentComplexBAtWavelength(rec,wavelengthA){
+  const pts=rec?.energy_dependent_b_fm?.points_energy_eV_re_im;
+  const lambda=Number(wavelengthA);
+  if(!Array.isArray(pts) || pts.length<2 || !(lambda>0)) return null;
+  // Match periodictable/NCNR: convert the tabulated energies to wavelength,
+  // linearly interpolate b(lambda), and use constant values beyond the ends.
+  const rows=pts.map(p=>{
+    const e=Number(p[0]), re=Number(p[1]), im=Number(p[2]);
+    return {lambda:0.286014369/Math.sqrt(e),re,im};
+  }).filter(p=>[p.lambda,p.re,p.im].every(Number.isFinite)).sort((a,b)=>a.lambda-b.lambda);
+  if(!rows.length) return null;
+  // Outside the tabulated resonance range, fall back to the standard 1/v
+  // absorption scaling rather than freezing the nearest resonance value.
+  if(lambda<rows[0].lambda || lambda>rows[rows.length-1].lambda) return null;
+  for(let i=1;i<rows.length;i++){
+    const a=rows[i-1], b=rows[i];
+    if(lambda<=b.lambda){
+      const t=(lambda-a.lambda)/(b.lambda-a.lambda);
+      return {re:a.re+t*(b.re-a.re),im:a.im+t*(b.im-a.im)};
+    }
+  }
+  return null;
+}
+
+export function absorptionCrossSectionBarn(element,wavelengthA){
+  const rec=neutronDataRecord(element);
+  const sigma0=Number(rec?.sigma_absorption_2200_barn);
+  const lambda=Number(wavelengthA);
+  if(!(lambda>0)) return NaN;
+  const bEnergy=energyDependentComplexBAtWavelength(rec,lambda);
+  if(bEnergy && Number.isFinite(bEnergy.im)){
+    // periodictable/NCNR convention: sigma_a[barn] = -2 lambda[A] Im(b)[fm] * 1000.
+    return Math.max(0,-2*lambda*bEnergy.im*1000);
+  }
+  if(!(sigma0>=0)) return NaN;
+  // Ordinary nuclei: standard 1/v approximation from the 2200 m/s value.
+  return sigma0*(lambda/1.798);
+}
+
+export function coherentCrossSectionBarn(element){
+  const rec=neutronDataRecord(element);
+  const sigma=Number(rec?.sigma_coherent_barn);
+  return sigma>=0 ? sigma : NaN;
+}
+
+export function incoherentCrossSectionBarn(element){
+  const rec=neutronDataRecord(element);
+  const sigma=Number(rec?.sigma_incoherent_barn);
+  return sigma>=0 ? sigma : NaN;
+}
+
+export function scatteringCrossSectionBarn(element){
+  const rec=neutronDataRecord(element);
+  const sigma=Number(rec?.sigma_scattering_barn);
+  return sigma>=0 ? sigma : NaN;
+}
+
+export function neutronAbsorptionSummary(structure,wavelengthA,thicknessCm=0){
+  const volumeA3=unitCellVolumeA3(structure?.lattice);
+  const lambda=Number(wavelengthA), thickness=Number(thicknessCm);
+  if(!(volumeA3>0)) throw new Error('A valid CIF unit-cell volume is required for attenuation calculation.');
+  if(!(lambda>0)) throw new Error('A positive neutron wavelength is required for attenuation calculation.');
+  if(!(thickness>=0)) throw new Error('Sample thickness must be zero or positive.');
+  if(!structure?.atoms?.length) throw new Error('A CIF structure with atom sites is required for attenuation calculation.');
+
+  // Match the NCNR/periodictable compound convention:
+  //   1) absorption is additive over atoms;
+  //   2) total bound scattering is additive over atoms;
+  //   3) compound coherent scattering is computed from the occupancy-weighted
+  //      mean coherent scattering length, not by summing atomic sigma_coh;
+  //   4) compound incoherent scattering is total scattering - coherent.
+  // This distinction matters for compounds containing species with very
+  // different/sign-changing b_c (e.g. NiTiO3).
+  const byElement=new Map();
+  let sigmaAbsCellBarn=0, sigmaScatCellBarn=0, atomCount=0;
+  let sumBReFm=0, sumBImFm=0;
+  const missingAbs=new Set(), missingScat=new Set(), missingB=new Set();
+  let resonanceCaution=false;
+
+  for(const atom of structure.atoms){
+    const element=String(atom.element||'');
+    const occupancy=Number(atom.occupancy);
+    const occ=Number.isFinite(occupancy)?occupancy:1;
+    const rec=neutronDataRecord(element);
+    const sigmaAbs=absorptionCrossSectionBarn(element,lambda);
+    const sigmaScat=scatteringCrossSectionBarn(element);
+    const bEnergy=energyDependentComplexBAtWavelength(rec,lambda);
+    const b0=NEUTRON_B_FM[element];
+    const bRe=Number(bEnergy?.re ?? b0?.[0]);
+    const bIm=Number(bEnergy?.im ?? b0?.[1] ?? 0);
+    if(!Number.isFinite(sigmaAbs)){ missingAbs.add(element||'?'); continue; }
+    if(!Number.isFinite(sigmaScat)){ missingScat.add(element||'?'); continue; }
+    if(!Number.isFinite(bRe) || !Number.isFinite(bIm)){ missingB.add(element||'?'); continue; }
+
+    const absContribution=occ*sigmaAbs;
+    const scatContribution=occ*sigmaScat;
+    sigmaAbsCellBarn+=absContribution;
+    sigmaScatCellBarn+=scatContribution;
+    atomCount+=occ;
+    sumBReFm+=occ*bRe;
+    sumBImFm+=occ*bIm;
+    resonanceCaution=resonanceCaution || !!rec?.resonance_caution;
+
+    const row=byElement.get(element)||{
+      element,count:0,
+      sigmaAbsBarn:sigmaAbs,sigmaScatBarn:sigmaScat,
+      absContributionBarn:0,scatContributionBarn:0,
+      resonanceCaution:!!rec?.resonance_caution
+    };
+    row.count+=occ;
+    row.absContributionBarn+=absContribution;
+    row.scatContributionBarn+=scatContribution;
+    byElement.set(element,row);
+  }
+  if(missingAbs.size) throw new Error(`No absorption cross section is available for CIF atom type(s): ${[...missingAbs].join(', ')}`);
+  if(missingScat.size) throw new Error(`No total scattering cross section is available for CIF atom type(s): ${[...missingScat].join(', ')}`);
+  if(missingB.size) throw new Error(`No coherent scattering length is available for CIF atom type(s): ${[...missingB].join(', ')}`);
+  if(!(atomCount>0)) throw new Error('No occupied atom sites are available for attenuation calculation.');
+
+  const meanBRe=sumBReFm/atomCount;
+  const meanBIm=sumBImFm/atomCount;
+  const sigmaCohPerAtomBarn=4*Math.PI*(meanBRe*meanBRe+meanBIm*meanBIm)/100;
+  const sigmaCohCellBarn=atomCount*sigmaCohPerAtomBarn;
+  const sigmaIncohCellBarn=Math.max(0,sigmaScatCellBarn-sigmaCohCellBarn);
+  const sigmaAttenuationCellBarn=sigmaAbsCellBarn+sigmaIncohCellBarn;
+  const sigmaFullCellBarn=sigmaAttenuationCellBarn+sigmaCohCellBarn;
+
+  // barn / A^3 = cm^-1 because 1 barn = 1e-24 cm^2 and 1 A^3 = 1e-24 cm^3.
+  const muAbsCmInv=sigmaAbsCellBarn/volumeA3;
+  const muCohCmInv=sigmaCohCellBarn/volumeA3;
+  const muIncohCmInv=sigmaIncohCellBarn/volumeA3;
+  const muScatCmInv=sigmaScatCellBarn/volumeA3;
+  const muAttenuationCmInv=muAbsCmInv+muIncohCmInv;
+  const muFullCmInv=muAttenuationCmInv+muCohCmInv;
+  const muTotalCmInv=muAttenuationCmInv; // compatibility alias for UI/transmission
+
+  const absorptionLengthCm=muAbsCmInv>0 ? 1/muAbsCmInv : Infinity;
+  const attenuationLengthCm=muAttenuationCmInv>0 ? 1/muAttenuationCmInv : Infinity;
+  const fullLengthCm=muFullCmInv>0 ? 1/muFullCmInv : Infinity;
+  const coherentLengthCm=muCohCmInv>0 ? 1/muCohCmInv : Infinity;
+  const incoherentLengthCm=muIncohCmInv>0 ? 1/muIncohCmInv : Infinity;
+  const transmissionAbsorptionOnly=Math.exp(-muAbsCmInv*thickness);
+  const transmission=Math.exp(-muAttenuationCmInv*thickness);
+
+  return {
+    wavelengthA:lambda, thicknessCm:thickness, volumeA3, atomCount,
+    meanBReFm:meanBRe,meanBImFm:meanBIm,
+    sigmaCellBarn:sigmaAbsCellBarn,
+    sigmaAbsCellBarn,sigmaCohCellBarn,sigmaIncohCellBarn,sigmaScatCellBarn,
+    sigmaAttenuationCellBarn,sigmaFullCellBarn,
+    muAbsCmInv,muCohCmInv,muIncohCmInv,muScatCmInv,muAttenuationCmInv,muFullCmInv,muTotalCmInv,
+    absorptionLengthCm,coherentLengthCm,incoherentLengthCm,attenuationLengthCm,fullLengthCm,
+    transmissionAbsorptionOnly,transmission,resonanceCaution,
+    elements:[...byElement.values()].sort((a,b)=>(b.absContributionBarn+b.scatContributionBarn)-(a.absContributionBarn+a.scatContributionBarn))
   };
 }
 

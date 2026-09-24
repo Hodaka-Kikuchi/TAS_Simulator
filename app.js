@@ -5,12 +5,22 @@ import {
   linspace, arange, interpExtrap
 } from "./tas-core.js";
 import {RL_calc as RLRes, inferOutOfPlaneHKL, calcResolution} from "./resolution-core.js";
-import {parseCifStructure, nuclearStructureFactorSquared} from "./cif-structure.js";
+import {
+  parseCifStructure, nuclearStructureFactorSquared, setNeutronData, neutronAbsorptionSummary
+} from "./cif-structure.js";
 
 const $ = id => document.getElementById(id);
 const instruments = new Map();
 const backgroundMaterials = new Map();
 const sampleEnvironments = new Map();
+
+async function initializeNeutronData(){
+  const response=await fetch("neutron-data.json",{cache:"no-store"});
+  if(!response.ok) throw new Error(`Failed to load neutron-data.json: HTTP ${response.status}`);
+  const payload=await response.json();
+  setNeutronData(payload);
+  return Object.keys(payload?.elements||{}).length;
+}
 
 // Four fixed background-scattering slots keep the sidebar compact. Each slot
 // now selects a CIF structure loaded from BG_material/*.cif.
@@ -153,7 +163,7 @@ function updateCifUI(){
   if(row) row.classList.remove("hidden");
   const name=$("cifFileName");
   if(name){
-    name.textContent=selectedCifFileName || "No file selected";
+    name.value=selectedCifFileName || "No file selected";
     if(selectedCifStructure){
       const bits=[selectedCifStructure.name];
       if(selectedCifStructure.spaceGroup) bits.push(`Space group: ${selectedCifStructure.spaceGroup}`);
@@ -165,6 +175,7 @@ function updateCifUI(){
   const clearButton=$("cifClearButton");
   if(clearButton) clearButton.disabled=!selectedCifStructure;
   $("sfColorMaxRow")?.classList.toggle("hidden",!hasSelectedCif());
+  updateAbsorptionCalculator();
 }
 
 function syncSfColorMaxControl(source="slider"){
@@ -208,6 +219,11 @@ function loadCifText(text,fileName="generated_structure.cif"){
   // the Sample Space group controls synchronized with the loaded structure.
   const sg=findGeneratorSpaceGroup(parsed);
   if(sg) setSampleSpaceGroup(sg.number,{recalc:false});
+
+  // Keep CIF Generator synchronized with the currently selected sample CIF.
+  // Only editable generator fields are populated; file inputs are never set
+  // programmatically.
+  if(cifSpaceGroups.length) loadParsedCifIntoGenerator(parsed,fileName,{message:false});
 
   updateAutoW();
   updateCifUI();
@@ -376,6 +392,7 @@ let lastGeneratedReflections=[];
 
 function setCifGeneratedReady(ready){
   if($("cifDownload")) $("cifDownload").disabled=!ready;
+  if($("cifDownloadTable")) $("cifDownloadTable").disabled=!ready;
   if($("cifSet")) $("cifSet").disabled=!ready;
 }
 
@@ -573,11 +590,13 @@ function cifGeneratorNumber(id,label,{positive=false,angle=false}={}){
   return v;
 }
 
+function cleanCifBaseName(raw){
+  let name=String(raw||"generated_structure").trim().replace(/[\\/:*?"<>|]+/g,"_");
+  name=name.replace(/\.cif$/i,"");
+  return name || "generated_structure";
+}
 function cleanCifFileName(raw){
-  let name=String(raw||"generated_structure.cif").trim().replace(/[\\/:*?"<>|]+/g,"_");
-  if(!name) name="generated_structure.cif";
-  if(!name.toLowerCase().endsWith(".cif")) name+=".cif";
-  return name;
+  return `${cleanCifBaseName(raw)}.cif`;
 }
 
 function buildGeneratedCif(){
@@ -732,21 +751,38 @@ function reflectionStar(hkl,reciprocalOps){
   return [...map.values()];
 }
 
+function syncCifReflectionBeamFromInstrument(){
+  const e=Number($("energy")?.value);
+  if(!(e>0)) return;
+  if($("cifReflectionEnergy")) $("cifReflectionEnergy").value=e.toFixed(4);
+  if($("cifReflectionWavelength")) $("cifReflectionWavelength").value=(9.044/Math.sqrt(e)).toFixed(5);
+}
+function syncCifReflectionBeamFrom(source){
+  if(source==="wavelength"){
+    const lambda=Number($("cifReflectionWavelength")?.value);
+    if(!(lambda>0)) return;
+    const e=(9.044/lambda)**2;
+    if($("cifReflectionEnergy")) $("cifReflectionEnergy").value=e.toFixed(5);
+  }else{
+    const e=Number($("cifReflectionEnergy")?.value);
+    if(!(e>0)) return;
+    if($("cifReflectionWavelength")) $("cifReflectionWavelength").value=(9.044/Math.sqrt(e)).toFixed(5);
+  }
+  recalculateGeneratedReflections();
+}
 function currentCifReflectionBeam(){
-  // Reflection wavelength follows the fixed-side energy in Instrument configuration.
-  // λ/2 means the second-order wavelength: λ -> λ/2, equivalently E -> 4E.
+  // The Generator starts from Instrument configuration, but Energy/Wavelength
+  // can be changed locally without changing the Instrument setup.
   const energyMode=checkedValue("energyMode") || $("energyMode")?.value;
-  const enteredEnergy=Number($("energy")?.value);
-  if(!(enteredEnergy>0)) throw new Error(`${energyMode||"Fixed"} energy must be greater than zero to calculate reflections.`);
+  let enteredEnergy=Number($("cifReflectionEnergy")?.value);
+  let wavelength=Number($("cifReflectionWavelength")?.value);
+  if(!(enteredEnergy>0) && wavelength>0) enteredEnergy=(9.044/wavelength)**2;
+  if(!(wavelength>0) && enteredEnergy>0) wavelength=9.044/Math.sqrt(enteredEnergy);
+  if(!(enteredEnergy>0) || !(wavelength>0)) throw new Error("Energy and wavelength must be greater than zero to calculate reflections.");
   const lambdaHalf=!!$("cifReflectionLambdaHalf")?.checked;
   const effectiveEnergy=lambdaHalf ? 4*enteredEnergy : enteredEnergy;
-  return {
-    energyMode,
-    enteredEnergy,
-    effectiveEnergy,
-    lambdaHalf,
-    wavelength:9.044/Math.sqrt(effectiveEnergy)
-  };
+  const effectiveWavelength=lambdaHalf ? wavelength/2 : wavelength;
+  return {energyMode,enteredEnergy,effectiveEnergy,lambdaHalf,wavelength:effectiveWavelength,baseWavelength:wavelength};
 }
 
 function currentCifReflectionFilters(){
@@ -902,9 +938,9 @@ function renderCifReflectionTable(){
     tr.classList.toggle("cif-reflection-selected",key===selectedCifReflectionKey);
     const values=[
       `(${r.hkl.join(" ")})`,
-      reflectionNumberText(r.intensity,4),
+      reflectionNumberText(r.intensity/100,4),
       String(r.multiplicity),
-      reflectionNumberText(r.totalIntensity,4),
+      reflectionNumberText(r.totalIntensity/100,4),
       reflectionNumberText(r.twoTheta,4),
       reflectionNumberText(r.q,5),
       reflectionNumberText(r.d,5)
@@ -976,6 +1012,21 @@ function downloadGeneratedCif(text,filename){
   setTimeout(()=>URL.revokeObjectURL(url),0);
 }
 
+function downloadCifReflectionTable(){
+  if(!lastGeneratedReflections.length) throw new Error("No reflections are available to download.");
+  const rows=sortedCifReflections(lastGeneratedReflections,cifReflectionSort);
+  const csv=[
+    ["h","k","l","Intensity |F|^2 (barn)","Multiplicity","Total intensity (barn)","2theta (deg)","Q (A^-1)","d (A)"].join(","),
+    ...rows.map(r=>[r.hkl[0],r.hkl[1],r.hkl[2],r.intensity/100,r.multiplicity,r.totalIntensity/100,r.twoTheta,r.q,r.d].join(","))
+  ].join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=`${cleanCifBaseName(lastGeneratedCifName)}_reflections.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+}
+
 function normalizedSpaceGroupSymbol(value){
   return String(value||"").toLowerCase().replace(/[\s_'".]/g,"");
 }
@@ -991,6 +1042,26 @@ function findGeneratorSpaceGroup(parsed){
   return cifSpaceGroups.find(x=>normalizedSpaceGroupSymbol(x.hm)===sym || normalizedSpaceGroupSymbol(x.hall)===sym) || null;
 }
 
+function loadParsedCifIntoGenerator(parsed,fileName="selected_structure.cif",{message=true}={}){
+  if(!parsed) return false;
+  const sg=findGeneratorSpaceGroup(parsed);
+  if(!sg) return false;
+  const lattice=parsed.lattice || {};
+  for(const key of ["a","b","c","alpha","beta","gamma"]){
+    if(!Number.isFinite(Number(lattice[key]))) return false;
+  }
+  if(!Array.isArray(parsed.asymmetricSites) || !parsed.asymmetricSites.length) return false;
+  if(!$("cifSpaceGroup") || !$("cifAtomRows")) return false;
+  $("cifSpaceGroup").value=String(sg.number);
+  for(const [key,id] of Object.entries(CIF_LATTICE_FIELDS)) if($(id)) $(id).value=String(lattice[key]);
+  replaceCifAtomRows(parsed.asymmetricSites.map(a=>({element:a.element,x:a.x,y:a.y,z:a.z,occupancy:a.occupancy})));
+  if($("cifGeneratedName")) $("cifGeneratedName").value=cleanCifBaseName(fileName);
+  updateCifSpaceGroupInfo();
+  invalidateGeneratedCif("");
+  if(message) setCifGeneratorMessage(`Loaded ${fileName} for editing: #${sg.number} ${sg.hm}, ${parsed.asymmetricSites.length} asymmetric site(s). Press Generate to review the regenerated CIF and reflection table.`);
+  return true;
+}
+
 async function loadCifIntoGenerator(file){
   if(!file) return;
   const text=await file.text();
@@ -1003,13 +1074,7 @@ async function loadCifIntoGenerator(file){
     if(!Number.isFinite(v)) throw new Error(`Could not load ${file.name}: lattice parameter ${key} is missing or invalid.`);
   }
   if(!Array.isArray(parsed.asymmetricSites) || !parsed.asymmetricSites.length) throw new Error(`Could not load asymmetric-unit atoms from ${file.name}.`);
-  $("cifSpaceGroup").value=String(sg.number);
-  for(const [key,id] of Object.entries(CIF_LATTICE_FIELDS)) $(id).value=String(lattice[key]);
-  replaceCifAtomRows(parsed.asymmetricSites.map(a=>({element:a.element,x:a.x,y:a.y,z:a.z,occupancy:a.occupancy})));
-  if($("cifGeneratedName")) $("cifGeneratedName").value=cleanCifFileName(file.name);
-  updateCifSpaceGroupInfo();
-  invalidateGeneratedCif("");
-  setCifGeneratorMessage(`Loaded ${file.name} for editing: #${sg.number} ${sg.hm}, ${parsed.asymmetricSites.length} asymmetric site(s). Press Generate to review the regenerated CIF and reflection table.`);
+  if(!loadParsedCifIntoGenerator(parsed,file.name,{message:true})) throw new Error(`Could not load ${file.name} into CIF Generator.`);
 }
 
 async function initializeCifGenerator(){
@@ -1031,6 +1096,8 @@ async function initializeCifGenerator(){
     copyCurrentLatticeToGenerator();
     addCifAtomRow({element:"",x:0,y:0,z:0,occupancy:1},{invalidate:false});
     updateCifSpaceGroupInfo();
+    syncCifReflectionBeamFromInstrument();
+    if(selectedCifStructure) loadParsedCifIntoGenerator(selectedCifStructure,selectedCifFileName||"selected_structure.cif",{message:false});
 
     setCifGeneratedReady(false);
     clearCifReflectionTable("Press Generate to calculate reflections.");
@@ -1040,6 +1107,9 @@ async function initializeCifGenerator(){
     $("cifSpaceGroupNumber")?.addEventListener("change",jumpToCifSpaceGroupNumber);
     $("cifSpaceGroupNumber")?.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); jumpToCifSpaceGroupNumber(); } });
     $("cifA")?.addEventListener("input",applyCifLatticeConstraints);
+    $("cifGeneratedName")?.addEventListener("change",()=>{
+      $("cifGeneratedName").value=cleanCifBaseName($("cifGeneratedName").value);
+    });
 
     // Any structure-input edit invalidates the reviewed/generated snapshot.
     // Download/Set therefore always operate on exactly what the user last reviewed.
@@ -1066,11 +1136,11 @@ async function initializeCifGenerator(){
     requestAnimationFrame(syncCifOutputPaneHeight);
 
     inputPane?.addEventListener("input",ev=>{
-      if(ev.target?.id==="cifLoadFile") return;
+      if(["cifLoadFile","cifReflectionEnergy","cifReflectionWavelength"].includes(ev.target?.id)) return;
       invalidateGeneratedCif();
     });
     inputPane?.addEventListener("change",ev=>{
-      if(ev.target?.id==="cifLoadFile") return;
+      if(["cifLoadFile","cifReflectionEnergy","cifReflectionWavelength"].includes(ev.target?.id)) return;
       invalidateGeneratedCif();
     });
 
@@ -1099,6 +1169,10 @@ async function initializeCifGenerator(){
       downloadGeneratedCif(lastGeneratedCifText,lastGeneratedCifName);
       setCifGeneratorMessage(`Downloaded ${lastGeneratedCifName}.`);
     });
+    $("cifDownloadTable")?.addEventListener("click",()=>{
+      try{ downloadCifReflectionTable(); }
+      catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
+    });
     $("cifSet")?.addEventListener("click",()=>{
       try{
         if(!lastGeneratedCifText) throw new Error("Press Generate before setting the CIF.");
@@ -1126,11 +1200,13 @@ async function initializeCifGenerator(){
     for(const id of reflectionFilterIds){
       $(id)?.addEventListener("change",recalculateGeneratedReflections);
     }
-    // The reflection wavelength is derived from Instrument configuration, so a
-    // fixed-energy change updates the generated reflection table automatically.
-    $("energy")?.addEventListener("change",recalculateGeneratedReflections);
-    $("energyMode")?.addEventListener("change",recalculateGeneratedReflections);
-    $("instrument")?.addEventListener("change",recalculateGeneratedReflections);
+    $("cifReflectionEnergy")?.addEventListener("change",()=>syncCifReflectionBeamFrom("energy"));
+    $("cifReflectionWavelength")?.addEventListener("change",()=>syncCifReflectionBeamFrom("wavelength"));
+    // Instrument configuration supplies the default Generator beam condition.
+    const syncGeneratorBeam=()=>{ syncCifReflectionBeamFromInstrument(); recalculateGeneratedReflections(); };
+    $("energy")?.addEventListener("change",syncGeneratorBeam);
+    $("energyMode")?.addEventListener("change",syncGeneratorBeam);
+    $("instrument")?.addEventListener("change",syncGeneratorBeam);
     $("S2maxUser")?.addEventListener("change",recalculateGeneratedReflections);
     $("S2maxEffective")?.addEventListener("change",recalculateGeneratedReflections);
     for(const id of ["Uh","Uk","Ul","Vh","Vk","Vl"]){
@@ -1138,7 +1214,7 @@ async function initializeCifGenerator(){
     }
   }catch(err){
     select.innerHTML='<option value="">Space-group data unavailable</option>';
-    for(const id of ["cifLoadExisting","cifGenerate","cifDownload","cifSet","cifSpaceGroupNumber"]){ if($(id)) $(id).disabled=true; }
+    for(const id of ["cifLoadExisting","cifGenerate","cifDownload","cifDownloadTable","cifSet","cifSpaceGroupNumber"]){ if($(id)) $(id).disabled=true; }
     setCifGeneratorMessage(`CIF Generator could not load space-group data: ${err?.message||String(err)}`,true);
   }
 }
@@ -4611,6 +4687,179 @@ function setToolboxFrom(kind){
   }finally{ toolboxUpdating=false; }
 }
 
+// ==================== CIF-based neutron attenuation ====================
+function fixedInstrumentWavelengthA(){
+  const E=num('energy');
+  return E>0 ? Math.sqrt(NEUTRON_E_LAMBDA/E) : NaN;
+}
+
+let absorptionBeamUpdating=false;
+function syncAbsorptionBeamFromInstrument(){
+  if(absorptionBeamUpdating) return;
+  const energy=num('energy');
+  if(!(energy>0)) return;
+  absorptionBeamUpdating=true;
+  try{
+    if($('absorptionEnergy')) $('absorptionEnergy').value=formatAbsorptionNumber(energy,6);
+    if($('absorptionLambda')) $('absorptionLambda').value=formatAbsorptionNumber(Math.sqrt(NEUTRON_E_LAMBDA/energy),6);
+  }finally{ absorptionBeamUpdating=false; }
+}
+
+function syncAbsorptionBeamFrom(kind){
+  if(absorptionBeamUpdating) return;
+  const energyField=$('absorptionEnergy'), lambdaField=$('absorptionLambda');
+  if(!energyField || !lambdaField) return;
+  absorptionBeamUpdating=true;
+  try{
+    if(kind==='energy'){
+      const E=Number(energyField.value);
+      if(E>0) lambdaField.value=formatAbsorptionNumber(Math.sqrt(NEUTRON_E_LAMBDA/E),6);
+    }else{
+      const lambda=Number(lambdaField.value);
+      if(lambda>0) energyField.value=formatAbsorptionNumber(NEUTRON_E_LAMBDA/(lambda*lambda),6);
+    }
+  }finally{ absorptionBeamUpdating=false; }
+}
+
+function attenuationWavelengthA(){
+  const v=Number($('absorptionLambda')?.value);
+  return v>0 ? v : fixedInstrumentWavelengthA();
+}
+
+function attenuationEnergyMeV(){
+  const v=Number($('absorptionEnergy')?.value);
+  if(v>0) return v;
+  const lambda=attenuationWavelengthA();
+  return lambda>0 ? NEUTRON_E_LAMBDA/(lambda*lambda) : NaN;
+}
+
+function formatAbsorptionNumber(value,digits=5){
+  const v=Number(value);
+  if(!Number.isFinite(v)) return '—';
+  if(v===0) return '0';
+  if(Math.abs(v)>=1e4 || Math.abs(v)<1e-3) return v.toExponential(4);
+  return v.toFixed(digits).replace(/0+$/,'').replace(/\.$/,'');
+}
+
+function setAbsorptionThicknessFromTransmissionPercent(percent){
+  const pct=Number(percent);
+  if(!(pct>0) || pct>100) throw new Error('Transmission must be greater than 0% and no more than 100%.');
+  if(!selectedCifStructure) throw new Error('Select a CIF before solving thickness from transmission.');
+  const lambda=attenuationWavelengthA();
+  const base=neutronAbsorptionSummary(selectedCifStructure,lambda,0);
+  const mu=Number(base.muAttenuationCmInv ?? base.muTotalCmInv);
+  let thicknessMm=0;
+  if(pct<100){
+    if(!(mu>0)) throw new Error('This sample has zero calculated attenuation, so a transmission below 100% cannot be reached.');
+    thicknessMm=-Math.log(pct/100)/mu*10;
+  }
+  const entry=$('absorptionThickness'), slider=$('absorptionThicknessSlider');
+  if(entry) entry.value=formatAbsorptionNumber(thicknessMm,5);
+  if(slider){
+    if(thicknessMm>Number(slider.max)) slider.max=String(Math.ceil(thicknessMm*12)/10);
+    slider.value=String(thicknessMm);
+  }
+  updateAbsorptionCalculator();
+}
+
+function updateAbsorptionCalculator(){
+  const host=$('absorptionResults');
+  const status=$('absorptionCifStatus');
+  const energyField=$('absorptionEnergy');
+  const lambdaField=$('absorptionLambda');
+  const thicknessEntry=$('absorptionThickness');
+  const thicknessSlider=$('absorptionThicknessSlider');
+  const transmissionOut=$('absorptionTransmission');
+  const plot=$('absorptionPlot');
+  if(!host || !status || !energyField || !lambdaField || !thicknessEntry || !thicknessSlider || !transmissionOut) return;
+
+  const lambda=attenuationWavelengthA();
+  const energyMeV=attenuationEnergyMeV();
+  status.value=selectedCifFileName || selectedCifStructure?.name || 'No CIF selected';
+
+  if(!selectedCifStructure){
+    transmissionOut.value='';
+    host.innerHTML='';
+    if(plot && window.Plotly) Plotly.purge(plot);
+    return;
+  }
+
+  let thicknessMm=Math.max(0,Number(thicknessEntry.value)||0);
+  thicknessEntry.value=String(thicknessMm);
+  try{
+    const r=neutronAbsorptionSummary(selectedCifStructure,lambda,thicknessMm/10);
+    const transPct=100*r.transmission;
+    const absTransPct=100*r.transmissionAbsorptionOnly;
+    if(document.activeElement!==transmissionOut) transmissionOut.value=formatAbsorptionNumber(transPct,3);
+
+    const muAtt=Number(r.muAttenuationCmInv ?? r.muTotalCmInv);
+    const t50Mm=muAtt>0 ? Math.log(2)/muAtt*10 : 20;
+    let sliderMax=Math.max(t50Mm, thicknessMm>t50Mm ? thicknessMm*1.15 : t50Mm);
+    if(!(sliderMax>0) || !Number.isFinite(sliderMax)) sliderMax=20;
+    sliderMax=Math.min(1000,Math.max(0.5,sliderMax));
+    sliderMax=Math.ceil(sliderMax*10)/10;
+    thicknessSlider.max=String(sliderMax);
+    thicknessSlider.value=String(Math.min(thicknessMm,sliderMax));
+
+    const rows=r.elements.map(e=>{
+      const absMu=(Number(e.absContributionBarn)||0)/r.volumeA3;
+      const scatMu=(Number(e.scatContributionBarn)||0)/r.volumeA3;
+      const ratioDen=(r.muAbsCmInv+r.muScatCmInv) || 1;
+      return `<tr><td>${e.element}</td><td>${formatAbsorptionNumber(e.count,4)}</td><td>${formatAbsorptionNumber(absMu,5)}</td><td>${formatAbsorptionNumber(scatMu,5)}</td><td>${formatAbsorptionNumber(100*(absMu+scatMu)/ratioDen,2)}%</td></tr>`;
+    }).join('');
+
+    const lengthText=v=>Number.isFinite(v)?`${formatAbsorptionNumber(v,4)} cm`:'∞';
+    host.innerHTML=`
+      <div class="absorption-summary-cards">
+        <div class="absorption-summary-card"><div class="absorption-summary-label">Cell volume</div><div class="absorption-summary-value">${formatAbsorptionNumber(r.volumeA3,4)} Å³</div></div>
+        <div class="absorption-summary-card absorption-summary-wide">
+          <div class="absorption-summary-label">Scattering cross section</div>
+          <div class="absorption-summary-subgrid">
+            <div><span>Abs</span><strong>${formatAbsorptionNumber(r.muAbsCmInv,5)} cm⁻¹</strong></div>
+            <div><span>Coh</span><strong>${formatAbsorptionNumber(r.muCohCmInv,5)} cm⁻¹</strong></div>
+            <div><span>Incoh</span><strong>${formatAbsorptionNumber(r.muIncohCmInv,5)} cm⁻¹</strong></div>
+          </div>
+        </div>
+        <div class="absorption-summary-card absorption-summary-wide">
+          <div class="absorption-summary-label">1/e penetration depth</div>
+          <div class="absorption-summary-subgrid">
+            <div><span>Abs</span><strong>${lengthText(r.absorptionLengthCm)}</strong></div>
+            <div><span>Abs + Incoh</span><strong>${lengthText(r.attenuationLengthCm)}</strong></div>
+            <div><span>Abs + Incoh + Coh</span><strong>${lengthText(r.fullLengthCm)}</strong></div>
+          </div>
+        </div>
+        <div class="absorption-summary-card">
+          <div class="absorption-summary-label">Transmission</div>
+          <div class="absorption-summary-subgrid absorption-summary-subgrid-2">
+            <div><span>Abs</span><strong>${formatAbsorptionNumber(absTransPct,3)}%</strong></div>
+            <div><span>Total</span><strong>${formatAbsorptionNumber(transPct,3)}%</strong></div>
+          </div>
+        </div>
+      </div>
+      <div class="absorption-table-wrap"><table class="absorption-table absorption-atom-table"><thead><tr><th>Atom</th><th>Atoms / cell</th><th>Abs (cm⁻¹)</th><th>Scat total (cm⁻¹)</th><th>Ratio</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+
+    if(plot && window.Plotly){
+      const n=241;
+      const x=Array.from({length:n},(_,i)=>sliderMax*i/(n-1));
+      const y=x.map(mm=>100*Math.exp(-muAtt*mm/10));
+      Plotly.react(plot,[
+        {x,y,mode:'lines',name:'Total transmission',hovertemplate:'Thickness %{x:.3f} mm<br>Transmission %{y:.3f}%<extra></extra>'},
+        {x:[thicknessMm],y:[transPct],mode:'markers',name:'Selected thickness',marker:{size:10},hovertemplate:'Thickness %{x:.3f} mm<br>Transmission %{y:.3f}%<extra></extra>'}
+      ],{
+        margin:{l:68,r:20,t:28,b:58},
+        xaxis:{title:'Sample thickness (mm)',range:[0,sliderMax],zeroline:false},
+        yaxis:{title:'Transmission (%)',range:[0,100],zeroline:false},
+        showlegend:false,
+        uirevision:'absorptionPlot'
+      },{responsive:true,displaylogo:false});
+    }
+  }catch(err){
+    transmissionOut.value='';
+    host.innerHTML=`<div class="absorption-warning">${String(err?.message||err)}</div>`;
+    if(plot && window.Plotly) Plotly.purge(plot);
+  }
+}
+
 // ==================== Powder Q / hw / 2theta helper ====================
 let powderRelationDriver='powderTwoTheta';
 function powderWavevectors(hw){
@@ -4718,7 +4967,7 @@ function setupAppHeader(){
 
 function rightPanelControls(){
   return [...document.querySelectorAll('#qePanel input[id], #qePanel select[id], #resolutionPanel input[id], #resolutionPanel select[id], #toolboxPanel input[id], #toolboxPanel select[id]')]
-    .filter(el=>el.type!=='button' && el.type!=='submit');
+    .filter(el=>el.type!=='button' && el.type!=='submit' && el.type!=='file');
 }
 
 function saveRightPanelState(){
@@ -4796,7 +5045,7 @@ function saveLeftPanelState(){
 }
 
 function setSavedControl(id,value,{dispatchChange=false}={}){
-  const el=$(id); if(!el || value===undefined) return false;
+  const el=$(id); if(!el || value===undefined || el.type==='file') return false;
   if(el.type==='checkbox'||el.type==='radio') el.checked=!!value;
   else if(el.tagName==='SELECT'){
     if(![...el.options].some(o=>o.value===String(value))) return false;
@@ -4915,10 +5164,26 @@ function mergeLegacyRangeData(){
 }
 async function initialize(){
   clearError(); fillCrystal('monoCrystal','dMono');fillCrystal('anaCrystal','dAna');updateModeVisibility();updateEnergyLabel();updateCalcMode();updateSupermirrorUI();updateAutoW();
-  setStatus('instrument / BG_material / sample_environments loading...');
+
+  // Register the main tabs before any optional async data source is loaded.
+  // A missing optional directory or CIF-generator asset must never leave the
+  // application stuck with only the initially visible Q-E panel.
+  $('tabQe')?.addEventListener('click',()=>setActiveTab('qe'));
+  $('tabResolution')?.addEventListener('click',()=>setActiveTab('resolution'));
+  $('tabToolbox')?.addEventListener('click',()=>setActiveTab('toolbox'));
+  $('tabCifGenerator')?.addEventListener('click',()=>setActiveTab('cif-generator'));
+
+  setStatus('neutron data / instrument / BG_material / sample_environments loading...');
+  let nNeutron=0;
+  try{ nNeutron=await initializeNeutronData(); }
+  catch(err){ console.warn('Neutron data load warning:',err); }
   const nInstrument=await loadJsonDirectory('instrument',instruments);
   const [nBG,nSE]=await Promise.all([tryLoadCifDir('BG_material',backgroundMaterials),tryLoadDir('sample_environments',sampleEnvironments)]);
-  await tryLoadDir('instruments',legacyRangeInstruments); // migration compatibility only
+  // Only probe the legacy instruments/ directory when at least one unified
+  // instrument still needs legacy Q-E range data. This avoids needless 404s
+  // on projects which have already migrated fully to instrument/.
+  const needsLegacy=[...instruments.values()].some(inst=>!(Array.isArray(inst.S2_limits)||(inst.qe_range&&(Array.isArray(inst.qe_range.S2_limits)||Array.isArray(inst.qe_range.configuration)))));
+  if(needsLegacy) await tryLoadDir('instruments',legacyRangeInstruments);
   mergeLegacyRangeData();
   refreshSelect(instruments,$('instrument'),null);setBackgroundCount(Number($('backgroundCount')?.value)||1);for(const slot of darkAssetSlots()) refreshDarkEnvironmentSelect(slot);
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
@@ -4931,14 +5196,53 @@ async function initialize(){
   for(const slot of darkAssetSlots()) updateDarkReferenceUI(slot);
   // Geometry starts at the current Reference Q HKL while preserving the current energy transfer.
   setGeometryTargetHKL([num("refh"),num("refk"),num("refl")]);
-  setPropagationVectorCount(propagationVectorIndices().length); setDarkAssetCount(darkAssetSlots().length); updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls(); updateCifUI(); await initializeCifGenerator();
+  setPropagationVectorCount(propagationVectorIndices().length); setDarkAssetCount(darkAssetSlots().length); updatePropagationVectorLabels(); ensureExtendedToolboxUI(); ensureNuclearLabelControl(); ensureQESliderControls(); updateCifUI();
+  try{ await initializeCifGenerator(); }
+  catch(err){ console.warn('CIF Generator initialization warning:',err); }
   // Right-side controls are restored only after dynamic Toolbox controls exist and
   // after the default geometry target has been initialized, so saved values win.
   const restoredRightState=restoreRightPanelState();
   syncSfColorMaxControl("restore");
   enableRightPanelPersistence();
-  $('tabQe').addEventListener('click',()=>setActiveTab('qe'));$('tabResolution').addEventListener('click',()=>setActiveTab('resolution'));$('tabToolbox').addEventListener('click',()=>setActiveTab('toolbox'));$('tabCifGenerator').addEventListener('click',()=>setActiveTab('cif-generator'));
   for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity','toolMass','toolField','toolJ','toolCal']) $(id).addEventListener('input',()=>setToolboxFrom(id));
+  $('absorptionThickness')?.addEventListener('input',()=>{
+    const slider=$('absorptionThicknessSlider');
+    const entry=$('absorptionThickness');
+    if(slider && entry){
+      const v=Math.max(0,Number(entry.value)||0);
+      if(v>Number(slider.max)) slider.max=String(v);
+      slider.value=String(v);
+    }
+    updateAbsorptionCalculator();
+  });
+  $('absorptionThicknessSlider')?.addEventListener('input',()=>{
+    const slider=$('absorptionThicknessSlider'), entry=$('absorptionThickness');
+    if(slider && entry) entry.value=Number(slider.value).toFixed(2).replace(/\.?0+$/,'');
+    updateAbsorptionCalculator();
+  });
+  $('absorptionTransmission')?.addEventListener('change',()=>{
+    const field=$('absorptionTransmission');
+    try{ setAbsorptionThicknessFromTransmissionPercent(field?.value); }
+    catch(err){ showError(err); updateAbsorptionCalculator(); }
+  });
+  $('absorptionTransmission')?.addEventListener('keydown',event=>{
+    if(event.key==='Enter'){ event.preventDefault(); event.currentTarget.blur(); }
+  });
+  $('absorptionCifSelectButton')?.addEventListener('click',()=>$('absorptionCifFileInput')?.click());
+  $('absorptionCifFileInput')?.addEventListener('change',async()=>{
+    const input=$('absorptionCifFileInput');
+    const file=input?.files?.[0];
+    if(!file) return;
+    try{ await selectCifFile(file); }
+    catch(err){ showError(err); }
+    finally{ if(input) input.value=''; }
+  });
+  $('absorptionEnergy')?.addEventListener('input',()=>{ syncAbsorptionBeamFrom('energy'); updateAbsorptionCalculator(); });
+  $('absorptionLambda')?.addEventListener('input',()=>{ syncAbsorptionBeamFrom('lambda'); updateAbsorptionCalculator(); });
+  $('energy')?.addEventListener('input',()=>{ syncAbsorptionBeamFromInstrument(); updateAbsorptionCalculator(); });
+  for(const id of ['energy','energyMode','instrument']) $(id)?.addEventListener('change',()=>{ syncAbsorptionBeamFromInstrument(); updateAbsorptionCalculator(); });
+  syncAbsorptionBeamFromInstrument();
+  updateAbsorptionCalculator();
   $('powderQ').addEventListener('input',()=>updatePowderRelation('powderQ'));$('powderTwoTheta').addEventListener('input',()=>updatePowderRelation('powderTwoTheta'));$('powderHW').addEventListener('input',()=>updatePowderRelation(powderRelationDriver));
   $('hwEntry').addEventListener('change',()=>{if(singleCache){const i=nearestHWIndex(singleCache,Number($('hwEntry').value));renderSingle(singleCache,i);saveRightPanelState();}});
   $('s2Slider').addEventListener('input',()=>{$('s2Entry').value=Number($('s2Slider').value).toFixed(1);if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
@@ -4985,6 +5289,6 @@ async function initialize(){
     syncGeometryTargetToOrientationReference();
   });
   $('addDark')?.addEventListener('change',updateGeometryQuickTargetButtons);
-  setStatus(`${nInstrument} instrument(s), ${nBG} BG CIF material(s), ${nSE} sample environment(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
+  setStatus(`${nInstrument} instrument(s), ${nBG} BG CIF material(s), ${nSE} sample environment(s), ${nNeutron} neutron-data record(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
 }
 initialize().catch(err=>{showError(err);setStatus('Configuration loading failed. Open the project through an HTTP server.');});

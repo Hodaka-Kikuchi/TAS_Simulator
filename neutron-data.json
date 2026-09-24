@@ -1,0 +1,1197 @@
+{
+  "source": {
+    "name": "NIST Center for Neutron Research — Neutron scattering lengths and cross sections",
+    "url": "https://www.ncnr.nist.gov/resources/n-lengths/list.html",
+    "reference_velocity_m_s": 2200,
+    "reference_wavelength_A": 1.798,
+    "absorption_scaling": "1/v approximation: sigma_abs(lambda)=sigma_abs(2200 m/s)*lambda/1.798 A",
+    "note": "Coherent scattering lengths preserve the values previously embedded in cif-structure.js for numerical compatibility. Cross sections are central values from the NIST/NCNR table."
+  },
+  "elements": {
+    "H": {
+      "b_coherent_fm": {
+        "real": -3.739,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.7568,
+      "sigma_incoherent_barn": 80.26,
+      "sigma_scattering_barn": 82.02,
+      "sigma_absorption_2200_barn": 0.3326,
+      "resonance_caution": false
+    },
+    "D": {
+      "b_coherent_fm": {
+        "real": 6.671,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 5.592,
+      "sigma_incoherent_barn": 2.05,
+      "sigma_scattering_barn": 7.64,
+      "sigma_absorption_2200_barn": 0.000519,
+      "resonance_caution": false
+    },
+    "2H": {
+      "b_coherent_fm": {
+        "real": 6.671,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 5.592,
+      "sigma_incoherent_barn": 2.05,
+      "sigma_scattering_barn": 7.64,
+      "sigma_absorption_2200_barn": 0.000519,
+      "resonance_caution": false
+    },
+    "He": {
+      "b_coherent_fm": {
+        "real": 3.26,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.34,
+      "sigma_incoherent_barn": 0,
+      "sigma_scattering_barn": 1.34,
+      "sigma_absorption_2200_barn": 0.00747,
+      "resonance_caution": false
+    },
+    "Li": {
+      "b_coherent_fm": {
+        "real": -1.9,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 0.454,
+      "sigma_incoherent_barn": 0.92,
+      "sigma_scattering_barn": 1.37,
+      "sigma_absorption_2200_barn": 70.5,
+      "resonance_caution": false
+    },
+    "Be": {
+      "b_coherent_fm": {
+        "real": 7.79,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.63,
+      "sigma_incoherent_barn": 0.0018,
+      "sigma_scattering_barn": 7.63,
+      "sigma_absorption_2200_barn": 0.0076,
+      "resonance_caution": false
+    },
+    "B": {
+      "b_coherent_fm": {
+        "real": 5.3,
+        "imag": -0.213
+      },
+      "sigma_coherent_barn": 3.54,
+      "sigma_incoherent_barn": 1.7,
+      "sigma_scattering_barn": 5.24,
+      "sigma_absorption_2200_barn": 767,
+      "resonance_caution": false
+    },
+    "C": {
+      "b_coherent_fm": {
+        "real": 6.646,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 5.551,
+      "sigma_incoherent_barn": 0.001,
+      "sigma_scattering_barn": 5.551,
+      "sigma_absorption_2200_barn": 0.0035,
+      "resonance_caution": false
+    },
+    "N": {
+      "b_coherent_fm": {
+        "real": 9.36,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 11.01,
+      "sigma_incoherent_barn": 0.5,
+      "sigma_scattering_barn": 11.51,
+      "sigma_absorption_2200_barn": 1.9,
+      "resonance_caution": false
+    },
+    "O": {
+      "b_coherent_fm": {
+        "real": 5.803,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.232,
+      "sigma_incoherent_barn": 0.0008,
+      "sigma_scattering_barn": 4.232,
+      "sigma_absorption_2200_barn": 0.00019,
+      "resonance_caution": false
+    },
+    "F": {
+      "b_coherent_fm": {
+        "real": 5.654,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.017,
+      "sigma_incoherent_barn": 0.0008,
+      "sigma_scattering_barn": 4.018,
+      "sigma_absorption_2200_barn": 0.0096,
+      "resonance_caution": false
+    },
+    "Ne": {
+      "b_coherent_fm": {
+        "real": 4.566,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 2.62,
+      "sigma_incoherent_barn": 0.008,
+      "sigma_scattering_barn": 2.628,
+      "sigma_absorption_2200_barn": 0.039,
+      "resonance_caution": false
+    },
+    "Na": {
+      "b_coherent_fm": {
+        "real": 3.63,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.66,
+      "sigma_incoherent_barn": 1.62,
+      "sigma_scattering_barn": 3.28,
+      "sigma_absorption_2200_barn": 0.53,
+      "resonance_caution": false
+    },
+    "Mg": {
+      "b_coherent_fm": {
+        "real": 5.375,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 3.631,
+      "sigma_incoherent_barn": 0.08,
+      "sigma_scattering_barn": 3.71,
+      "sigma_absorption_2200_barn": 0.063,
+      "resonance_caution": false
+    },
+    "Al": {
+      "b_coherent_fm": {
+        "real": 3.449,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.495,
+      "sigma_incoherent_barn": 0.0082,
+      "sigma_scattering_barn": 1.503,
+      "sigma_absorption_2200_barn": 0.231,
+      "resonance_caution": false
+    },
+    "Si": {
+      "b_coherent_fm": {
+        "real": 4.1491,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 2.163,
+      "sigma_incoherent_barn": 0.004,
+      "sigma_scattering_barn": 2.167,
+      "sigma_absorption_2200_barn": 0.171,
+      "resonance_caution": false
+    },
+    "P": {
+      "b_coherent_fm": {
+        "real": 5.13,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 3.307,
+      "sigma_incoherent_barn": 0.005,
+      "sigma_scattering_barn": 3.312,
+      "sigma_absorption_2200_barn": 0.172,
+      "resonance_caution": false
+    },
+    "S": {
+      "b_coherent_fm": {
+        "real": 2.847,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.0186,
+      "sigma_incoherent_barn": 0.007,
+      "sigma_scattering_barn": 1.026,
+      "sigma_absorption_2200_barn": 0.53,
+      "resonance_caution": false
+    },
+    "Cl": {
+      "b_coherent_fm": {
+        "real": 9.577,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 11.5257,
+      "sigma_incoherent_barn": 5.3,
+      "sigma_scattering_barn": 16.8,
+      "sigma_absorption_2200_barn": 33.5,
+      "resonance_caution": false
+    },
+    "Ar": {
+      "b_coherent_fm": {
+        "real": 1.909,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 0.458,
+      "sigma_incoherent_barn": 0.225,
+      "sigma_scattering_barn": 0.683,
+      "sigma_absorption_2200_barn": 0.675,
+      "resonance_caution": false
+    },
+    "K": {
+      "b_coherent_fm": {
+        "real": 3.67,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.69,
+      "sigma_incoherent_barn": 0.27,
+      "sigma_scattering_barn": 1.96,
+      "sigma_absorption_2200_barn": 2.1,
+      "resonance_caution": false
+    },
+    "Ca": {
+      "b_coherent_fm": {
+        "real": 4.7,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 2.78,
+      "sigma_incoherent_barn": 0.05,
+      "sigma_scattering_barn": 2.83,
+      "sigma_absorption_2200_barn": 0.43,
+      "resonance_caution": false
+    },
+    "Sc": {
+      "b_coherent_fm": {
+        "real": 12.29,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 19,
+      "sigma_incoherent_barn": 4.5,
+      "sigma_scattering_barn": 23.5,
+      "sigma_absorption_2200_barn": 27.5,
+      "resonance_caution": false
+    },
+    "Ti": {
+      "b_coherent_fm": {
+        "real": -3.438,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.485,
+      "sigma_incoherent_barn": 2.87,
+      "sigma_scattering_barn": 4.35,
+      "sigma_absorption_2200_barn": 6.09,
+      "resonance_caution": false
+    },
+    "V": {
+      "b_coherent_fm": {
+        "real": -0.3824,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 0.0184,
+      "sigma_incoherent_barn": 5.08,
+      "sigma_scattering_barn": 5.1,
+      "sigma_absorption_2200_barn": 5.08,
+      "resonance_caution": false
+    },
+    "Cr": {
+      "b_coherent_fm": {
+        "real": 3.635,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.66,
+      "sigma_incoherent_barn": 1.83,
+      "sigma_scattering_barn": 3.49,
+      "sigma_absorption_2200_barn": 3.05,
+      "resonance_caution": false
+    },
+    "Mn": {
+      "b_coherent_fm": {
+        "real": -3.73,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 1.75,
+      "sigma_incoherent_barn": 0.4,
+      "sigma_scattering_barn": 2.15,
+      "sigma_absorption_2200_barn": 13.3,
+      "resonance_caution": false
+    },
+    "Fe": {
+      "b_coherent_fm": {
+        "real": 9.45,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 11.22,
+      "sigma_incoherent_barn": 0.4,
+      "sigma_scattering_barn": 11.62,
+      "sigma_absorption_2200_barn": 2.56,
+      "resonance_caution": false
+    },
+    "Co": {
+      "b_coherent_fm": {
+        "real": 2.49,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 0.779,
+      "sigma_incoherent_barn": 4.8,
+      "sigma_scattering_barn": 5.6,
+      "sigma_absorption_2200_barn": 37.18,
+      "resonance_caution": false
+    },
+    "Ni": {
+      "b_coherent_fm": {
+        "real": 10.3,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 13.3,
+      "sigma_incoherent_barn": 5.2,
+      "sigma_scattering_barn": 18.5,
+      "sigma_absorption_2200_barn": 4.49,
+      "resonance_caution": false
+    },
+    "Cu": {
+      "b_coherent_fm": {
+        "real": 7.718,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.485,
+      "sigma_incoherent_barn": 0.55,
+      "sigma_scattering_barn": 8.03,
+      "sigma_absorption_2200_barn": 3.78,
+      "resonance_caution": false
+    },
+    "Zn": {
+      "b_coherent_fm": {
+        "real": 5.68,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.054,
+      "sigma_incoherent_barn": 0.077,
+      "sigma_scattering_barn": 4.131,
+      "sigma_absorption_2200_barn": 1.11,
+      "resonance_caution": false
+    },
+    "Ga": {
+      "b_coherent_fm": {
+        "real": 7.288,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.675,
+      "sigma_incoherent_barn": 0.16,
+      "sigma_scattering_barn": 6.83,
+      "sigma_absorption_2200_barn": 2.75,
+      "resonance_caution": false
+    },
+    "Ge": {
+      "b_coherent_fm": {
+        "real": 8.185,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 8.42,
+      "sigma_incoherent_barn": 0.18,
+      "sigma_scattering_barn": 8.6,
+      "sigma_absorption_2200_barn": 2.2,
+      "resonance_caution": false
+    },
+    "As": {
+      "b_coherent_fm": {
+        "real": 6.58,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 5.44,
+      "sigma_incoherent_barn": 0.06,
+      "sigma_scattering_barn": 5.5,
+      "sigma_absorption_2200_barn": 4.5,
+      "resonance_caution": false
+    },
+    "Se": {
+      "b_coherent_fm": {
+        "real": 7.97,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.98,
+      "sigma_incoherent_barn": 0.32,
+      "sigma_scattering_barn": 8.3,
+      "sigma_absorption_2200_barn": 11.7,
+      "resonance_caution": false
+    },
+    "Br": {
+      "b_coherent_fm": {
+        "real": 6.795,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 5.8,
+      "sigma_incoherent_barn": 0.1,
+      "sigma_scattering_barn": 5.9,
+      "sigma_absorption_2200_barn": 6.9,
+      "resonance_caution": false
+    },
+    "Kr": {
+      "b_coherent_fm": {
+        "real": 7.81,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.67,
+      "sigma_incoherent_barn": 0.01,
+      "sigma_scattering_barn": 7.68,
+      "sigma_absorption_2200_barn": 25.0,
+      "resonance_caution": false
+    },
+    "Rb": {
+      "b_coherent_fm": {
+        "real": 7.09,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.32,
+      "sigma_incoherent_barn": 0.5,
+      "sigma_scattering_barn": 6.8,
+      "sigma_absorption_2200_barn": 0.38,
+      "resonance_caution": false
+    },
+    "Sr": {
+      "b_coherent_fm": {
+        "real": 7.02,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.19,
+      "sigma_incoherent_barn": 0.06,
+      "sigma_scattering_barn": 6.25,
+      "sigma_absorption_2200_barn": 1.28,
+      "resonance_caution": false
+    },
+    "Y": {
+      "b_coherent_fm": {
+        "real": 7.75,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.55,
+      "sigma_incoherent_barn": 0.15,
+      "sigma_scattering_barn": 7.7,
+      "sigma_absorption_2200_barn": 1.28,
+      "resonance_caution": false
+    },
+    "Zr": {
+      "b_coherent_fm": {
+        "real": 7.16,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.44,
+      "sigma_incoherent_barn": 0.02,
+      "sigma_scattering_barn": 6.46,
+      "sigma_absorption_2200_barn": 0.185,
+      "resonance_caution": false
+    },
+    "Nb": {
+      "b_coherent_fm": {
+        "real": 7.054,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.253,
+      "sigma_incoherent_barn": 0.0024,
+      "sigma_scattering_barn": 6.255,
+      "sigma_absorption_2200_barn": 1.15,
+      "resonance_caution": false
+    },
+    "Mo": {
+      "b_coherent_fm": {
+        "real": 6.715,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 5.67,
+      "sigma_incoherent_barn": 0.04,
+      "sigma_scattering_barn": 5.71,
+      "sigma_absorption_2200_barn": 2.48,
+      "resonance_caution": false
+    },
+    "Tc": {
+      "b_coherent_fm": {
+        "real": 6.8,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 5.8,
+      "sigma_incoherent_barn": 0.5,
+      "sigma_scattering_barn": 6.3,
+      "sigma_absorption_2200_barn": 20.0,
+      "resonance_caution": false
+    },
+    "Ru": {
+      "b_coherent_fm": {
+        "real": 7.03,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.21,
+      "sigma_incoherent_barn": 0.4,
+      "sigma_scattering_barn": 6.6,
+      "sigma_absorption_2200_barn": 2.56,
+      "resonance_caution": false
+    },
+    "Rh": {
+      "b_coherent_fm": {
+        "real": 5.88,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.34,
+      "sigma_incoherent_barn": 0.3,
+      "sigma_scattering_barn": 4.6,
+      "sigma_absorption_2200_barn": 144.8,
+      "resonance_caution": false
+    },
+    "Pd": {
+      "b_coherent_fm": {
+        "real": 5.91,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.39,
+      "sigma_incoherent_barn": 0.093,
+      "sigma_scattering_barn": 4.48,
+      "sigma_absorption_2200_barn": 6.9,
+      "resonance_caution": false
+    },
+    "Ag": {
+      "b_coherent_fm": {
+        "real": 5.922,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.407,
+      "sigma_incoherent_barn": 0.58,
+      "sigma_scattering_barn": 4.99,
+      "sigma_absorption_2200_barn": 63.3,
+      "resonance_caution": false
+    },
+    "Cd": {
+      "b_coherent_fm": {
+        "real": 4.87,
+        "imag": -0.7
+      },
+      "sigma_coherent_barn": 3.04,
+      "sigma_incoherent_barn": 3.46,
+      "sigma_scattering_barn": 6.5,
+      "sigma_absorption_2200_barn": 2520.0,
+      "resonance_caution": true
+    },
+    "In": {
+      "b_coherent_fm": {
+        "real": 4.065,
+        "imag": -0.0539
+      },
+      "sigma_coherent_barn": 2.08,
+      "sigma_incoherent_barn": 0.54,
+      "sigma_scattering_barn": 2.62,
+      "sigma_absorption_2200_barn": 193.8,
+      "resonance_caution": false
+    },
+    "Sn": {
+      "b_coherent_fm": {
+        "real": 6.225,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.871,
+      "sigma_incoherent_barn": 0.022,
+      "sigma_scattering_barn": 4.892,
+      "sigma_absorption_2200_barn": 0.626,
+      "resonance_caution": false
+    },
+    "Sb": {
+      "b_coherent_fm": {
+        "real": 5.57,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 3.9,
+      "sigma_incoherent_barn": 0.007,
+      "sigma_scattering_barn": 3.9,
+      "sigma_absorption_2200_barn": 4.91,
+      "resonance_caution": false
+    },
+    "Te": {
+      "b_coherent_fm": {
+        "real": 5.8,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 4.23,
+      "sigma_incoherent_barn": 0.09,
+      "sigma_scattering_barn": 4.32,
+      "sigma_absorption_2200_barn": 4.7,
+      "resonance_caution": false
+    },
+    "I": {
+      "b_coherent_fm": {
+        "real": 5.28,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 3.5,
+      "sigma_incoherent_barn": 0.31,
+      "sigma_scattering_barn": 3.81,
+      "sigma_absorption_2200_barn": 6.15,
+      "resonance_caution": false
+    },
+    "Xe": {
+      "b_coherent_fm": {
+        "real": 4.92,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 2.96,
+      "sigma_incoherent_barn": 0.0,
+      "sigma_scattering_barn": null,
+      "sigma_absorption_2200_barn": 23.9,
+      "resonance_caution": false
+    },
+    "Cs": {
+      "b_coherent_fm": {
+        "real": 5.42,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 3.69,
+      "sigma_incoherent_barn": 0.21,
+      "sigma_scattering_barn": 3.9,
+      "sigma_absorption_2200_barn": 29.0,
+      "resonance_caution": false
+    },
+    "Ba": {
+      "b_coherent_fm": {
+        "real": 5.07,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 3.23,
+      "sigma_incoherent_barn": 0.15,
+      "sigma_scattering_barn": 3.38,
+      "sigma_absorption_2200_barn": 1.1,
+      "resonance_caution": false
+    },
+    "La": {
+      "b_coherent_fm": {
+        "real": 8.24,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 8.53,
+      "sigma_incoherent_barn": 1.13,
+      "sigma_scattering_barn": 9.66,
+      "sigma_absorption_2200_barn": 8.97,
+      "resonance_caution": true
+    },
+    "Ce": {
+      "b_coherent_fm": {
+        "real": 4.84,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 2.94,
+      "sigma_incoherent_barn": 0.001,
+      "sigma_scattering_barn": 2.94,
+      "sigma_absorption_2200_barn": 0.63,
+      "resonance_caution": true
+    },
+    "Pr": {
+      "b_coherent_fm": {
+        "real": 4.58,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 2.64,
+      "sigma_incoherent_barn": 0.015,
+      "sigma_scattering_barn": 2.66,
+      "sigma_absorption_2200_barn": 11.5,
+      "resonance_caution": true
+    },
+    "Nd": {
+      "b_coherent_fm": {
+        "real": 7.69,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.43,
+      "sigma_incoherent_barn": 9.2,
+      "sigma_scattering_barn": 16.6,
+      "sigma_absorption_2200_barn": 50.5,
+      "resonance_caution": true
+    },
+    "Pm": {
+      "b_coherent_fm": {
+        "real": 12.6,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 20.0,
+      "sigma_incoherent_barn": 1.3,
+      "sigma_scattering_barn": 21.3,
+      "sigma_absorption_2200_barn": 168.4,
+      "resonance_caution": true
+    },
+    "Sm": {
+      "b_coherent_fm": {
+        "real": 0.8,
+        "imag": -1.65
+      },
+      "sigma_coherent_barn": 0.422,
+      "sigma_incoherent_barn": 39.0,
+      "sigma_scattering_barn": 39.0,
+      "sigma_absorption_2200_barn": 5922.0,
+      "resonance_caution": true
+    },
+    "Eu": {
+      "b_coherent_fm": {
+        "real": 7.22,
+        "imag": -1.26
+      },
+      "sigma_coherent_barn": 6.57,
+      "sigma_incoherent_barn": 2.5,
+      "sigma_scattering_barn": 9.2,
+      "sigma_absorption_2200_barn": 4530.0,
+      "resonance_caution": true
+    },
+    "Gd": {
+      "b_coherent_fm": {
+        "real": 6.5,
+        "imag": -13.82
+      },
+      "sigma_coherent_barn": 29.3,
+      "sigma_incoherent_barn": 151.0,
+      "sigma_scattering_barn": 180.0,
+      "sigma_absorption_2200_barn": 49700.0,
+      "resonance_caution": true
+    },
+    "Tb": {
+      "b_coherent_fm": {
+        "real": 7.38,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.84,
+      "sigma_incoherent_barn": 0.004,
+      "sigma_scattering_barn": 6.84,
+      "sigma_absorption_2200_barn": 23.4,
+      "resonance_caution": true
+    },
+    "Dy": {
+      "b_coherent_fm": {
+        "real": 16.9,
+        "imag": -0.276
+      },
+      "sigma_coherent_barn": 35.9,
+      "sigma_incoherent_barn": 54.4,
+      "sigma_scattering_barn": 90.3,
+      "sigma_absorption_2200_barn": 994.0,
+      "resonance_caution": true
+    },
+    "Ho": {
+      "b_coherent_fm": {
+        "real": 8.01,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 8.06,
+      "sigma_incoherent_barn": 0.36,
+      "sigma_scattering_barn": 8.42,
+      "sigma_absorption_2200_barn": 64.7,
+      "resonance_caution": true
+    },
+    "Er": {
+      "b_coherent_fm": {
+        "real": 7.79,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.63,
+      "sigma_incoherent_barn": 1.1,
+      "sigma_scattering_barn": 8.7,
+      "sigma_absorption_2200_barn": 159.0,
+      "resonance_caution": true
+    },
+    "Tm": {
+      "b_coherent_fm": {
+        "real": 7.07,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.28,
+      "sigma_incoherent_barn": 0.1,
+      "sigma_scattering_barn": 6.38,
+      "sigma_absorption_2200_barn": 100.0,
+      "resonance_caution": true
+    },
+    "Yb": {
+      "b_coherent_fm": {
+        "real": 12.43,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 19.42,
+      "sigma_incoherent_barn": 4.0,
+      "sigma_scattering_barn": 23.4,
+      "sigma_absorption_2200_barn": 34.8,
+      "resonance_caution": true,
+      "energy_dependent_b_fm": {
+        "source": "Lynn & Seeger (1990), as used by periodictable/NCNR",
+        "interpolation": "linear in wavelength; constant extrapolation at table ends",
+        "points_energy_eV_re_im": [
+          [
+            0.02,
+            12.36,
+            -0.02
+          ],
+          [
+            0.04,
+            12.35,
+            -0.02
+          ],
+          [
+            0.06,
+            12.35,
+            -0.02
+          ],
+          [
+            0.08,
+            12.34,
+            -0.02
+          ],
+          [
+            0.1,
+            12.34,
+            -0.02
+          ],
+          [
+            0.12,
+            12.33,
+            -0.02
+          ],
+          [
+            0.14,
+            12.33,
+            -0.02
+          ],
+          [
+            0.16,
+            12.32,
+            -0.03
+          ],
+          [
+            0.18,
+            12.32,
+            -0.03
+          ],
+          [
+            0.2,
+            12.32,
+            -0.03
+          ],
+          [
+            0.22,
+            12.31,
+            -0.03
+          ],
+          [
+            0.24,
+            12.31,
+            -0.03
+          ],
+          [
+            0.26,
+            12.3,
+            -0.03
+          ],
+          [
+            0.28,
+            12.3,
+            -0.03
+          ],
+          [
+            0.3,
+            12.29,
+            -0.03
+          ],
+          [
+            0.32,
+            12.28,
+            -0.03
+          ],
+          [
+            0.34,
+            12.28,
+            -0.03
+          ],
+          [
+            0.36,
+            12.27,
+            -0.04
+          ],
+          [
+            0.38,
+            12.27,
+            -0.04
+          ],
+          [
+            0.4,
+            12.26,
+            -0.04
+          ],
+          [
+            0.42,
+            12.25,
+            -0.04
+          ],
+          [
+            0.44,
+            12.24,
+            -0.04
+          ],
+          [
+            0.46,
+            12.23,
+            -0.05
+          ],
+          [
+            0.48,
+            12.22,
+            -0.05
+          ],
+          [
+            0.5,
+            12.21,
+            -0.06
+          ],
+          [
+            0.52,
+            12.19,
+            -0.07
+          ],
+          [
+            0.54,
+            12.17,
+            -0.1
+          ],
+          [
+            0.56,
+            12.15,
+            -0.15
+          ],
+          [
+            0.58,
+            12.17,
+            -0.23
+          ],
+          [
+            0.6,
+            12.28,
+            -0.28
+          ],
+          [
+            0.62,
+            12.37,
+            -0.2
+          ],
+          [
+            0.64,
+            12.37,
+            -0.13
+          ],
+          [
+            0.66,
+            12.35,
+            -0.09
+          ],
+          [
+            0.68,
+            12.33,
+            -0.07
+          ],
+          [
+            0.7,
+            12.32,
+            -0.06
+          ],
+          [
+            0.72,
+            12.3,
+            -0.06
+          ],
+          [
+            0.74,
+            12.29,
+            -0.05
+          ],
+          [
+            0.76,
+            12.28,
+            -0.05
+          ],
+          [
+            0.78,
+            12.27,
+            -0.05
+          ],
+          [
+            0.8,
+            12.27,
+            -0.05
+          ]
+        ]
+      }
+    },
+    "Lu": {
+      "b_coherent_fm": {
+        "real": 7.21,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.53,
+      "sigma_incoherent_barn": 0.7,
+      "sigma_scattering_barn": 7.2,
+      "sigma_absorption_2200_barn": 74.0,
+      "resonance_caution": true
+    },
+    "Hf": {
+      "b_coherent_fm": {
+        "real": 7.7,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.6,
+      "sigma_incoherent_barn": 2.6,
+      "sigma_scattering_barn": 10.2,
+      "sigma_absorption_2200_barn": 104.1,
+      "resonance_caution": true
+    },
+    "Ta": {
+      "b_coherent_fm": {
+        "real": 6.91,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 6.0,
+      "sigma_incoherent_barn": 0.01,
+      "sigma_scattering_barn": 6.01,
+      "sigma_absorption_2200_barn": 20.6,
+      "resonance_caution": false
+    },
+    "W": {
+      "b_coherent_fm": {
+        "real": 4.86,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 2.97,
+      "sigma_incoherent_barn": 1.63,
+      "sigma_scattering_barn": 4.6,
+      "sigma_absorption_2200_barn": 18.3,
+      "resonance_caution": false
+    },
+    "Re": {
+      "b_coherent_fm": {
+        "real": 9.2,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 10.6,
+      "sigma_incoherent_barn": 0.9,
+      "sigma_scattering_barn": 11.5,
+      "sigma_absorption_2200_barn": 89.7,
+      "resonance_caution": false
+    },
+    "Os": {
+      "b_coherent_fm": {
+        "real": 10.7,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 14.4,
+      "sigma_incoherent_barn": 0.3,
+      "sigma_scattering_barn": 14.7,
+      "sigma_absorption_2200_barn": 16.0,
+      "resonance_caution": false
+    },
+    "Ir": {
+      "b_coherent_fm": {
+        "real": 10.6,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 14.1,
+      "sigma_incoherent_barn": 0.3,
+      "sigma_scattering_barn": 14.0,
+      "sigma_absorption_2200_barn": 425.0,
+      "resonance_caution": false
+    },
+    "Pt": {
+      "b_coherent_fm": {
+        "real": 9.6,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 11.58,
+      "sigma_incoherent_barn": 0.13,
+      "sigma_scattering_barn": 11.71,
+      "sigma_absorption_2200_barn": 10.3,
+      "resonance_caution": false
+    },
+    "Au": {
+      "b_coherent_fm": {
+        "real": 7.63,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 7.32,
+      "sigma_incoherent_barn": 0.43,
+      "sigma_scattering_barn": 7.75,
+      "sigma_absorption_2200_barn": 98.65,
+      "resonance_caution": false
+    },
+    "Hg": {
+      "b_coherent_fm": {
+        "real": 12.692,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 20.24,
+      "sigma_incoherent_barn": 6.6,
+      "sigma_scattering_barn": 26.8,
+      "sigma_absorption_2200_barn": 372.3,
+      "resonance_caution": false
+    },
+    "Tl": {
+      "b_coherent_fm": {
+        "real": 8.776,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 9.678,
+      "sigma_incoherent_barn": 0.21,
+      "sigma_scattering_barn": 9.89,
+      "sigma_absorption_2200_barn": 3.43,
+      "resonance_caution": false
+    },
+    "Pb": {
+      "b_coherent_fm": {
+        "real": 9.405,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 11.115,
+      "sigma_incoherent_barn": 0.003,
+      "sigma_scattering_barn": 11.118,
+      "sigma_absorption_2200_barn": 0.171,
+      "resonance_caution": false
+    },
+    "Bi": {
+      "b_coherent_fm": {
+        "real": 8.532,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 9.148,
+      "sigma_incoherent_barn": 0.0084,
+      "sigma_scattering_barn": 9.156,
+      "sigma_absorption_2200_barn": 0.0338,
+      "resonance_caution": false
+    },
+    "Ra": {
+      "b_coherent_fm": {
+        "real": 10.0,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 13.0,
+      "sigma_incoherent_barn": 0,
+      "sigma_scattering_barn": 13.0,
+      "sigma_absorption_2200_barn": 12.8,
+      "resonance_caution": false
+    },
+    "Th": {
+      "b_coherent_fm": {
+        "real": 10.31,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 13.36,
+      "sigma_incoherent_barn": 0,
+      "sigma_scattering_barn": 13.36,
+      "sigma_absorption_2200_barn": 7.37,
+      "resonance_caution": false
+    },
+    "Pa": {
+      "b_coherent_fm": {
+        "real": 9.1,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 10.4,
+      "sigma_incoherent_barn": 0.1,
+      "sigma_scattering_barn": 10.5,
+      "sigma_absorption_2200_barn": 200.6,
+      "resonance_caution": false
+    },
+    "U": {
+      "b_coherent_fm": {
+        "real": 8.417,
+        "imag": 0
+      },
+      "sigma_coherent_barn": 8.903,
+      "sigma_incoherent_barn": 0.005,
+      "sigma_scattering_barn": 8.908,
+      "sigma_absorption_2200_barn": 7.57,
+      "resonance_caution": false
+    }
+  }
+}

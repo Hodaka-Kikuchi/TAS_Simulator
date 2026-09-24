@@ -141,7 +141,7 @@ textarea:disabled {
 /* CIF selection and neutron nuclear structure-factor display. */
 .cif-select-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;margin:7px 0 2px}
 .cif-select-row button{white-space:nowrap}
-.cif-file-name{font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cif-file-name{width:100%;min-width:0;font-size:13px;color:#555;background:#f7f7f7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sample-spacegroup-row{display:grid;grid-template-columns:minmax(110px,.8fr) minmax(90px,.55fr) minmax(180px,1.65fr);gap:4px;align-items:end}
 #sampleSpaceGroupNumber{width:100%;max-width:none}
 @media(max-width:760px){.sample-spacegroup-row{grid-template-columns:1fr 1fr}.sample-spacegroup-row label:last-child{grid-column:1/-1}}
@@ -212,9 +212,14 @@ textarea:disabled {
 .cif-atom-cell input{width:100%;max-width:none;min-width:0}
 .cif-atom-cell button{width:100%;padding:4px 7px;white-space:nowrap}
 .cif-add-atom-wide{display:block;width:100%;margin-top:8px;padding:8px 12px}
-.cif-generator-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end;margin-top:14px}
+.cif-generator-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:end;margin-top:14px}
 .cif-generator-actions label{grid-column:1/-1}
 .cif-generator-actions input[type=text]{width:100%}
+.cif-filename-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.cif-filename-entry input{border-top-right-radius:0;border-bottom-right-radius:0}
+.cif-filename-suffix{display:flex;align-items:center;align-self:stretch;padding:0 9px;border:1px solid #bbb;border-left:0;border-radius:0 4px 4px 0;background:#f5f5f5;font-size:14px;color:#444}
+.cif-generator-beam-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 12px}
+.cif-generator-beam-grid input{width:100%;max-width:none}
 .cif-generator-actions button{width:100%;white-space:nowrap}
 .cif-generator-actions .primary-action{font-weight:700}
 .cif-generator-actions button:disabled{opacity:.45;cursor:not-allowed}
@@ -595,3 +600,127 @@ textarea:disabled {
   .cif-generator-output-pane{height:auto!important;min-height:620px}
   .cif-preview-note,.cif-reflection-table-wrap{height:auto;min-height:0;overflow:auto}
 }
+
+/* CIF-based neutron absorption calculator */
+.absorption-card{margin-top:16px}
+.absorption-controls{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(210px,1fr) minmax(180px,.8fr);gap:12px;align-items:end}
+.absorption-controls label{display:grid;gap:5px;font-size:15px;font-weight:600}
+.absorption-controls input{font-size:16px;min-height:38px;padding:6px 8px}
+.absorption-controls input[readonly]{background:#f5f5f5}
+.absorption-results{margin-top:14px}
+.absorption-summary-grid{display:grid;grid-template-columns:repeat(5,minmax(135px,1fr));gap:8px}
+.absorption-summary-grid>div{border:1px solid #d7d7d7;border-radius:6px;padding:9px 10px;display:grid;gap:4px;background:#fafafa}
+.absorption-summary-grid span{font-size:13px;color:#555}
+.absorption-summary-grid strong{font-size:16px;font-weight:700}
+.absorption-table-wrap{margin-top:12px;overflow:auto;max-height:320px;border:1px solid #d7d7d7;border-radius:6px}
+.absorption-table{width:100%;border-collapse:collapse;font-size:15px}
+.absorption-table th,.absorption-table td{padding:7px 9px;border-bottom:1px solid #e1e1e1;text-align:right;white-space:nowrap}
+.absorption-table th:first-child,.absorption-table td:first-child{text-align:left}
+.absorption-table thead th{position:sticky;top:0;background:#f1f1f1;z-index:1}
+.absorption-caution td:first-child{font-weight:700}
+.absorption-warning{margin-top:10px;padding:8px 10px;border:1px solid #d9b55b;border-radius:6px;background:#fff8df;font-size:14px}
+@media(max-width:900px){.absorption-controls{grid-template-columns:1fr}.absorption-summary-grid{grid-template-columns:repeat(2,minmax(130px,1fr))}}
+
+/* Neutron absorption: compact controls left, thickness dependence right. */
+.absorption-workspace{display:grid;grid-template-columns:minmax(440px,.95fr) minmax(430px,1.05fr);gap:18px;align-items:stretch}
+.absorption-left{display:grid;align-content:start;gap:12px;min-width:0}
+.absorption-left>label,.absorption-cif-row label,.absorption-thickness-control label{display:grid;gap:5px;font-size:15px;font-weight:600}
+.absorption-left input[type="text"],.absorption-left input[type="number"]{font-size:16px;min-height:38px;padding:6px 8px}
+.absorption-cif-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.absorption-cif-row button{min-height:38px;white-space:nowrap}
+.absorption-thickness-control{display:grid;grid-template-columns:minmax(145px,.7fr) minmax(180px,1.2fr) minmax(145px,.7fr);gap:10px;align-items:end}
+.absorption-thickness-control input[type="range"]{width:100%;align-self:center;margin-bottom:8px}
+.absorption-right{min-width:0;min-height:430px;border:1px solid #d7d7d7;border-radius:6px;background:#fff}
+.absorption-plot{width:100%;height:100%;min-height:430px}
+.absorption-results{margin-top:0}
+.absorption-summary-table-wrap{max-height:none;margin-top:0}
+.absorption-summary-table th{position:static!important;text-align:left!important;background:#f6f6f6}
+.absorption-summary-table td{text-align:right!important}
+@media(max-width:1050px){.absorption-workspace{grid-template-columns:1fr}.absorption-right,.absorption-plot{min-height:360px}.absorption-thickness-control{grid-template-columns:1fr}}
+
+/* Neutron absorption tables: clear grid and equal-width cells. */
+.absorption-table{table-layout:fixed;border-collapse:collapse;width:100%}
+.absorption-table th,.absorption-table td{border:1px solid #c9c9c9!important;box-sizing:border-box}
+.absorption-table thead th{border:1px solid #bdbdbd!important}
+.absorption-summary-table th,.absorption-summary-table td{width:25%!important}
+.absorption-table:not(.absorption-summary-table) th,.absorption-table:not(.absorption-summary-table) td{width:20%}
+
+/* Neutron attenuation summary: label on top, values underneath. */
+.absorption-summary-cards{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(150px,1fr));
+  gap:9px;
+  margin-top:2px;
+}
+.absorption-summary-card{
+  border:1px solid #c9c9c9;
+  border-radius:6px;
+  background:#fafafa;
+  padding:9px 10px;
+  min-width:0;
+}
+.absorption-summary-label{
+  font-size:13px;
+  font-weight:700;
+  line-height:1.25;
+  margin-bottom:6px;
+  color:#444;
+}
+.absorption-summary-value{
+  font-size:16px;
+  font-weight:700;
+  line-height:1.25;
+  white-space:nowrap;
+}
+.absorption-summary-wide{grid-column:span 2}
+.absorption-summary-subgrid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:0;
+  border:1px solid #d6d6d6;
+  border-radius:4px;
+  overflow:hidden;
+  background:#fff;
+}
+.absorption-summary-subgrid>div{
+  display:grid;
+  gap:3px;
+  padding:6px 7px;
+  min-width:0;
+  text-align:center;
+  border-left:1px solid #d6d6d6;
+}
+.absorption-summary-subgrid>div:first-child{border-left:0}
+.absorption-summary-subgrid span{font-size:12.5px;color:#555;font-weight:600}
+.absorption-summary-subgrid strong{font-size:14.5px;white-space:nowrap}
+.absorption-summary-subgrid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:1050px){
+  .absorption-summary-cards{grid-template-columns:repeat(2,minmax(145px,1fr))}
+  .absorption-summary-wide{grid-column:span 2}
+}
+@media(max-width:620px){
+  .absorption-summary-cards{grid-template-columns:1fr}
+  .absorption-summary-wide{grid-column:span 1}
+}
+
+/* Editable attenuation beam conditions. */
+.absorption-beam-controls{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.absorption-beam-controls label{display:grid;gap:5px;font-size:15px;font-weight:600}
+.absorption-beam-controls input{font-size:16px;min-height:38px;padding:6px 8px;width:100%}
+@media(max-width:1050px){.absorption-beam-controls{grid-template-columns:1fr}}
+
+
+/* Absorption and scattering UI refinement. */
+.absorption-summary-card,
+.absorption-summary-subgrid>div{background:#fff!important;}
+.absorption-summary-label{font-size:15px!important;font-weight:700!important;color:#222!important;}
+.absorption-summary-subgrid span{font-size:14px!important;font-weight:700!important;color:#333!important;}
+.absorption-summary-value{font-size:17px!important;}
+.absorption-summary-subgrid strong{font-size:15px!important;}
+.absorption-thickness-control{grid-template-columns:minmax(150px,.7fr) minmax(220px,1.35fr) minmax(150px,.7fr);}
+.absorption-thickness-control label:last-child{justify-self:end;width:100%;max-width:180px;}
+#absorptionTransmission{width:100%;}

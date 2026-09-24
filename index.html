@@ -48,7 +48,7 @@
   </div>
   <div id="cifSelectRow" class="cif-select-row">
     <button id="cifSelectButton" type="button">Select CIF</button>
-    <span id="cifFileName" class="cif-file-name">No file selected</span>
+    <input id="cifFileName" class="cif-file-name" type="text" value="No file selected" readonly aria-label="Selected CIF file">
     <button id="cifClearButton" type="button" disabled>Clear</button>
     <input id="cifFileInput" type="file" accept=".cif,.mcif,text/plain" hidden>
   </div>
@@ -192,6 +192,31 @@
       </div></div>
       
     </section>
+    <section class="calc-card absorption-card">
+      <h2>Absorption and scattering</h2>
+      <div class="absorption-workspace">
+        <div class="absorption-left">
+          <div class="absorption-cif-row">
+            <label>Selected CIF<input id="absorptionCifStatus" type="text" value="No CIF selected" readonly></label>
+            <button id="absorptionCifSelectButton" type="button">Select CIF</button>
+            <input id="absorptionCifFileInput" type="file" accept=".cif,text/plain" hidden>
+          </div>
+          <div class="absorption-beam-controls">
+            <label>Energy (meV)<input id="absorptionEnergy" type="number" min="0" step="0.001"></label>
+            <label>Wavelength (Å)<input id="absorptionLambda" type="number" min="0" step="0.001"></label>
+          </div>
+          <div class="absorption-thickness-control">
+            <label>Sample thickness (mm)<input id="absorptionThickness" type="number" value="1.0" min="0" step="0.1"></label>
+            <input id="absorptionThicknessSlider" type="range" min="0" max="20" step="0.05" value="1.0" aria-label="Sample thickness">
+            <label>Transmission (%)<input id="absorptionTransmission" type="number" value="" min="0.000001" max="100" step="0.1"></label>
+          </div>
+          <div id="absorptionResults" class="absorption-results"></div>
+        </div>
+        <div class="absorption-right">
+          <div id="absorptionPlot" class="absorption-plot"></div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div id="cifGeneratorPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabCifGenerator">
@@ -225,6 +250,11 @@
             <div id="cifSpaceGroupInfo" class="cif-space-group-info"></div>
           </div>
 
+          <div class="cif-generator-beam-grid">
+            <label>Energy (meV)<input id="cifReflectionEnergy" type="number" min="0" step="0.001"></label>
+            <label>Wavelength (Å)<input id="cifReflectionWavelength" type="number" min="0" step="0.0001"></label>
+          </div>
+
           <h3>Lattice parameters</h3>
           <div class="cif-lattice-grid">
             <label>a (Å)<input id="cifA" type="number" value="5" step="0.001" min="0"></label>
@@ -250,11 +280,14 @@
           <button id="cifAddAtom" class="cif-add-atom-wide" type="button">+ Add atom</button>
 
           <div class="cif-generator-actions">
-            <label>File name<input id="cifGeneratedName" type="text" value="generated_structure.cif"></label>
+            <label>File name
+              <span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"><span class="cif-filename-suffix">.cif</span></span>
+            </label>
             <button id="cifLoadExisting" type="button">Load CIF</button>
             <input id="cifLoadFile" type="file" accept=".cif,text/plain,chemical/x-cif" class="hidden">
             <button id="cifGenerate" type="button" class="primary-action">Generate</button>
             <button id="cifDownload" type="button" disabled>Download CIF</button>
+            <button id="cifDownloadTable" type="button" disabled>Download table</button>
             <button id="cifSet" type="button" disabled>Set CIF</button>
           </div>
           <div id="cifGeneratorMessage" class="cif-generator-message" aria-live="polite"></div>
@@ -281,9 +314,9 @@
               <table class="cif-reflection-table">
                 <thead><tr>
                   <th>Index (h k l)</th>
-                  <th class="cif-sortable-th" data-sort-key="intensity" data-sort-label="Intensity |F|²" tabindex="0" role="button" aria-sort="descending">Intensity |F|² <span class="cif-sort-indicator">▼</span></th>
+                  <th class="cif-sortable-th" data-sort-key="intensity" data-sort-label="Intensity |F|² (barn)" tabindex="0" role="button" aria-sort="descending">Intensity |F|² (barn) <span class="cif-sort-indicator">▼</span></th>
                   <th>Multiplicity</th>
-                  <th class="cif-sortable-th" data-sort-key="totalIntensity" data-sort-label="Total intensity" tabindex="0" role="button" aria-sort="none">Total intensity <span class="cif-sort-indicator"></span></th>
+                  <th class="cif-sortable-th" data-sort-key="totalIntensity" data-sort-label="Total intensity (barn)" tabindex="0" role="button" aria-sort="none">Total intensity (barn) <span class="cif-sort-indicator"></span></th>
                   <th class="cif-sortable-th" data-sort-key="twoTheta" data-sort-label="2θ (deg)" tabindex="0" role="button" aria-sort="none">2θ (deg) <span class="cif-sort-indicator"></span></th>
                   <th class="cif-sortable-th" data-sort-key="q" data-sort-label="Q (Å⁻¹)" tabindex="0" role="button" aria-sort="none">Q (Å⁻¹) <span class="cif-sort-indicator"></span></th>
                   <th class="cif-sortable-th" data-sort-key="d" data-sort-label="d (Å)" tabindex="0" role="button" aria-sort="none">d (Å) <span class="cif-sort-indicator"></span></th>
