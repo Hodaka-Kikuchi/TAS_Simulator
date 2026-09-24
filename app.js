@@ -368,6 +368,38 @@ function populateSampleSpaceGroupControls(){
 
 let lastGeneratedCifText="";
 let lastGeneratedCifName="generated_structure.cif";
+let selectedCifReflectionKey="";
+let cifReflectionSort={key:"intensity",direction:"desc"};
+let lastGeneratedCifParsed=null;
+let lastGeneratedCifSpaceGroup=null;
+let lastGeneratedReflections=[];
+
+function setCifGeneratedReady(ready){
+  if($("cifDownload")) $("cifDownload").disabled=!ready;
+  if($("cifSet")) $("cifSet").disabled=!ready;
+}
+
+function clearCifReflectionTable(message="No generated reflections yet."){
+  lastGeneratedReflections=[];
+  const body=$("cifReflectionRows");
+  if(body){
+    body.replaceChildren();
+    const tr=document.createElement("tr"), td=document.createElement("td");
+    td.colSpan=7; td.className="cif-reflection-empty"; td.textContent=message;
+    tr.appendChild(td); body.appendChild(tr);
+  }
+  if($("cifReflectionSummary")) $("cifReflectionSummary").textContent=message;
+}
+
+function invalidateGeneratedCif(message="Inputs changed — press Generate to refresh the CIF and reflection table."){
+  lastGeneratedCifText="";
+  lastGeneratedCifParsed=null;
+  lastGeneratedCifSpaceGroup=null;
+  setCifGeneratedReady(false);
+  if($("cifPreview")) $("cifPreview").textContent="Press Generate to preview the CIF.";
+  clearCifReflectionTable("Press Generate to calculate reflections.");
+  if(message) setCifGeneratorMessage(message);
+}
 
 function setCifGeneratorMessage(text,isError=false){
   const box=$("cifGeneratorMessage");
@@ -465,7 +497,7 @@ function updateCifSpaceGroupInfo(){
   applyCifLatticeConstraints();
 }
 
-function addCifAtomRow(values={}){
+function addCifAtomRow(values={}, {invalidate=true}={}){
   const host=$("cifAtomRows");
   if(!host) return;
   const row=document.createElement("div");
@@ -490,18 +522,20 @@ function addCifAtomRow(values={}){
   const remove=document.createElement("button"); remove.type="button"; remove.textContent="Remove";
   remove.addEventListener("click",()=>{
     row.remove();
-    if(!host.querySelector(".cif-atom-row")) addCifAtomRow();
+    if(!host.querySelector(".cif-atom-row")) addCifAtomRow({}, {invalidate:false});
+    invalidateGeneratedCif();
   });
   action.appendChild(remove); row.appendChild(action);
   host.appendChild(row);
+  if(invalidate) invalidateGeneratedCif();
 }
 
 function replaceCifAtomRows(atoms){
   const host=$("cifAtomRows");
   if(!host) return;
   host.replaceChildren();
-  for(const atom of atoms) addCifAtomRow(atom);
-  if(!atoms.length) addCifAtomRow();
+  for(const atom of atoms) addCifAtomRow(atom,{invalidate:false});
+  if(!atoms.length) addCifAtomRow({}, {invalidate:false});
 }
 
 function normalizeCifElement(raw){
@@ -593,6 +627,348 @@ function buildGeneratedCif(){
   return {text,filename,sg,atoms,parsed};
 }
 
+
+function cifSymRationalNumber(raw){
+  let s=String(raw??"").replace(/\*/g,"").trim();
+  if(!s || s==="+") return 1;
+  if(s==="-") return -1;
+  if(s.startsWith("/")) return 1/Number(s.slice(1));
+  if(s.startsWith("+/")) return 1/Number(s.slice(2));
+  if(s.startsWith("-/")) return -1/Number(s.slice(2));
+  if(s.includes("/")){
+    const parts=s.split("/");
+    if(parts.length===2){
+      const a=Number(parts[0]), b=Number(parts[1]);
+      return b ? a/b : NaN;
+    }
+  }
+  return Number(s);
+}
+
+function cifSymmetryLinearMatrix(op){
+  const parts=String(op||"").split(",");
+  if(parts.length!==3) throw new Error(`Unsupported symmetry operation: ${op}`);
+  return parts.map(expr=>{
+    let s=String(expr).toLowerCase().replace(/\s+/g,"").replace(/−/g,"-");
+    s=s.replace(/-/g,"+-");
+    if(s.startsWith("+")) s=s.slice(1);
+    const row=[0,0,0];
+    for(const term of s.split("+").filter(Boolean)){
+      const m=term.match(/[xyz]/);
+      if(!m) continue; // translation part
+      const idx={x:0,y:1,z:2}[m[0]];
+      const coeff=cifSymRationalNumber(term.replace(m[0],""));
+      if(!Number.isFinite(coeff)) throw new Error(`Unsupported symmetry term: ${term}`);
+      row[idx]+=coeff;
+    }
+    return row;
+  });
+}
+
+function inverse3x3(m){
+  const [a,b,c]=m[0], [d,e,f]=m[1], [g,h,i]=m[2];
+  const A=e*i-f*h, B=-(d*i-f*g), C=d*h-e*g;
+  const D=-(b*i-c*h), E=a*i-c*g, F=-(a*h-b*g);
+  const G=b*f-c*e, H=-(a*f-c*d), I=a*e-b*d;
+  const det=a*A+b*B+c*C;
+  if(Math.abs(det)<1e-12) throw new Error("A space-group symmetry matrix is singular.");
+  return [[A,D,G],[B,E,H],[C,F,I]].map(row=>row.map(x=>x/det));
+}
+
+function reciprocalSymmetryMatrices(sg){
+  const out=[], seen=new Set();
+  for(const op of (sg?.operations||["x,y,z"])){
+    const R=cifSymmetryLinearMatrix(op);
+    const inv=inverse3x3(R);
+    const T=[
+      [inv[0][0],inv[1][0],inv[2][0]],
+      [inv[0][1],inv[1][1],inv[2][1]],
+      [inv[0][2],inv[1][2],inv[2][2]]
+    ].map(row=>row.map(x=>Math.abs(x-Math.round(x))<1e-9?Math.round(x):x));
+    const key=T.flat().map(x=>Number(x).toFixed(9)).join(",");
+    if(!seen.has(key)){ seen.add(key); out.push(T); }
+  }
+  return out;
+}
+
+function transformReflectionHkl(M,hkl){
+  const v=M.map(row=>row[0]*hkl[0]+row[1]*hkl[1]+row[2]*hkl[2]);
+  return v.map(x=>{
+    const y=Math.abs(x-Math.round(x))<1e-8?Math.round(x):x;
+    return Object.is(y,-0)?0:y;
+  });
+}
+
+function hklKey(hkl){ return hkl.map(x=>Math.round(Number(x))).join(","); }
+function compareHkl(a,b){
+  for(let i=0;i<3;i++){
+    const d=Number(a[i])-Number(b[i]);
+    if(Math.abs(d)>1e-12) return d;
+  }
+  return 0;
+}
+function firstNonzeroPositive(hkl){
+  for(const x of hkl){ if(x!==0) return x>0; }
+  return true;
+}
+function canonicalReflectionHkl(star){
+  return [...star].sort((a,b)=>{
+    const ap=firstNonzeroPositive(a), bp=firstNonzeroPositive(b);
+    if(ap!==bp) return ap?-1:1;
+    // Prefer the conventional representative with the largest h, then k, then l.
+    for(let i=0;i<3;i++) if(a[i]!==b[i]) return b[i]-a[i];
+    return 0;
+  })[0];
+}
+
+function reflectionStar(hkl,reciprocalOps){
+  const map=new Map();
+  for(const M of reciprocalOps){
+    const p=transformReflectionHkl(M,hkl).map(x=>{const y=Math.round(x);return Object.is(y,-0)?0:y;});
+    const n=p.map(x=>x===0?0:-x);
+    map.set(hklKey(p),p);
+    map.set(hklKey(n),n); // Friedel pair: useful powder/full-pattern multiplicity.
+  }
+  return [...map.values()];
+}
+
+function currentCifReflectionBeam(){
+  // Reflection wavelength follows the fixed-side energy in Instrument configuration.
+  // λ/2 means the second-order wavelength: λ -> λ/2, equivalently E -> 4E.
+  const energyMode=checkedValue("energyMode") || $("energyMode")?.value;
+  const enteredEnergy=Number($("energy")?.value);
+  if(!(enteredEnergy>0)) throw new Error(`${energyMode||"Fixed"} energy must be greater than zero to calculate reflections.`);
+  const lambdaHalf=!!$("cifReflectionLambdaHalf")?.checked;
+  const effectiveEnergy=lambdaHalf ? 4*enteredEnergy : enteredEnergy;
+  return {
+    energyMode,
+    enteredEnergy,
+    effectiveEnergy,
+    lambdaHalf,
+    wavelength:9.044/Math.sqrt(effectiveEnergy)
+  };
+}
+
+function currentCifReflectionFilters(){
+  return {
+    alongU:!!$("cifReflectionAlongU")?.checked,
+    alongV:!!$("cifReflectionAlongV")?.checked,
+    withinS2Max:$("cifReflectionWithinS2Max")?.checked !== false
+  };
+}
+
+function reflectionInCurrentScatteringPlane(rl,hkl){
+  const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
+  const {ez}=makeSpiceScatteringPlaneBasis(rl,U,V);
+  const q=hklToQ(rl,hkl), qn=norm(q);
+  return qn>1e-12 && Math.abs(dot(q,ez)) <= 1e-9*Math.max(1,qn);
+}
+
+function reflectionAlongCurrentAxis(rl,hkl,axisHkl){
+  const q=hklToQ(rl,hkl), axis=hklToQ(rl,axisHkl);
+  const qn=norm(q), an=norm(axis);
+  if(!(qn>1e-12) || !(an>1e-12)) return false;
+  return norm(cross(q,axis)) <= 1e-9*Math.max(1,qn*an);
+}
+
+function buildCifReflectionTable(structure,sg,wavelength,filters={alongU:true,alongV:true,withinS2Max:true},twoThetaMax=180){
+  if(!structure?.lattice) throw new Error("Generated CIF has no valid lattice.");
+  const lambda=Number(wavelength);
+  if(!(lambda>0)) throw new Error("Reflection wavelength must be greater than zero.");
+  const lattice=structure.lattice;
+  const rl=RL_calc(lattice);
+  const qMax=4*Math.PI/lambda;
+  const hMax=Math.ceil(qMax*Number(lattice.a)/(2*Math.PI))+1;
+  const kMax=Math.ceil(qMax*Number(lattice.b)/(2*Math.PI))+1;
+  const lMax=Math.ceil(qMax*Number(lattice.c)/(2*Math.PI))+1;
+  const candidateCount=(2*hMax+1)*(2*kMax+1)*(2*lMax+1)-1;
+  if(candidateCount>3000000){
+    throw new Error(`Reflection search is too large (${candidateCount.toLocaleString()} candidate hkl). Increase wavelength or use a smaller unit cell.`);
+  }
+
+  const reciprocalOps=reciprocalSymmetryMatrices(sg);
+  const rows=[];
+  const seenFamilies=new Set();
+  const tol=1e-9;
+  for(let h=-hMax;h<=hMax;h++) for(let k=-kMax;k<=kMax;k++) for(let l=-lMax;l<=lMax;l++){
+    if(h===0&&k===0&&l===0) continue;
+    const hkl=[h,k,l];
+    const qVec=hklToQ(rl,hkl), q=norm(qVec);
+    if(!(q>1e-12) || q>qMax+tol) continue;
+    const star=reflectionStar(hkl,reciprocalOps);
+    const familyKey=star.map(hklKey).sort().join("|");
+    if(seenFamilies.has(familyKey)) continue;
+    seenFamilies.add(familyKey);
+    const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
+    // Direction filters are intentionally compact:
+    //   U only  -> reflections along U
+    //   V only  -> reflections along V
+    //   U + V   -> every reflection in the U-V scattering plane
+    //   neither -> all reflections
+    let visibleStar=star;
+    if(filters?.alongU && filters?.alongV){
+      visibleStar=star.filter(x=>reflectionInCurrentScatteringPlane(rl,x));
+    }else if(filters?.alongU){
+      visibleStar=star.filter(x=>reflectionAlongCurrentAxis(rl,x,U));
+    }else if(filters?.alongV){
+      visibleStar=star.filter(x=>reflectionAlongCurrentAxis(rl,x,V));
+    }
+    if(!visibleStar.length) continue;
+    // Show one representative satisfying the active direction rule.
+    // Multiplicity remains the full crystallographic star size.
+    const rep=canonicalReflectionHkl(visibleStar);
+    const qRep=norm(hklToQ(rl,rep));
+    const arg=qRep*lambda/(4*Math.PI);
+    if(arg>1+1e-10) continue;
+    const twoTheta=2*rad2deg(Math.asin(clamp(arg,-1,1)));
+    if(filters?.withinS2Max && Number.isFinite(twoThetaMax) && twoTheta>twoThetaMax+1e-9) continue;
+    const d=2*Math.PI/qRep;
+    let intensity=nuclearStructureFactorSquared(structure,rep,qRep);
+    if(!Number.isFinite(intensity)) intensity=0;
+    const multiplicity=star.length;
+    rows.push({hkl:rep,intensity,multiplicity,totalIntensity:intensity*multiplicity,twoTheta,q:qRep,d});
+  }
+
+  // Do not show systematic/motif extinctions.  Exact extinctions can leave tiny
+  // floating-point residues after symmetry expansion, so use a very small
+  // relative tolerance rather than testing intensity === 0.
+  const maxI=Math.max(0,...rows.map(r=>Math.abs(Number(r.intensity)||0)));
+  const extinctTol=Math.max(1e-12,maxI*1e-12);
+  return rows.filter(r=>Number(r.intensity)>extinctTol);
+}
+
+function sortedCifReflections(rows,sortState=cifReflectionSort){
+  const out=[...(rows||[])];
+  const key=sortState?.key||"intensity";
+  const dir=sortState?.direction==="asc" ? 1 : -1;
+  return out.sort((a,b)=>{
+    const av=Number(a[key]), bv=Number(b[key]);
+    const d=(av-bv)*dir;
+    return d || compareHkl(a.hkl,b.hkl);
+  });
+}
+
+function updateCifReflectionSortHeaders(){
+  for(const th of document.querySelectorAll(".cif-sortable-th")){
+    const active=th.dataset.sortKey===cifReflectionSort.key;
+    const direction=active ? cifReflectionSort.direction : null;
+    const indicator=th.querySelector(".cif-sort-indicator");
+    if(indicator) indicator.textContent=active ? (direction==="asc" ? "▲" : "▼") : "";
+    th.setAttribute("aria-sort",active ? (direction==="asc" ? "ascending" : "descending") : "none");
+  }
+}
+
+function setCifReflectionSort(key){
+  if(cifReflectionSort.key===key){
+    cifReflectionSort={key,direction:cifReflectionSort.direction==="asc"?"desc":"asc"};
+  }else{
+    // Intensity-like columns are most useful descending; angular/spacing columns
+    // start ascending on first click.
+    const direction=(key==="intensity"||key==="totalIntensity"||key==="q") ? "desc" : "asc";
+    cifReflectionSort={key,direction};
+  }
+  updateCifReflectionSortHeaders();
+  renderCifReflectionTable();
+}
+
+function reflectionNumberText(value,digits=5){
+  const x=Number(value);
+  if(!Number.isFinite(x)) return "—";
+  const a=Math.abs(x);
+  if(a!==0 && (a>=1e5 || a<1e-4)) return x.toExponential(4);
+  return x.toFixed(digits);
+}
+
+function renderCifReflectionTable(){
+  const body=$("cifReflectionRows");
+  if(!body) return;
+  body.replaceChildren();
+  if(!lastGeneratedReflections.length){
+    selectedCifReflectionKey="";
+    const tr=document.createElement("tr"), td=document.createElement("td");
+    td.colSpan=7; td.className="cif-reflection-empty"; td.textContent="No reflections in the selected wavelength range.";
+    tr.appendChild(td); body.appendChild(tr);
+    return;
+  }
+  const rows=sortedCifReflections(lastGeneratedReflections,cifReflectionSort);
+  const availableKeys=new Set(rows.map(r=>hklKey(r.hkl)));
+  if(selectedCifReflectionKey && !availableKeys.has(selectedCifReflectionKey)) selectedCifReflectionKey="";
+  for(const r of rows){
+    const key=hklKey(r.hkl);
+    const tr=document.createElement("tr");
+    tr.dataset.reflectionKey=key;
+    tr.tabIndex=0;
+    tr.setAttribute("aria-selected",String(key===selectedCifReflectionKey));
+    tr.classList.toggle("cif-reflection-selected",key===selectedCifReflectionKey);
+    const values=[
+      `(${r.hkl.join(" ")})`,
+      reflectionNumberText(r.intensity,4),
+      String(r.multiplicity),
+      reflectionNumberText(r.totalIntensity,4),
+      reflectionNumberText(r.twoTheta,4),
+      reflectionNumberText(r.q,5),
+      reflectionNumberText(r.d,5)
+    ];
+    values.forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.appendChild(td);});
+    const toggle=()=>{
+      selectedCifReflectionKey=(selectedCifReflectionKey===key)?"":key;
+      renderCifReflectionTable();
+      if(selectedCifReflectionKey){
+        body.querySelector(`tr[data-reflection-key="${CSS.escape(selectedCifReflectionKey)}"]`)?.focus({preventScroll:true});
+      }
+    };
+    tr.addEventListener("click",toggle);
+    tr.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();toggle();}});
+    body.appendChild(tr);
+  }
+}
+
+function recalculateGeneratedReflections(){
+  if(!lastGeneratedCifParsed || !lastGeneratedCifSpaceGroup){
+    clearCifReflectionTable("Press Generate to calculate reflections.");
+    return;
+  }
+  try{
+    const beam=currentCifReflectionBeam();
+    const filters=currentCifReflectionFilters();
+    let twoThetaMax=180;
+    if(filters.withinS2Max){
+      const inst=currentInstrument();
+      twoThetaMax=Math.min(180,effectiveS2MaxAtEi(inst,beam.effectiveEnergy,beam.lambdaHalf));
+      if(!Number.isFinite(twoThetaMax)) throw new Error("Instrument 2θ maximum is unavailable.");
+    }
+    lastGeneratedReflections=buildCifReflectionTable(lastGeneratedCifParsed,lastGeneratedCifSpaceGroup,beam.wavelength,filters,twoThetaMax);
+    renderCifReflectionTable();
+  }catch(err){
+    lastGeneratedReflections=[];
+    clearCifReflectionTable(err?.message||String(err));
+  }
+}
+
+function setCifOutputTab(tab){
+  const name=tab==="reflections" ? "reflections" : "preview";
+  const preview=name==="preview";
+  $("cifOutputTabPreview")?.classList.toggle("active",preview);
+  $("cifOutputTabReflections")?.classList.toggle("active",!preview);
+  $("cifOutputTabPreview")?.setAttribute("aria-selected",String(preview));
+  $("cifOutputTabReflections")?.setAttribute("aria-selected",String(!preview));
+  $("cifPreviewPanel")?.classList.toggle("hidden",!preview);
+  $("cifReflectionsPanel")?.classList.toggle("hidden",preview);
+}
+
+function generateCifForReview(){
+  const generated=buildGeneratedCif();
+  lastGeneratedCifText=generated.text;
+  lastGeneratedCifName=generated.filename;
+  lastGeneratedCifParsed=generated.parsed;
+  lastGeneratedCifSpaceGroup=generated.sg;
+  if($("cifPreview")) $("cifPreview").textContent=generated.text;
+  setCifGeneratedReady(true);
+  recalculateGeneratedReflections();
+  setCifGeneratorMessage(`Generated ${generated.filename}: ${generated.sg.hm}, ${generated.atoms.length} asymmetric site(s), ${generated.parsed.atoms.length} expanded atom(s). Review the CIF and reflections, then Download CIF or Set CIF.`);
+  return generated;
+}
+
 function downloadGeneratedCif(text,filename){
   const blob=new Blob([text],{type:"chemical/x-cif;charset=utf-8"});
   const url=URL.createObjectURL(blob);
@@ -632,8 +1008,8 @@ async function loadCifIntoGenerator(file){
   replaceCifAtomRows(parsed.asymmetricSites.map(a=>({element:a.element,x:a.x,y:a.y,z:a.z,occupancy:a.occupancy})));
   if($("cifGeneratedName")) $("cifGeneratedName").value=cleanCifFileName(file.name);
   updateCifSpaceGroupInfo();
-  lastGeneratedCifText="";
-  setCifGeneratorMessage(`Loaded ${file.name} for editing: #${sg.number} ${sg.hm}, ${parsed.asymmetricSites.length} asymmetric site(s).`);
+  invalidateGeneratedCif("");
+  setCifGeneratorMessage(`Loaded ${file.name} for editing: #${sg.number} ${sg.hm}, ${parsed.asymmetricSites.length} asymmetric site(s). Press Generate to review the regenerated CIF and reflection table.`);
 }
 
 async function initializeCifGenerator(){
@@ -653,13 +1029,55 @@ async function initializeCifGenerator(){
     select.value="1";
     syncCifSpaceGroupNumberFromSelect();
     copyCurrentLatticeToGenerator();
-    addCifAtomRow({element:"",x:0,y:0,z:0,occupancy:1});
+    addCifAtomRow({element:"",x:0,y:0,z:0,occupancy:1},{invalidate:false});
     updateCifSpaceGroupInfo();
+
+    setCifGeneratedReady(false);
+    clearCifReflectionTable("Press Generate to calculate reflections.");
+    setCifOutputTab("preview");
+
     select.addEventListener("change",updateCifSpaceGroupInfo);
     $("cifSpaceGroupNumber")?.addEventListener("change",jumpToCifSpaceGroupNumber);
     $("cifSpaceGroupNumber")?.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); jumpToCifSpaceGroupNumber(); } });
     $("cifA")?.addEventListener("input",applyCifLatticeConstraints);
-    $("cifCopyLattice")?.addEventListener("click",()=>{copyCurrentLatticeToGenerator();setCifGeneratorMessage("Current sample lattice copied.");});
+
+    // Any structure-input edit invalidates the reviewed/generated snapshot.
+    // Download/Set therefore always operate on exactly what the user last reviewed.
+    const inputPane=document.querySelector(".cif-generator-input-pane");
+    const outputPane=document.querySelector(".cif-generator-output-pane");
+
+    // Keep the CIF output frame equal to the actual Structure input frame on
+    // desktop.  The output content itself remains scrollable; generated CIF
+    // text / reflection rows must never grow the outer workspace.
+    const syncCifOutputPaneHeight=()=>{
+      if(!inputPane || !outputPane) return;
+      if(window.matchMedia("(max-width: 1180px)").matches){
+        outputPane.style.height="";
+        return;
+      }
+      const h=Math.ceil(inputPane.getBoundingClientRect().height);
+      if(h>0) outputPane.style.height=`${h}px`;
+    };
+    if(typeof ResizeObserver!=="undefined" && inputPane){
+      const cifInputResizeObserver=new ResizeObserver(syncCifOutputPaneHeight);
+      cifInputResizeObserver.observe(inputPane);
+    }
+    window.addEventListener("resize",syncCifOutputPaneHeight);
+    requestAnimationFrame(syncCifOutputPaneHeight);
+
+    inputPane?.addEventListener("input",ev=>{
+      if(ev.target?.id==="cifLoadFile") return;
+      invalidateGeneratedCif();
+    });
+    inputPane?.addEventListener("change",ev=>{
+      if(ev.target?.id==="cifLoadFile") return;
+      invalidateGeneratedCif();
+    });
+
+    $("cifCopyLattice")?.addEventListener("click",()=>{
+      copyCurrentLatticeToGenerator();
+      invalidateGeneratedCif("Current sample lattice copied — press Generate to review the updated CIF.");
+    });
     $("cifAddAtom")?.addEventListener("click",()=>addCifAtomRow());
     $("cifLoadExisting")?.addEventListener("click",()=>$("cifLoadFile")?.click());
     $("cifLoadFile")?.addEventListener("change",async ev=>{
@@ -668,28 +1086,59 @@ async function initializeCifGenerator(){
       catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
       finally{ ev.target.value=""; }
     });
-    $("cifGenerateDownload")?.addEventListener("click",()=>{
-      try{
-        const generated=buildGeneratedCif();
-        lastGeneratedCifText=generated.text; lastGeneratedCifName=generated.filename;
-        downloadGeneratedCif(generated.text,generated.filename);
-        setCifGeneratorMessage(`Generated and downloaded ${generated.filename}: ${generated.sg.hm}, ${generated.atoms.length} asymmetric site(s), ${generated.parsed.atoms.length} expanded atom(s).`);
-      }catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
+
+    $("cifGenerate")?.addEventListener("click",()=>{
+      try{ generateCifForReview(); }
+      catch(err){
+        invalidateGeneratedCif("");
+        setCifGeneratorMessage(err?.message||String(err),true);
+      }
     });
-    $("cifApplyToSimulator")?.addEventListener("click",()=>{
+    $("cifDownload")?.addEventListener("click",()=>{
+      if(!lastGeneratedCifText){ setCifGeneratorMessage("Press Generate before downloading.",true); return; }
+      downloadGeneratedCif(lastGeneratedCifText,lastGeneratedCifName);
+      setCifGeneratorMessage(`Downloaded ${lastGeneratedCifName}.`);
+    });
+    $("cifSet")?.addEventListener("click",()=>{
       try{
-        const generated=buildGeneratedCif();
-        lastGeneratedCifText=generated.text; lastGeneratedCifName=generated.filename;
+        if(!lastGeneratedCifText) throw new Error("Press Generate before setting the CIF.");
         if($("sampleMode")?.value!=="single"){
           $("sampleMode").value="single"; updateModeVisibility();
         }
-        const parsed=loadCifText(generated.text,generated.filename);
-        setCifGeneratorMessage(`Generated and set ${generated.filename} as the selected CIF (no download): ${generated.sg.hm}, ${generated.atoms.length} asymmetric site(s), ${parsed.atoms.length} expanded atom(s).`);
+        const parsed=loadCifText(lastGeneratedCifText,lastGeneratedCifName);
+        setCifGeneratorMessage(`Set ${lastGeneratedCifName} as the selected CIF: ${parsed.atoms.length} expanded atom(s).`);
       }catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
     });
+
+    for(const button of document.querySelectorAll("[data-cif-output-tab]")){
+      button.addEventListener("click",()=>setCifOutputTab(button.dataset.cifOutputTab));
+    }
+    for(const th of document.querySelectorAll(".cif-sortable-th")){
+      const activate=()=>setCifReflectionSort(th.dataset.sortKey);
+      th.addEventListener("click",activate);
+      th.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();activate();}});
+    }
+    updateCifReflectionSortHeaders();
+    const reflectionFilterIds=[
+      "cifReflectionAlongU","cifReflectionAlongV",
+      "cifReflectionWithinS2Max","cifReflectionLambdaHalf"
+    ];
+    for(const id of reflectionFilterIds){
+      $(id)?.addEventListener("change",recalculateGeneratedReflections);
+    }
+    // The reflection wavelength is derived from Instrument configuration, so a
+    // fixed-energy change updates the generated reflection table automatically.
+    $("energy")?.addEventListener("change",recalculateGeneratedReflections);
+    $("energyMode")?.addEventListener("change",recalculateGeneratedReflections);
+    $("instrument")?.addEventListener("change",recalculateGeneratedReflections);
+    $("S2maxUser")?.addEventListener("change",recalculateGeneratedReflections);
+    $("S2maxEffective")?.addEventListener("change",recalculateGeneratedReflections);
+    for(const id of ["Uh","Uk","Ul","Vh","Vk","Vl"]){
+      $(id)?.addEventListener("change",recalculateGeneratedReflections);
+    }
   }catch(err){
     select.innerHTML='<option value="">Space-group data unavailable</option>';
-    for(const id of ["cifLoadExisting","cifGenerateDownload","cifApplyToSimulator","cifSpaceGroupNumber"]){ if($(id)) $(id).disabled=true; }
+    for(const id of ["cifLoadExisting","cifGenerate","cifDownload","cifSet","cifSpaceGroupNumber"]){ if($(id)) $(id).disabled=true; }
     setCifGeneratorMessage(`CIF Generator could not load space-group data: ${err?.message||String(err)}`,true);
   }
 }

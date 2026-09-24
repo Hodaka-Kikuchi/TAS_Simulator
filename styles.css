@@ -187,34 +187,83 @@ textarea:disabled {
 
 /* CIF generator */
 .cif-generator-card{max-width:none;width:100%;padding:14px}
-.cif-generator-card h3{font-size:14px;margin:16px 0 7px}
-.cif-generator-heading,.cif-atom-heading{display:flex;justify-content:space-between;gap:16px;align-items:flex-end}
-.cif-generator-heading h2,.cif-atom-heading h3{margin-bottom:4px}
-.cif-generator-setup{display:grid;grid-template-columns:minmax(260px,420px) minmax(260px,1fr);gap:14px;align-items:end;margin-top:14px}
+.cif-generator-card h3{font-size:14px;margin:14px 0 7px}
+.cif-generator-heading{display:flex;justify-content:space-between;gap:16px;align-items:flex-end}
+.cif-generator-heading h2{margin-bottom:4px}
+.cif-generator-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:12px;align-items:stretch}
+.cif-generator-input-pane,.cif-generator-output-pane{min-width:0;border:1px solid #d5d5d5;border-radius:7px;background:#fff}
+.cif-generator-input-pane{padding:12px}
+.cif-generator-output-pane{display:flex;flex-direction:column;min-height:650px;overflow:hidden}
+.cif-pane-heading,.cif-atom-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-end}
+.cif-pane-heading h3,.cif-atom-heading h3{margin:0 0 4px}
+.cif-generator-setup{display:grid;grid-template-columns:1fr;gap:8px;align-items:end;margin-top:12px}
 .cif-space-group-info{font-size:12px;color:#555;padding:7px 9px;background:#f7f7f7;border:1px solid #ddd;border-radius:5px;min-height:31px}
-.cif-lattice-grid{display:grid;grid-template-columns:repeat(6,minmax(95px,1fr));gap:9px}
-.cif-lattice-grid input{width:100%;max-width:none}
-.cif-atom-table-wrap{overflow-x:auto;margin-top:8px}
-.cif-atom-table{display:grid;grid-template-columns:minmax(110px,1fr) repeat(4,minmax(105px,1fr)) 78px;min-width:720px;border-left:1px solid #ccc;border-top:1px solid #ccc}
-.cif-atom-header{font-size:12px;font-weight:650;background:#f7f7f7;padding:7px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;text-align:center}
-.cif-atom-rows{display:contents}
-.cif-atom-row{display:contents}
-.cif-atom-cell{padding:5px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;background:#fff}
-.cif-atom-cell input{width:100%;max-width:none}
-.cif-atom-cell button{width:100%;padding:4px}
-.cif-add-atom-wide{display:block;width:100%;margin-top:8px;padding:8px 12px}
-.cif-generator-actions{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:10px;align-items:end;margin-top:14px}
-.cif-generator-actions input[type=text]{width:100%}
-.cif-generator-message{font-size:12px;min-height:20px;margin-top:8px;color:#555}
-.cif-generator-message.error-text{color:#a22}
-@media(max-width:1000px){.cif-lattice-grid{grid-template-columns:repeat(3,minmax(100px,1fr))}.cif-generator-setup{grid-template-columns:1fr}.cif-generator-actions{grid-template-columns:repeat(3,1fr)}.cif-generator-actions label{grid-column:1/-1}}
-@media(max-width:650px){.cif-lattice-grid{grid-template-columns:repeat(2,minmax(100px,1fr))}.cif-generator-heading,.cif-atom-heading{align-items:stretch;flex-direction:column}.cif-generator-actions{grid-template-columns:1fr}}
-
-/* CIF space-group number jump + selector. */
-.cif-space-group-picker{display:grid;grid-template-columns:88px minmax(220px,1fr);gap:8px;align-items:end}
+.cif-space-group-picker{display:grid;grid-template-columns:78px minmax(0,1fr);gap:8px;align-items:end}
 .cif-space-group-picker label{min-width:0}
 .cif-space-group-picker select,.cif-space-group-picker input{width:100%;max-width:none}
-@media(max-width:650px){.cif-space-group-picker{grid-template-columns:82px minmax(0,1fr)}}
+.cif-lattice-grid{display:grid;grid-template-columns:repeat(3,minmax(85px,1fr));gap:8px}
+.cif-lattice-grid input{width:100%;max-width:none}
+.cif-atom-table-wrap{overflow-x:auto;margin-top:8px}
+.cif-atom-table{display:grid;grid-template-columns:72px repeat(4,minmax(76px,1fr)) 94px;min-width:600px;border-left:1px solid #ccc;border-top:1px solid #ccc}
+.cif-atom-header{font-size:12px;font-weight:650;background:#f7f7f7;padding:7px 4px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;text-align:center}
+.cif-atom-rows{display:contents}
+.cif-atom-row{display:contents}
+.cif-atom-cell{padding:4px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;background:#fff}
+.cif-atom-cell input{width:100%;max-width:none;min-width:0}
+.cif-atom-cell button{width:100%;padding:4px 7px;white-space:nowrap}
+.cif-add-atom-wide{display:block;width:100%;margin-top:8px;padding:8px 12px}
+.cif-generator-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end;margin-top:14px}
+.cif-generator-actions label{grid-column:1/-1}
+.cif-generator-actions input[type=text]{width:100%}
+.cif-generator-actions button{width:100%;white-space:nowrap}
+.cif-generator-actions .primary-action{font-weight:700}
+.cif-generator-actions button:disabled{opacity:.45;cursor:not-allowed}
+.cif-generator-message{font-size:12px;min-height:20px;margin-top:8px;color:#555}
+.cif-generator-message.error-text{color:#a22}
+
+.cif-output-tabs{display:flex;gap:0;border-bottom:1px solid #ccc;background:#f5f5f5}
+.cif-output-tab{flex:1;border:0;border-right:1px solid #d5d5d5;border-radius:0;background:#f5f5f5;padding:10px 12px;font-weight:650}
+.cif-output-tab:last-child{border-right:0}
+.cif-output-tab.active{background:#fff;box-shadow:inset 0 -3px 0 #555}
+.cif-output-panel{flex:1;min-height:0;padding:10px;overflow:hidden}
+.cif-preview-note{box-sizing:border-box;width:100%;height:100%;min-height:590px;margin:0;padding:12px;overflow:auto;border:1px solid #d7d7d7;border-radius:5px;background:#fafafa;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;white-space:pre;tab-size:2}
+
+.cif-reflection-toolbar{display:grid;grid-template-columns:150px 190px minmax(0,1fr);gap:9px;align-items:end;margin-bottom:9px}
+.cif-reflection-toolbar input[type=number],.cif-reflection-toolbar select{width:100%;max-width:none}
+.cif-reflection-plane-toggle{display:flex;align-items:center;gap:7px;min-height:34px;font-size:12px}
+.cif-reflection-plane-toggle input{margin:0}
+.cif-reflection-summary{font-size:12px;color:#555;align-self:center;padding-bottom:4px}
+.cif-reflection-table-wrap{height:535px;overflow:auto;border:1px solid #ccc;border-radius:5px}
+.cif-reflection-table{border-collapse:separate;border-spacing:0;width:100%;min-width:760px;font-size:12px;font-variant-numeric:tabular-nums}
+.cif-reflection-table th,.cif-reflection-table td{padding:6px 8px;border-right:1px solid #ddd;border-bottom:1px solid #ddd;text-align:right;white-space:nowrap}
+.cif-reflection-table th:first-child,.cif-reflection-table td:first-child{text-align:center}
+.cif-reflection-table th{position:sticky;top:0;z-index:1;background:#f3f3f3;font-weight:700}
+.cif-reflection-table th:last-child,.cif-reflection-table td:last-child{border-right:0}
+.cif-reflection-table tbody tr:last-child td{border-bottom:0}
+.cif-reflection-table tbody tr:nth-child(even) td{background:#fafafa}
+.cif-reflection-empty{text-align:center!important;color:#777;padding:20px!important}
+.cif-reflection-note{margin:8px 2px 0}
+
+@media(max-width:1180px){
+  .cif-generator-workspace{grid-template-columns:1fr}
+  .cif-generator-output-pane{min-height:620px}
+  .cif-preview-note{min-height:555px}
+  .cif-reflection-table-wrap{height:500px}
+}
+@media(max-width:760px){
+  .cif-lattice-grid{grid-template-columns:repeat(2,minmax(90px,1fr))}
+  .cif-pane-heading,.cif-atom-heading{align-items:stretch;flex-direction:column}
+  .cif-generator-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cif-generator-actions label{grid-column:1/-1}
+  .cif-generator-actions button{width:100%}
+  .cif-reflection-toolbar{grid-template-columns:1fr 1fr}
+  .cif-reflection-summary{grid-column:1/-1}
+}
+@media(max-width:520px){
+  .cif-space-group-picker{grid-template-columns:70px minmax(0,1fr)}
+  .cif-generator-actions,.cif-reflection-toolbar{grid-template-columns:1fr}
+  .cif-reflection-summary{grid-column:auto}
+}
 
 
 /* vNext: wider Q-E workspace, narrower Angle calculation / TAS geometry card. */
@@ -439,3 +488,110 @@ textarea:disabled {
   justify-content:center;
 }
 
+
+/* Readability pass: enlarge permanent sidebar form controls without changing the
+   established button-label sizing. */
+.sidebar label{font-size:13.5px;line-height:1.25}
+.sidebar input:not([type=checkbox]):not([type=radio]):not([type=range]),
+.sidebar select{font-size:14px;padding:6px 7px;min-height:32px}
+.sidebar h3{font-size:14px}
+.sidebar .auto-vector,.sidebar .status{font-size:13px}
+
+/* CIF Generator controls are used for data entry/review, so give them the same
+   legibility as the enlarged sidebar controls. */
+.cif-generator-input-pane label{font-size:13.5px}
+.cif-generator-input-pane input:not([type=checkbox]):not([type=radio]):not([type=file]),
+.cif-generator-input-pane select{font-size:14px;padding:6px 7px;min-height:32px}
+#cifGenerate{font-size:inherit;font-weight:700;padding:4px 5px;min-height:0}
+
+/* The preview remains bounded by its output pane; long CIFs scroll instead of
+   stretching the entire page. */
+#cifPreviewPanel{min-height:0;overflow:hidden}
+.cif-preview-note{height:535px;min-height:0;max-height:535px;overflow:auto;overscroll-behavior:contain;font-size:14px;line-height:1.5}
+
+/* Reflection-table readability and row selection. */
+.cif-reflection-toolbar{grid-template-columns:170px 175px 220px 160px minmax(0,1fr)}
+.cif-reflection-plane-toggle{font-size:13px}
+.cif-reflection-summary{font-size:13px}
+.cif-reflection-table{font-size:13px}
+.cif-reflection-table tbody tr{cursor:pointer}
+.cif-reflection-table tbody tr:hover td{background:#f0f4f8}
+.cif-reflection-table tbody tr.cif-reflection-selected td,
+.cif-reflection-table tbody tr.cif-reflection-selected:nth-child(even) td{background:#dbeafe;font-weight:650}
+.cif-reflection-table tbody tr.cif-reflection-selected td:first-child{box-shadow:inset 4px 0 0 #3b82f6}
+.cif-reflection-table tbody tr:focus{outline:2px solid #3b82f6;outline-offset:-2px}
+
+@media(max-width:1180px){
+  .cif-reflection-toolbar{grid-template-columns:1fr 1fr}
+  .cif-reflection-summary{grid-column:1/-1}
+}
+
+
+/* v4 readability: main-workspace controls match the enlarged sidebar inputs.
+   Buttons keep their established label size. Range sliders keep native sizing. */
+.tab-panel label,
+.calc-card label,
+#singleMain label{font-size:13.5px;line-height:1.25}
+.tab-panel input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+.tab-panel select,
+.calc-card input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+.calc-card select,
+#singleMain input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+#singleMain select{font-size:14px;padding:6px 7px;min-height:32px}
+.qe-range-control .qe-control-entry input[type=number]{font-size:14px;min-height:32px;padding:6px 7px}
+.geometry-hw-slider-row output,.energy-slider-row output{font-size:13px}
+
+/* CIF atom/action proportions. */
+.cif-atom-table{grid-template-columns:72px repeat(4,minmax(76px,1fr)) 94px;min-width:600px}
+.cif-atom-cell button{white-space:nowrap;padding-left:7px;padding-right:7px}
+
+/* CIF preview is a bounded, scrollable review pane like the reflection table. */
+.cif-preview-note{height:535px;min-height:0;max-height:535px;font-size:14px;line-height:1.5;overflow:auto}
+@media(max-width:1180px){.cif-preview-note{height:500px;max-height:500px}}
+
+/* CIF preview intentionally uses the same viewport height as the Reflection table. */
+
+/* v4.5 reflection-table simplification */
+.cif-reflection-toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-bottom:9px}
+.cif-reflection-plane-toggle{font-size:13px;min-height:30px}
+.cif-sortable-th{cursor:pointer;user-select:none}
+.cif-sortable-th:hover{background:#e8edf3}
+.cif-sortable-th:focus{outline:2px solid #3b82f6;outline-offset:-2px}
+.cif-sort-indicator{display:inline-block;min-width:1em;margin-left:3px;font-size:.82em;vertical-align:1px}
+
+/* v4.6: make CIF output content fill the full output-pane height and improve
+   reflection-table readability. The outer output pane already stretches to the
+   same grid-row height as Structure input; let the active tab content consume
+   all remaining height instead of stopping at a fixed 535 px. */
+.cif-generator-output-pane{min-height:0}
+.cif-output-panel{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+.cif-output-panel.hidden{display:none!important}
+#cifPreviewPanel,#cifReflectionsPanel{min-height:0}
+.cif-preview-note{flex:1 1 auto;width:100%;height:auto;min-height:0;max-height:none;overflow:auto;font-size:15px;line-height:1.55}
+.cif-reflection-toolbar{flex:0 0 auto;margin-bottom:10px}
+.cif-reflection-plane-toggle{font-size:14.5px;line-height:1.3;min-height:34px;gap:8px;font-weight:600}
+.cif-reflection-plane-toggle input[type=checkbox]{width:17px;height:17px;flex:0 0 17px}
+.cif-reflection-table-wrap{flex:1 1 auto;height:auto;min-height:0;overflow:auto}
+.cif-reflection-table{font-size:14px;line-height:1.35}
+.cif-reflection-table th,.cif-reflection-table td{padding:8px 10px}
+.cif-reflection-table th{font-size:14px}
+
+@media(max-width:1180px){
+  .cif-generator-output-pane{min-height:620px}
+  .cif-preview-note{height:auto;max-height:none}
+  .cif-reflection-table-wrap{height:auto}
+}
+
+
+/* v4.7: match the output FRAME to the pre-generated Structure input frame.
+   JavaScript writes the desktop outer height from the left pane.  Both tab
+   contents keep their own internal scrollbars and cannot expand that frame. */
+.cif-generator-workspace{align-items:start}
+.cif-generator-output-pane{min-height:0;overflow:hidden}
+.cif-output-panel{flex:1 1 auto;min-height:0;overflow:hidden}
+.cif-preview-note{flex:1 1 auto;height:100%;min-height:0;max-height:none;overflow:auto}
+.cif-reflection-table-wrap{flex:1 1 auto;height:100%;min-height:0;overflow:auto}
+@media(max-width:1180px){
+  .cif-generator-output-pane{height:auto!important;min-height:620px}
+  .cif-preview-note,.cif-reflection-table-wrap{height:auto;min-height:0;overflow:auto}
+}
