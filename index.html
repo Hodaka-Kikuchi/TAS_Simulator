@@ -204,11 +204,12 @@
           <div class="absorption-beam-controls">
             <label>Energy (meV)<input id="absorptionEnergy" type="number" min="0" step="0.001"></label>
             <label>Wavelength (Å)<input id="absorptionLambda" type="number" min="0" step="0.001"></label>
+            <label>SE transmission (%)<input id="absorptionSETransmission" type="number" min="0" max="100" step="0.1" value="100"></label>
           </div>
           <div class="absorption-thickness-control">
-            <label>Sample thickness (mm)<input id="absorptionThickness" type="number" value="1.0" min="0" step="0.1"></label>
-            <input id="absorptionThicknessSlider" type="range" min="0" max="20" step="0.05" value="1.0" aria-label="Sample thickness">
-            <label>Transmission (%)<input id="absorptionTransmission" type="number" value="" min="0.000001" max="100" step="0.1"></label>
+            <label>Sample thickness (mm)<input id="absorptionThickness" type="number" value="1.00" min="0" step="0.01"></label>
+            <input id="absorptionThicknessSlider" type="range" min="0" max="20" step="0.01" value="1.00" aria-label="Sample thickness">
+            <label>Overall transmission (%)<input id="absorptionTransmission" type="number" value="" min="0.000001" max="100" step="0.1"></label>
           </div>
           <div id="absorptionResults" class="absorption-results"></div>
         </div>
@@ -221,13 +222,6 @@
 
   <div id="cifGeneratorPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabCifGenerator">
     <section class="calc-card cif-generator-card">
-      <div class="cif-generator-heading">
-        <div>
-          <h2>CIF Generator</h2>
-          
-        </div>
-      </div>
-
       <div class="cif-generator-workspace">
         <div class="cif-generator-input-pane">
           <div class="cif-pane-heading">
@@ -253,6 +247,7 @@
           <div class="cif-generator-beam-grid">
             <label>Energy (meV)<input id="cifReflectionEnergy" type="number" min="0" step="0.001"></label>
             <label>Wavelength (Å)<input id="cifReflectionWavelength" type="number" min="0" step="0.0001"></label>
+            <label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" type="number" min="0" step="0.0001"></label>
           </div>
 
           <h3>Lattice parameters</h3>
@@ -267,13 +262,13 @@
 
           <div class="cif-atom-heading">
             <div>
-              <h3>Asymmetric-unit atoms</h3>
+              <h3>Atomic positions</h3>
               
             </div>
           </div>
           <div class="cif-atom-table-wrap">
             <div class="cif-atom-table" id="cifAtomTable">
-              <div class="cif-atom-header">Atom</div><div class="cif-atom-header">x</div><div class="cif-atom-header">y</div><div class="cif-atom-header">z</div><div class="cif-atom-header">Occupancy</div><div class="cif-atom-header"></div>
+              <div class="cif-atom-header">Index</div><div class="cif-atom-header">Atom</div><div class="cif-atom-header">x</div><div class="cif-atom-header">y</div><div class="cif-atom-header">z</div><div class="cif-atom-header">Occupancy</div><div class="cif-atom-header"></div>
               <div id="cifAtomRows" class="cif-atom-rows"></div>
             </div>
           </div>
@@ -314,9 +309,9 @@
               <table class="cif-reflection-table">
                 <thead><tr>
                   <th>Index (h k l)</th>
-                  <th class="cif-sortable-th" data-sort-key="intensity" data-sort-label="Intensity |F|² (barn)" tabindex="0" role="button" aria-sort="descending">Intensity |F|² (barn) <span class="cif-sort-indicator">▼</span></th>
+                  <th class="cif-sortable-th" data-sort-key="intensity" data-sort-label="|F|² (barn)" tabindex="0" role="button" aria-sort="descending">|F|² (barn) <span class="cif-sort-indicator">▼</span></th>
                   <th>Multiplicity</th>
-                  <th class="cif-sortable-th" data-sort-key="totalIntensity" data-sort-label="Total intensity (barn)" tabindex="0" role="button" aria-sort="none">Total intensity (barn) <span class="cif-sort-indicator"></span></th>
+                  <th class="cif-sortable-th" data-sort-key="totalIntensity" data-sort-label="Total |F|² (barn)" tabindex="0" role="button" aria-sort="none">Total |F|² (barn) <span class="cif-sort-indicator"></span></th>
                   <th class="cif-sortable-th" data-sort-key="twoTheta" data-sort-label="2θ (deg)" tabindex="0" role="button" aria-sort="none">2θ (deg) <span class="cif-sort-indicator"></span></th>
                   <th class="cif-sortable-th" data-sort-key="q" data-sort-label="Q (Å⁻¹)" tabindex="0" role="button" aria-sort="none">Q (Å⁻¹) <span class="cif-sort-indicator"></span></th>
                   <th class="cif-sortable-th" data-sort-key="d" data-sort-label="d (Å)" tabindex="0" role="button" aria-sort="none">d (Å) <span class="cif-sort-indicator"></span></th>

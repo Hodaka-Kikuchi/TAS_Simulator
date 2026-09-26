@@ -448,8 +448,12 @@ export function neutronAbsorptionSummary(structure,wavelengthA,thicknessCm=0){
     if(!Number.isFinite(sigmaScat)){ missingScat.add(element||'?'); continue; }
     if(!Number.isFinite(bRe) || !Number.isFinite(bIm)){ missingB.add(element||'?'); continue; }
 
+    const sigmaCohElement=coherentCrossSectionBarn(element);
+    const sigmaIncohElement=incoherentCrossSectionBarn(element);
     const absContribution=occ*sigmaAbs;
     const scatContribution=occ*sigmaScat;
+    const cohContribution=Number.isFinite(sigmaCohElement)?occ*sigmaCohElement:NaN;
+    const incohContribution=Number.isFinite(sigmaIncohElement)?occ*sigmaIncohElement:NaN;
     sigmaAbsCellBarn+=absContribution;
     sigmaScatCellBarn+=scatContribution;
     atomCount+=occ;
@@ -459,12 +463,14 @@ export function neutronAbsorptionSummary(structure,wavelengthA,thicknessCm=0){
 
     const row=byElement.get(element)||{
       element,count:0,
-      sigmaAbsBarn:sigmaAbs,sigmaScatBarn:sigmaScat,
-      absContributionBarn:0,scatContributionBarn:0,
+      sigmaAbsBarn:sigmaAbs,sigmaCohBarn:sigmaCohElement,sigmaIncohBarn:sigmaIncohElement,sigmaScatBarn:sigmaScat,
+      absContributionBarn:0,cohContributionBarn:0,incohContributionBarn:0,scatContributionBarn:0,
       resonanceCaution:!!rec?.resonance_caution
     };
     row.count+=occ;
     row.absContributionBarn+=absContribution;
+    if(Number.isFinite(cohContribution)) row.cohContributionBarn+=cohContribution;
+    if(Number.isFinite(incohContribution)) row.incohContributionBarn+=incohContribution;
     row.scatContributionBarn+=scatContribution;
     byElement.set(element,row);
   }

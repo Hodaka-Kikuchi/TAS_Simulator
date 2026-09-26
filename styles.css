@@ -203,14 +203,16 @@ textarea:disabled {
 .cif-space-group-picker select,.cif-space-group-picker input{width:100%;max-width:none}
 .cif-lattice-grid{display:grid;grid-template-columns:repeat(3,minmax(85px,1fr));gap:8px}
 .cif-lattice-grid input{width:100%;max-width:none}
-.cif-atom-table-wrap{overflow-x:auto;margin-top:8px}
-.cif-atom-table{display:grid;grid-template-columns:72px repeat(4,minmax(76px,1fr)) 94px;min-width:600px;border-left:1px solid #ccc;border-top:1px solid #ccc}
-.cif-atom-header{font-size:12px;font-weight:650;background:#f7f7f7;padding:7px 4px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;text-align:center}
+.cif-atom-table-wrap{overflow:auto;margin-top:8px;max-height:232px;border-bottom:1px solid #ccc}
+.cif-atom-table{display:grid;grid-template-columns:52px 72px repeat(4,minmax(76px,1fr)) 94px;min-width:652px;border-left:1px solid #ccc;border-top:1px solid #ccc}
+.cif-atom-header{font-size:12px;font-weight:650;background:#f7f7f7;padding:7px 4px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;text-align:center;position:sticky;top:0;z-index:2}
 .cif-atom-rows{display:contents}
 .cif-atom-row{display:contents}
 .cif-atom-cell{padding:4px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;background:#fff}
 .cif-atom-cell input{width:100%;max-width:none;min-width:0}
 .cif-atom-cell button{width:100%;padding:4px 7px;white-space:nowrap}
+.cif-atom-index{display:flex;align-items:center;justify-content:center;font-weight:650;color:#555;background:#fafafa}
+.cif-atom-cell input.cif-invalid-number{background:#f2b19d;border-color:#c55235;box-shadow:0 0 0 1px rgba(197,82,53,.12) inset}
 .cif-add-atom-wide{display:block;width:100%;margin-top:8px;padding:8px 12px}
 .cif-generator-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:end;margin-top:14px}
 .cif-generator-actions label{grid-column:1/-1}
@@ -218,7 +220,7 @@ textarea:disabled {
 .cif-filename-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
 .cif-filename-entry input{border-top-right-radius:0;border-bottom-right-radius:0}
 .cif-filename-suffix{display:flex;align-items:center;align-self:stretch;padding:0 9px;border:1px solid #bbb;border-left:0;border-radius:0 4px 4px 0;background:#f5f5f5;font-size:14px;color:#444}
-.cif-generator-beam-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 12px}
+.cif-generator-beam-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 12px}
 .cif-generator-beam-grid input{width:100%;max-width:none}
 .cif-generator-actions button{width:100%;white-space:nowrap}
 .cif-generator-actions .primary-action{font-weight:700}
@@ -547,7 +549,7 @@ textarea:disabled {
 .geometry-hw-slider-row output,.energy-slider-row output{font-size:13px}
 
 /* CIF atom/action proportions. */
-.cif-atom-table{grid-template-columns:72px repeat(4,minmax(76px,1fr)) 94px;min-width:600px}
+.cif-atom-table{grid-template-columns:52px 72px repeat(4,minmax(76px,1fr)) 94px;min-width:652px}
 .cif-atom-cell button{white-space:nowrap;padding-left:7px;padding-right:7px}
 
 /* CIF preview is a bounded, scrollable review pane like the reflection table. */
@@ -724,3 +726,34 @@ textarea:disabled {
 .absorption-thickness-control{grid-template-columns:minmax(150px,.7fr) minmax(220px,1.35fr) minmax(150px,.7fr);}
 .absorption-thickness-control label:last-child{justify-self:end;width:100%;max-width:180px;}
 #absorptionTransmission{width:100%;}
+
+/* v18: keep beam conditions and the 1/e + transmission summaries on single rows. */
+.absorption-beam-controls{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+.absorption-summary-cards{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
+.absorption-summary-cards > .absorption-summary-card:first-child{
+  grid-column:span 1;
+}
+.absorption-summary-cards > .absorption-summary-card:nth-child(2){
+  grid-column:span 3;
+}
+.absorption-summary-cards > .absorption-summary-card:nth-child(3),
+.absorption-summary-cards > .absorption-summary-card:nth-child(4){
+  grid-column:span 2;
+}
+@media(max-width:1050px){
+  .absorption-beam-controls{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .absorption-summary-cards{grid-template-columns:repeat(4,minmax(0,1fr));}
+  .absorption-summary-cards > .absorption-summary-card:first-child{grid-column:span 1;}
+  .absorption-summary-cards > .absorption-summary-card:nth-child(2){grid-column:span 3;}
+  .absorption-summary-cards > .absorption-summary-card:nth-child(3),
+  .absorption-summary-cards > .absorption-summary-card:nth-child(4){grid-column:span 2;}
+}
+@media(max-width:760px){
+  .absorption-beam-controls{grid-template-columns:1fr;}
+  .absorption-summary-cards{grid-template-columns:1fr;}
+  .absorption-summary-cards > .absorption-summary-card{grid-column:span 1!important;}
+}
