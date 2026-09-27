@@ -151,6 +151,7 @@ function backgroundColor(slot,alpha=1){
 const legacyRangeInstruments = new Map();
 
 let singleCache = null;
+let powderCache = null;
 let selectedCifStructure = null;
 let selectedCifFileName = "";
 
@@ -2308,15 +2309,34 @@ function updateModeVisibility(){
   $("singleCrystalInputs").classList.toggle("hidden",!single);
   $("referenceSection").classList.toggle("hidden",!single);
   $("darkSection").classList.toggle("hidden",!single);
-  $("geometryRow").classList.toggle("hidden",!single);
-  $("senseRow").classList.toggle("hidden",!single);
-  $("s1minWrap").classList.toggle("hidden",!single);
-  $("s1maxWrap").classList.toggle("hidden",!single);
-  $("lambdaHalf").closest("label").classList.toggle("hidden",!single);
-  $("singleMain").classList.toggle("hidden",!single);
-  $("powderMain").classList.toggle("hidden",single);
-  $("s2Label").childNodes[0].nodeValue = single ? "S2 min (deg)" : "minimum 2θ (deg)";
+
+  // Instrument configuration is intentionally identical for Single crystal and
+  // Powder. Only sample-specific controls and the left Q-E plot switch modes.
+  $("geometryRow")?.classList.remove("hidden");
+  $("senseRow")?.classList.remove("hidden");
+  $("s1minWrap")?.classList.remove("hidden");
+  $("s1maxWrap")?.classList.remove("hidden");
+  // Powder has no sample-orientation degree of freedom. Keep the common
+  // Instrument configuration layout, but make the S1 limits read-only in
+  // practice by disabling their entry boxes only while Powder is selected.
+  if($("S1min")) $("S1min").disabled=!single;
+  if($("S1max")) $("S1max").disabled=!single;
+  $("lambdaHalf")?.closest("label")?.classList.remove("hidden");
+  if($("s2Label")?.childNodes?.length) $("s2Label").childNodes[0].nodeValue="S2 min (deg)";
+
+  // Q-E Range uses one shared two-column workspace for Single crystal and Powder.
+  // Only the left plot and the Angle-calculation target controls change with mode;
+  // Time estimate and the TAS-geometry card remain in the same place and size.
+  $("singlePlot")?.classList.toggle("hidden",!single);
+  $("powderPlot")?.classList.toggle("hidden",single);
+  $("singleGeometryTarget")?.classList.toggle("hidden",!single);
+  $("powderGeometryTarget")?.classList.toggle("hidden",single);
+  $("geometrySpurionWarning")?.classList.toggle("hidden",!single);
+  $("qeRangeControlGrid")?.classList.toggle("hidden",!single);
+  document.querySelector('.nuclear-label-control')?.classList.toggle('hidden',!single);
+  if(!single) syncPowderLinkedInputs();
   updateCifUI();
+  requestAnimationFrame(scheduleVisiblePlotResize);
 }
 
 function latticeParams(){
@@ -3237,21 +3257,26 @@ function qeGeometryAngles(cache, senseOverride=null){
 }
 
 function renderGeometry(cache,index=0){
-  const i=Math.max(0,Math.min(index,cache.hwList.length-1));
-  // Geometry display follows the user-facing sign directly.
-  // cache.sense is the intentionally swapped INTERNAL numerical branch and
-  // must not determine which configuration picture is shown.
+  const isPowder=checkedValue("sampleMode")==="powder" || !!cache?.powder;
+  const i=Math.max(0,Math.min(index,Math.max(0,(cache.hwList?.length||1)-1)));
+  // Powder has no crystallographic sample orientation, but the TAS scattering
+  // sign still determines the displayed motor-angle branch exactly as it does
+  // for Single crystal.
   const sense=checkedValue("sense");
-  const hw=cache.hwList[i] || 0;
-  updateGeometrySpurionWarning(cache,num("geomHW"));
+  const hw=isPowder ? parseNumericValue($("powderGeomHW")?.value) || 0 : (cache.hwList[i] || 0);
+  if(isPowder){
+    $("geometrySpurionWarning")?.classList.add("hidden");
+  }else{
+    $("geometrySpurionWarning")?.classList.remove("hidden");
+    updateGeometrySpurionWarning(cache,num("geomHW"));
+  }
   const mirror=sense==="+-+" ? 1 : -1;
 
-  // Default explanatory geometry is retained when the requested target cannot
-  // be solved.  A valid h,k,l,hw target switches the drawing to calculated TAS
-  // motor angles while keeping all flight-leg lengths equal for readability.
+  // A Single-crystal target is h,k,l,hw. A Powder target is the linked
+  // S2/Q pair together with hw; editing either S2 or Q updates the other.
   let target=null;
   let targetError="";
-  try{ target=qeGeometryAngles(cache); }
+  try{ target=isPowder ? powderGeometryTarget() : qeGeometryAngles(cache); }
   catch(err){ targetError=err?.message || String(err); }
 
   const L=2.05;
@@ -3272,7 +3297,11 @@ function renderGeometry(cache,index=0){
     // canonical user-facing +-+ geometry from the +-+ motor-angle branch, then
     // apply the existing display mirror below only when the UI selects -+-.
     // Numerical Angle/Q-E results remain on the intentionally swapped branches.
-    const drawTarget=qeGeometryAngles(cache,"+-+");
+    // Use the exact same canonical raw +-+ motor-angle branch for Powder and
+    // Single crystal. Powder's user-facing angle calculation still keeps the
+    // established sign-label mapping; only the schematic bypasses that mapping
+    // so the drawing mirrors exactly like the Single-crystal schematic.
+    const drawTarget=isPowder ? powderGeometryTarget("+-+",true) : qeGeometryAngles(cache,"+-+");
     const {angles,ki,kf}=drawTarget;
     source=[-L,0];
     mono=[0,0];
@@ -3352,7 +3381,7 @@ function renderGeometry(cache,index=0){
   // Fixed, compact display radius: independent of instrument/angle auto-scaling.
   // The guide circle belongs to the dark-angle overlay, so hide it together
   // with the dark-angle sectors when the left-panel "show" checkbox is off.
-  const showDarkGeometry=Boolean($("addDark")?.checked);
+  const showDarkGeometry=!isPowder && Boolean($("addDark")?.checked);
   const darkRadius=1.0;
   if(showDarkGeometry){
     const circle=linspace(0,2*Math.PI,181);
@@ -3363,7 +3392,7 @@ function renderGeometry(cache,index=0){
   // rotate with the sample about Q; Direct-beam assets use the ki direction at
   // the Reference-Q condition; Fixed assets remain laboratory-fixed.
   let referenceBase=qAngle, deltaS1=0;
-  if(target){
+  if(target && !isPowder){
     try{
       const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
       const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
@@ -3463,57 +3492,45 @@ function renderGeometry(cache,index=0){
   };
   const qEnd=[sample[0]+qVectorLen*Math.cos(qAngle),sample[1]+qVectorLen*Math.sin(qAngle)];
 
-  // Display-only crystallographic U/V guides. Numerical TAS calculations are unchanged.
+  // Display-only crystallographic U/V guides are meaningful only for a
+  // Single-crystal sample. Powder has no sample-orientation axes.
   let uArrowAngle=qAngle, vArrowAngle=qAngle;
-  try{
-    const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
-    const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
-    const planePhi=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.atan2(y,x);};
-    const targetHKL=target ? [target.calc.h,target.calc.k,target.calc.l] : U;
-    const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
-    // Display-only U/V convention.
-    //
-    // -+- is already validated and remains exactly on the existing
-    // right-handed formula:
-    //   qAngle + (phiAxis - phiTarget)
-    //
-    // For +-+, U/V must rotate with the already-validated sample-attached
-    // Dark-angle motion, BUT the U->V crystallographic separation must keep
-    // its original right-handed sign.  Therefore do not negate each
-    // (phiAxis-phiTarget) offset (that mirrors U/V into a left-handed pair).
-    // Instead:
-    //   1) rotate a common crystallographic reference axis with the Dark angle;
-    //   2) add the original right-handed U/V offsets from that reference axis.
-    if(sense==="+-+"){
-      const fixedRefEnergy=(cache.energyMode==="Ei fixed") ? cache.Ei : cache.Ef;
-      const orientationRef=effectiveOrientationReference(cache.rl,fixedRefEnergy);
-      const phiRef=planePhi(orientationRef.hkl);
-      const crystalBase=qAngle-(phiRef-phiT);
-      uArrowAngle=crystalBase+(phiU-phiRef);
-      vArrowAngle=crystalBase+(phiV-phiRef);
-    }else{
-      uArrowAngle=qAngle+(phiU-phiT);
-      vArrowAngle=qAngle+(phiV-phiT);
-    }
-  }catch(_err){}
-  // Display U and V as vectors, like ki/kf/Q.  Their length is 1.5 times the
-  // guide-circle radius so the arrowheads and labels sit clear of the circle.
   const uvVectorLen=1.5*darkRadius;
   const vectorEnd=ang=>[
     sample[0]+uvVectorLen*Math.cos(ang),
     sample[1]+uvVectorLen*Math.sin(ang)
   ];
-  const uEnd=vectorEnd(uArrowAngle), vEnd=vectorEnd(vArrowAngle);
+  let uEnd=null, vEnd=null;
   const uColor="#f2b6a0", vColor="#e377c2";
+  if(!isPowder){
+    try{
+      const U=[num("Uh"),num("Uk"),num("Ul")], V=[num("Vh"),num("Vk"),num("Vl")];
+      const {ex,ey}=makeSpiceScatteringPlaneBasis(cache.rl,U,V);
+      const planePhi=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.atan2(y,x);};
+      const targetHKL=target ? [target.calc.h,target.calc.k,target.calc.l] : U;
+      const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
+      if(sense==="+-+"){
+        const fixedRefEnergy=(cache.energyMode==="Ei fixed") ? cache.Ei : cache.Ef;
+        const orientationRef=effectiveOrientationReference(cache.rl,fixedRefEnergy);
+        const phiRef=planePhi(orientationRef.hkl);
+        const crystalBase=qAngle-(phiRef-phiT);
+        uArrowAngle=crystalBase+(phiU-phiRef);
+        vArrowAngle=crystalBase+(phiV-phiRef);
+      }else{
+        uArrowAngle=qAngle+(phiU-phiT);
+        vArrowAngle=qAngle+(phiV-phiT);
+      }
+    }catch(_err){}
+    uEnd=vectorEnd(uArrowAngle);
+    vEnd=vectorEnd(vArrowAngle);
+  }
 
   // Component-label placement only; the TAS geometry/calculation is untouched.
-  // Place Monochromator and Analyzer labels beside their components rather than
-  // directly underneath them. Put the Sample label farther outside the guide
-  // circle on the side opposite to Q so the text does not overlap the circle.
-  // Keep the monochromator label on the same screen side as its anchored
-  // component: left for +-+, right for -+-.
-  const monoLabel=[mono[0]+(sense==="+-+"?-1.05:1.05),mono[1]];
-  const anaLabel=[analyzer[0]-1.05,analyzer[1]];
+  // Keep labels on the outside of the mirrored TAS drawing: Analyzer is left
+  // for +-+ and right for -+-.  Give Monochromator a little more clearance
+  // from the crystal in both senses.
+  const monoLabel=[mono[0]+(sense==="+-+"?-1.28:1.28),mono[1]];
+  const anaLabel=[analyzer[0]+(sense==="+-+"?-1.05:1.05),analyzer[1]];
   const sampleLabelRadius=1.55;
   const sampleLabel=[
     sample[0]-sampleLabelRadius*Math.cos(qAngle),
@@ -3522,11 +3539,16 @@ function renderGeometry(cache,index=0){
   const detLabel=[detector[0],detector[1]-0.58];
   const kiMid=pointAlong(kiArrow.tail,kiArrow.head,.5),kfMid=pointAlong(kfArrow.tail,kfArrow.head,.5),qMid=pointAlong(sample,qEnd,.5);
 
-  const annotations=[
-    {x:uEnd[0],y:uEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.4,arrowcolor:uColor},
-    {x:vEnd[0],y:vEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.4,arrowcolor:vColor},
-    {x:uEnd[0]+0.16*Math.cos(uArrowAngle),y:uEnd[1]+0.16*Math.sin(uArrowAngle),text:"U",showarrow:false,font:{color:uColor,size:14}},
-    {x:vEnd[0]+0.16*Math.cos(vArrowAngle),y:vEnd[1]+0.16*Math.sin(vArrowAngle),text:"V",showarrow:false,font:{color:vColor,size:14}},
+  const annotations=[];
+  if(!isPowder && uEnd && vEnd){
+    annotations.push(
+      {x:uEnd[0],y:uEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.4,arrowcolor:uColor},
+      {x:vEnd[0],y:vEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.4,arrowcolor:vColor},
+      {x:uEnd[0]+0.16*Math.cos(uArrowAngle),y:uEnd[1]+0.16*Math.sin(uArrowAngle),text:"U",showarrow:false,font:{color:uColor,size:14}},
+      {x:vEnd[0]+0.16*Math.cos(vArrowAngle),y:vEnd[1]+0.16*Math.sin(vArrowAngle),text:"V",showarrow:false,font:{color:vColor,size:14}}
+    );
+  }
+  annotations.push(
     {x:monoLabel[0],y:monoLabel[1],text:"Monochromator",showarrow:false},
     {x:sampleLabel[0],y:sampleLabel[1],text:"Sample",showarrow:false},
     {x:anaLabel[0],y:anaLabel[1],text:"Analyzer",showarrow:false},
@@ -3537,16 +3559,14 @@ function renderGeometry(cache,index=0){
     {x:kfMid[0]+0.18*Math.sin(thetaKf),y:kfMid[1]-0.18*Math.cos(thetaKf),text:"kf",showarrow:false,font:{color:"#58c7e8"}},
     {x:qEnd[0],y:qEnd[1],ax:sample[0],ay:sample[1],xref:"x",yref:"y",axref:"x",ayref:"y",text:"",showarrow:true,arrowhead:3,arrowsize:1.1,arrowwidth:2.8,arrowcolor:"#000"},
     {x:qMid[0]-0.18*Math.sin(qAngle),y:qMid[1]+0.18*Math.cos(qAngle),text:"Q",showarrow:false,font:{color:"#000"}}
-  ];
+  );
 
-  // Auto-fit the full TAS drawing to the geometry card, while anchoring
-  // the monochromator at a fixed screen position so changing the hbar-omega
-  // slider does not make the whole schematic jump.  +-+ anchors Mono toward
-  // the left; -+- anchors Mono farther toward the right so the whole mirrored
-  // configuration sits closer to the right edge, as requested.  Sample /
-  // analyzer / detector / guide-circle positions are otherwise free to move
-  // with the calculated angles.
-  const fitPoints=[source,mono,sample,analyzer,detector,kiArrow.tail,kiArrow.head,kfArrow.head,qEnd,uEnd,vEnd,monoLabel,anaLabel,sampleLabel,detLabel];
+  // Auto-fit the full TAS drawing to the geometry card.
+  const fitPoints=[source,mono,sample,analyzer,detector,kiArrow.tail,kiArrow.head,kfArrow.head,qEnd,monoLabel,anaLabel,sampleLabel,detLabel];
+  if(!isPowder && uEnd && vEnd) fitPoints.push(uEnd,vEnd);
+  // Reserve the same orientation-guide envelope for both sample modes. Powder
+  // hides U/V, but retaining this fit radius keeps the TAS drawing scale and
+  // monochromator anchor consistent with the Single-crystal view.
   const radial=Math.max(darkRadius,uvVectorLen,qVectorLen,kiVectorLen,kfVectorLen);
   fitPoints.push(
     [sample[0]-radial,sample[1]],[sample[0]+radial,sample[1]],
@@ -3582,16 +3602,19 @@ function renderGeometry(cache,index=0){
     if(target){
       const a=target.angles;
       angleBox.classList.remove("error-text");
-      const energyLine=`Ei=${target.Ei.toFixed(3)} meV, Ef=${target.Ef.toFixed(3)} meV`;
+      const qValue=isPowder
+        ? target.q
+        : norm(hklToQ(cache.rl,[target.calc.h,target.calc.k,target.calc.l]));
+      const energyLine=`Ei=${target.Ei.toFixed(3)} meV, Ef=${target.Ef.toFixed(3)} meV, Q=${qValue.toFixed(4)} Å⁻¹`;
 
       // Display-only S2 sign in the Angle calculation & TAS geometry card.
       // Keep target.angles.s2 unchanged because it is used by the geometry.
       const s2Display=sense==="+-+"
         ? -Math.abs(Number(a.s2))
         : +Math.abs(Number(a.s2));
-
-      const angleLine=`M1=${formatAngle(-a.m1)}°, M2=${formatAngle(-a.m2)}°, S1=${formatAngle(a.s1)}°, S2=${formatAngle(s2Display)}°, A1=${formatAngle(-a.a1)}°, A2=${formatAngle(-a.a2)}°`+
-        (a.warning?` &nbsp; | &nbsp; ${a.warning}`:"");
+      const s1Display=isPowder ? 0 : a.s1;
+      const angleLine=`M1=${formatAngle(-a.m1)}°, M2=${formatAngle(-a.m2)}°, S1=${formatAngle(s1Display)}°, S2=${formatAngle(s2Display)}°, A1=${formatAngle(-a.a1)}°, A2=${formatAngle(-a.a2)}°`+
+        (!isPowder && a.warning?` &nbsp; | &nbsp; ${a.warning}`:"");
       angleBox.innerHTML=`<div class="geometry-result-line geometry-energy-line">${energyLine}</div><div class="geometry-result-line geometry-angle-line">${angleLine}</div>`;
     }else{
       angleBox.classList.add("error-text"); angleBox.textContent=`Angle calculation unavailable: ${targetError}`;
@@ -4017,6 +4040,14 @@ function calculatePowder(){
     margin:{l:66,r:34,t:80,b:110},
     hovermode:"closest"
   },{responsive:true});
+
+  return {
+    inst,lc,energyMode,
+    Ei:energyMode==="Ei fixed" ? E : null,
+    Ef:energyMode==="Ef fixed" ? E : null,
+    hwList:[0],
+    powder:true
+  };
 }
 
 let timer=null;
@@ -4231,8 +4262,8 @@ function recalculate(){
       $("hwSlider").value=idx;
       renderSingle(singleCache,idx);
     } else {
-      calculatePowder();
-      updatePowderRelation(powderRelationDriver);
+      powderCache=calculatePowder();
+      renderGeometry(powderCache,0);
     }
   }catch(err){
     showError(err);
@@ -4312,8 +4343,9 @@ function setGeometryCardTab(name){
   // Both tabs share the same card width. Resize Plotly after switching panes
   // so it follows any responsive layout change without changing column widths.
   requestAnimationFrame(()=>{
-    try{ Plotly.Plots.resize($('singlePlot')); }catch(_e){}
-    if(!time && singleCache){
+    const powder=checkedValue('sampleMode')==='powder';
+    try{ Plotly.Plots.resize($(powder?'powderPlot':'singlePlot')); }catch(_e){}
+    if(!time && (powder ? powderCache : singleCache)){
       try{ Plotly.Plots.resize($('geometryPlot')); }catch(_e){}
     }
     if(time){
@@ -5646,39 +5678,112 @@ function updateAbsorptionCalculator(){
   }
 }
 
-// ==================== Powder Q / hw / 2theta helper ====================
-let powderRelationDriver='powderTwoTheta';
+// ==================== Powder Angle calculation helper ====================
 function powderWavevectors(hw){
   const E=num('energy');
   const mode=checkedValue('energyMode');
   const Ei=mode==='Ef fixed' ? E+hw : E;
   const Ef=mode==='Ef fixed' ? E : E-hw;
   if(!(Ei>0) || !(Ef>0)) return null;
-  return {ki:Math.sqrt(Ei/2.072),kf:Math.sqrt(Ef/2.072)};
+  return {Ei,Ef,ki:Math.sqrt(Ei/2.072),kf:Math.sqrt(Ef/2.072)};
 }
-function updatePowderRelation(driver=powderRelationDriver){
-  if(!$('powderQ') || !$('powderHW') || !$('powderTwoTheta')) return;
-  powderRelationDriver=driver;
-  const hw=Number($('powderHW').value);
-  if(!Number.isFinite(hw)) return;
+
+function powderQFromS2AtHW(s2,hw){
   const wv=powderWavevectors(hw);
-  const note=$('powderRelationNote');
-  if(!wv){ note.textContent='This ħω is outside the positive Ei/Ef range.'; return; }
-  const {ki,kf}=wv;
-  if(driver==='powderQ'){
-    const q=Number($('powderQ').value);
-    if(!Number.isFinite(q) || q<0) return;
-    const c=(ki*ki+kf*kf-q*q)/(2*ki*kf);
-    if(c < -1-1e-10 || c > 1+1e-10){ note.textContent='The entered Q is not accessible at this ħω.'; return; }
-    $('powderTwoTheta').value=rad2deg(Math.acos(clamp(c,-1,1))).toFixed(4);
+  if(!wv) return NaN;
+  const theta=deg2rad(Math.abs(Number(s2)));
+  return Math.sqrt(Math.max(0,wv.ki*wv.ki+wv.kf*wv.kf-2*wv.ki*wv.kf*Math.cos(theta)));
+}
+
+function powderSignedS2FromQAtHW(q,hw){
+  const s2abs=powderS2ForQAtHW(q,hw);
+  if(!Number.isFinite(s2abs)) return NaN;
+  return checkedValue('sense')==='+-+' ? -Math.abs(s2abs) : Math.abs(s2abs);
+}
+
+function powderLinkDriver(){
+  const host=$('powderGeometryTarget');
+  return host?.dataset.linkDriver==='s2' ? 's2' : 'q';
+}
+
+function setPowderLinkDriver(driver){
+  const host=$('powderGeometryTarget');
+  if(host) host.dataset.linkDriver=driver==='s2'?'s2':'q';
+}
+
+function syncPowderLinkedInputs(driver=powderLinkDriver(),{recalc=false}={}){
+  const s2Field=$('powderGeomS2'), qField=$('powderGeomQ'), hwField=$('powderGeomHW');
+  if(!s2Field || !qField || !hwField) return;
+  const hw=parseNumericValue(hwField.value);
+  if(!Number.isFinite(hw)) return;
+
+  if(driver==='s2'){
+    const s2=parseNumericValue(s2Field.value);
+    if(!Number.isFinite(s2)) return;
+    const q=powderQFromS2AtHW(s2,hw);
+    if(Number.isFinite(q) && document.activeElement!==qField) qField.value=q.toFixed(6);
   }else{
-    const tt=Number($('powderTwoTheta').value);
-    if(!Number.isFinite(tt)) return;
-    const t=deg2rad(tt);
-    const q=Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(t)));
-    $('powderQ').value=q.toFixed(6);
+    const q=parseNumericValue(qField.value);
+    if(!Number.isFinite(q)) return;
+    const s2=powderSignedS2FromQAtHW(q,hw);
+    if(Number.isFinite(s2) && document.activeElement!==s2Field) s2Field.value=s2.toFixed(4);
   }
-  note.textContent=`Ei=${(ki*ki*2.072).toFixed(4)} meV, Ef=${(kf*kf*2.072).toFixed(4)} meV`;
+  if(recalc) scheduleRecalc();
+}
+
+function powderGeometryTarget(uiSenseOverride=null,rawSenseForDrawing=false){
+  const s2Input=parseNumericValue($('powderGeomS2')?.value);
+  const qInput=parseNumericValue($('powderGeomQ')?.value);
+  const hw=parseNumericValue($('powderGeomHW')?.value);
+  if(!Number.isFinite(s2Input) || !Number.isFinite(qInput) || !Number.isFinite(hw)){
+    throw new Error('Enter valid Powder S2, Q and ħω values. Fractions such as 1/2 are accepted.');
+  }
+  const wv=powderWavevectors(hw);
+  if(!wv) throw new Error('This ħω is outside the positive Ei/Ef range.');
+  const {Ei,Ef,ki,kf}=wv;
+
+  // The last edited linked field is authoritative. Recalculate the partner once
+  // more here so calculations cannot use a stale Q/S2 pair.
+  let q,s2abs;
+  if(powderLinkDriver()==='s2'){
+    s2abs=Math.abs(s2Input);
+    if(!(s2abs>=0 && s2abs<=180)) throw new Error('S2 must be between -180° and 180°.');
+    q=powderQFromS2AtHW(s2Input,hw);
+  }else{
+    q=qInput;
+    if(!(q>=0)) throw new Error('Q must be non-negative.');
+    s2abs=powderS2ForQAtHW(q,hw);
+    if(!Number.isFinite(s2abs)) throw new Error('The entered Q is not accessible at this ħω.');
+  }
+
+  const braggAngle=(k,d,label)=>{
+    const arg=PI/(Number(d)*k);
+    if(arg>1+1e-12 || arg<-1-1e-12) throw new Error(`${label} Bragg condition is inaccessible at the selected energy.`);
+    return rad2deg(Math.asin(clamp(arg,-1,1)));
+  };
+  let m1abs=braggAngle(ki,num('dMono'),'Monochromator');
+  let a1abs=braggAngle(kf,num('dAna'),'Analyzer');
+  if(checkedValue('geometry')==='anti-W') a1abs=-a1abs;
+
+  // Match the same internal/user sign mapping used by Single-crystal Angle
+  // calculation. Powder has no sample orientation, so S1 is defined as 0.
+  const requestedSense=uiSenseOverride ?? checkedValue('sense');
+  const internalSense=rawSenseForDrawing ? requestedSense : calculationTasSense(requestedSense);
+  let senseM,senseS,senseA;
+  if(internalSense==='+-+'){ senseM=+1; senseS=-1; senseA=+1; }
+  else if(internalSense==='-+-'){ senseM=-1; senseS=+1; senseA=-1; }
+  else throw new Error(`Unsupported TAS sign configuration: ${internalSense}`);
+
+  const angles={
+    m1:senseM*m1abs,
+    m2:2*senseM*m1abs,
+    s1:0,
+    s2:senseS*s2abs,
+    a1:senseA*a1abs,
+    a2:2*senseA*a1abs,
+    warning:''
+  };
+  return {calc:{q,hw,s2:s2abs},q,s2:s2abs,angles,Ei,Ef,ki,kf};
 }
 
 function resizeVisiblePlots(){
@@ -6076,7 +6181,12 @@ async function initialize(){
   for(const id of ['energy','energyMode','instrument']) $(id)?.addEventListener('change',()=>{ syncAbsorptionBeamFromInstrument(); updateAbsorptionCalculator(); });
   syncAbsorptionBeamFromInstrument();
   updateAbsorptionCalculator();
-  $('powderQ').addEventListener('input',()=>updatePowderRelation('powderQ'));$('powderTwoTheta').addEventListener('input',()=>updatePowderRelation('powderTwoTheta'));$('powderHW').addEventListener('input',()=>updatePowderRelation(powderRelationDriver));
+  $('powderGeomS2')?.addEventListener('input',()=>{ setPowderLinkDriver('s2'); syncPowderLinkedInputs('s2'); });
+  $('powderGeomQ')?.addEventListener('input',()=>{ setPowderLinkDriver('q'); syncPowderLinkedInputs('q'); });
+  $('powderGeomHW')?.addEventListener('input',()=>syncPowderLinkedInputs());
+  for(const id of ['energy','energyMode','sense']) $(id)?.addEventListener('change',()=>{
+    if(checkedValue('sampleMode')==='powder') syncPowderLinkedInputs();
+  });
   $('hwEntry').addEventListener('change',()=>{if(singleCache){const i=nearestHWIndex(singleCache,Number($('hwEntry').value));renderSingle(singleCache,i);saveRightPanelState();}});
   $('s2Slider').addEventListener('input',()=>{$('s2Entry').value=Number($('s2Slider').value).toFixed(1);if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
   $('s2Entry').addEventListener('change',()=>{if(singleCache)renderSingle(singleCache,Number($('hwSlider').value));});
@@ -6103,7 +6213,7 @@ async function initialize(){
     try{ await selectCifFile(file); }catch(err){ showError(err); }
     finally{ $('cifFileInput').value=''; }
   });
-  setToolboxFrom('toolLambda'); updatePowderRelation('powderTwoTheta');
+  setToolboxFrom('toolLambda'); syncPowderLinkedInputs();
   initializeResponsivePlotResize();
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));

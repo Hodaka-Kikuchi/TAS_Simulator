@@ -1,9 +1,17 @@
+# TAS Q-E Range simulator — PATCH v22
 
-## v18 tablet UI
-- On tablet/coarse-pointer layouts, the Q-E range plot and Angle calculation / Time estimate card stack vertically instead of being squeezed side by side.
-- The same stacked layout is also used at viewport widths up to 1180 px, consistent with the CIF Generator responsive layout.
-- Toolbox conversion inputs use a two-column tablet grid (one column on narrow mobile) instead of a squeezed horizontal strip, and the four main tabs share the available width evenly.
+Changes in v22:
+- Powder Angle calculation now uses three equal-width linked entries: S2, Q, and hbar-omega.
+- Editing Powder S2 recalculates Q at the entered hbar-omega; editing Q recalculates signed S2. Changing hbar-omega preserves the most recently edited linked variable.
+- Powder angle results now display M1, M2, S1, S2, A1, and A2 like Single crystal; Powder S1 is fixed at 0.
+- Instrument configuration remains visually identical between Single crystal and Powder.
+- Sample Space group controls shrink to the sidebar width without overflowing.
+- Dark-angle Sample environment / Remove layout is responsive, and range-row Remove buttons use the same readable control sizing.
+- Existing Q-E/Resolution/Time estimate/CIF/Toolbox numerical logic is otherwise preserved.
 
+This ZIP is a PATCH. Overwrite the corresponding top-level files in the existing working project and keep resource directories such as instrument/, BG_material/, sample_environments/, etc.
 
-## v20
-- Time estimate footer is split into three stable rows: action buttons, Scan start, and Scan finish, preventing overlap on tablet-width layouts.
+## v23
+- Powder TAS Geometry now uses the same canonical sign-dependent drawing branch, scale envelope, and monochromator anchoring as Single crystal while keeping U/V hidden.
+- Dark angle 1 checkbox uses a blue check indicator.
+- Powder mode keeps S1 min/max visible but disables editing.

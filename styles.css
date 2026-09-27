@@ -342,6 +342,10 @@ textarea:disabled {
 .dark-asset input[type=checkbox]{
   accent-color:#111;
 }
+/* Dark angle 1 is the primary enabled asset and uses a blue check indicator. */
+#darkEnable1{
+  accent-color:#1677ff !important;
+}
 .dark-asset .checkbox-label span{
   color:#111 !important;
 }
@@ -1257,4 +1261,119 @@ main{
     grid-template-columns:minmax(0,1fr) 82px;
     width:100%;
   }
+}
+
+/* v21: Single-crystal / Powder Q-E range share the same workspace and right card. */
+.qe-main-plot-column{
+  min-width:0;
+  overflow:hidden;
+}
+#singlePlot,#powderPlot{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+}
+.powder-geometry-target{
+  display:grid;
+  grid-template-columns:minmax(92px,.65fr) minmax(120px,1fr) minmax(120px,1fr);
+  gap:8px;
+  align-items:end;
+}
+.powder-geometry-target input,
+.powder-geometry-target select{
+  width:100%;
+  max-width:100%;
+}
+@media(max-width:760px){
+  .powder-geometry-target{grid-template-columns:1fr 1fr;}
+  .powder-geometry-target>label:last-child{grid-column:1 / -1;}
+}
+
+/* v22: stable compact sidebar sizing and linked Powder Angle inputs. */
+.sample-spacegroup-row{
+  grid-template-columns:minmax(0,.78fr) minmax(0,.58fr) minmax(0,1.64fr);
+  gap:4px;
+  width:100%;
+  min-width:0;
+}
+.sample-spacegroup-row label,
+.sample-spacegroup-row select,
+#sampleSpaceGroup,
+#sampleSpaceGroupNumber{
+  min-width:0;
+  max-width:100%;
+  width:100%;
+}
+
+.powder-geometry-target{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  align-items:end;
+  min-width:0;
+}
+.powder-geometry-target>label,
+.powder-geometry-target input{
+  min-width:0;
+  width:100%;
+  max-width:100%;
+}
+
+/* Dark-angle cards must stay inside the sidebar even when a sample-environment
+   name is long. Both Remove buttons use the same readable control size. */
+.dark-asset-head{
+  grid-template-columns:minmax(0,.78fr) minmax(0,1.35fr) minmax(84px,.62fr);
+  gap:5px;
+  width:100%;
+  min-width:0;
+}
+.dark-asset-head label,
+.dark-asset-head select{
+  min-width:0;
+  max-width:100%;
+  width:100%;
+}
+.dark-table{
+  grid-template-columns:24px repeat(3,minmax(0,1fr)) minmax(84px,.72fr);
+  gap:3px;
+  min-width:0;
+  width:100%;
+}
+.dark-table input[type=number],
+.dark-table input[type=text]{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+.remove-dark-asset,
+.remove-dark-range{
+  width:100%;
+  min-width:0;
+  min-height:30px;
+  padding:4px 6px;
+  font-size:16px;
+  line-height:1.2;
+  white-space:nowrap;
+}
+
+@media(max-width:760px){
+  .sample-spacegroup-row{
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  }
+  .sample-spacegroup-row label:last-child{grid-column:1/-1}
+  .dark-asset-head{
+    grid-template-columns:minmax(0,.8fr) minmax(0,1.25fr) minmax(78px,.65fr);
+  }
+  .dark-table{
+    grid-template-columns:22px repeat(3,minmax(0,1fr)) minmax(78px,.72fr);
+  }
+}
+
+
+/* v24: keep the permanent left panel width stable when Single crystal / Powder
+   changes the amount of visible content. Reserve the vertical scrollbar gutter
+   so form controls do not grow/shrink by the scrollbar width. */
+.sidebar{scrollbar-gutter:stable;}
+@media(max-width:760px){
+  .sidebar{scrollbar-gutter:auto;}
 }

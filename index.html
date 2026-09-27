@@ -116,14 +116,25 @@
 
   <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
     <div id="singleMain">
-      <div class="chart-grid"><div><div id="singlePlot" class="qe-plot"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div class="geometry-card">
+      <div class="chart-grid"><div class="qe-main-plot-column"><div id="singlePlot" class="qe-plot"></div><div id="powderPlot" class="qe-plot powder hidden"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div class="geometry-card">
         <div class="geometry-card-tabs" role="tablist" aria-label="Angle calculation and time estimate">
           <button id="geometryTabAngles" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="geometryAnglesPane">Angle calculation & TAS geometry</button>
           <button id="geometryTabTime" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="geometryTimePane">Time estimate</button>
         </div>
         <div id="geometryAnglesPane" class="geometry-card-pane" role="tabpanel" aria-labelledby="geometryTabAngles">
           <div id="geometrySpurionWarning" class="qe-spurion-warning geometry-spurion-warning" aria-live="polite"></div>
-          <div class="geometry-target"><div class="geometry-target-row"><div class="grid4"><label>h<input id="geomH" type="number" value="1" step="0.1"></label><label>k<input id="geomK" type="number" value="0" step="0.1"></label><label>l<input id="geomL" type="number" value="0" step="0.1"></label><label>ħω (meV)<input id="geomHW" type="number" value="0" step="0.1"></label></div><div class="geometry-target-buttons"><div class="geometry-target-all-buttons"><button id="geomSetU" type="button">Set U</button><button id="geomSetV" type="button">Set V</button><button id="geomPerpU" type="button">ki ⟂ U</button><button id="geomPerpV" type="button">ki ⟂ V</button><button id="geomParallelU" type="button" class="hidden">ki ∥ U</button><button id="geomParallelV" type="button" class="hidden">ki ∥ V</button><button id="geomSetBragg" type="button" class="hidden">Set Bragg peak</button></div></div></div><div class="geometry-hw-slider-row"><label>ħω<input id="geomHWSlider" type="range" min="0" max="0" step="0.1" value="0"></label><output id="geomHWValue">0.0 meV</output></div><div id="geometryAngles" class="geometry-angles">Enter a target Q and ħω to calculate TAS angles.</div></div>
+          <div class="geometry-target">
+            <div id="singleGeometryTarget">
+              <div class="geometry-target-row"><div class="grid4"><label>h<input id="geomH" type="number" value="1" step="0.1"></label><label>k<input id="geomK" type="number" value="0" step="0.1"></label><label>l<input id="geomL" type="number" value="0" step="0.1"></label><label>ħω (meV)<input id="geomHW" type="number" value="0" step="0.1"></label></div><div class="geometry-target-buttons"><div class="geometry-target-all-buttons"><button id="geomSetU" type="button">Set U</button><button id="geomSetV" type="button">Set V</button><button id="geomPerpU" type="button">ki ⟂ U</button><button id="geomPerpV" type="button">ki ⟂ V</button><button id="geomParallelU" type="button" class="hidden">ki ∥ U</button><button id="geomParallelV" type="button" class="hidden">ki ∥ V</button><button id="geomSetBragg" type="button" class="hidden">Set Bragg peak</button></div></div></div>
+              <div class="geometry-hw-slider-row"><label>ħω<input id="geomHWSlider" type="range" min="0" max="0" step="0.1" value="0"></label><output id="geomHWValue">0.0 meV</output></div>
+            </div>
+            <div id="powderGeometryTarget" class="powder-geometry-target hidden">
+              <label>S2 (deg)<input id="powderGeomS2" type="text" inputmode="text" value="-30"></label>
+              <label>Q (Å⁻¹)<input id="powderGeomQ" type="text" inputmode="text" value="1.0"></label>
+              <label>ħω (meV)<input id="powderGeomHW" type="text" inputmode="text" value="0"></label>
+            </div>
+            <div id="geometryAngles" class="geometry-angles">Enter a target Q and ħω to calculate TAS angles.</div>
+          </div>
           <div id="geometryPlot" class="qe-plot geometry"></div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
@@ -172,20 +183,6 @@
           <div id="timeEstimateMessage" class="time-estimate-message" aria-live="polite"></div>
         </div>
       </div></div>
-    </div>
-    <div id="powderMain" class="hidden">
-      <section class="powder-relation-card">
-        <div class="geometry-card-title">Powder Q / ħω / 2θ calculator</div>
-        <div class="powder-relation-grid">
-          <label>Q (Å⁻¹)<input id="powderQ" type="number" value="1.000000" step="0.001"></label>
-          <label>ħω (meV)<input id="powderHW" type="number" value="0" step="0.1"></label>
-          <label>2θ (deg)<input id="powderTwoTheta" type="number" value="30" step="0.1"></label>
-          <div id="powderRelationNote" class="tool-note"></div>
-        </div>
-      </section>
-      <section class="powder-plot-card">
-        <div id="powderPlot" class="qe-plot powder"></div>
-      </section>
     </div>
   </div>
 
