@@ -5379,7 +5379,7 @@ function ensureExtendedToolboxUI(){
   // instead of squeezing the fields until they become unusable on a narrow screen.
   if(!document.getElementById('toolboxExtendedStyle')){
     const style=document.createElement('style'); style.id='toolboxExtendedStyle';
-    style.textContent=`#toolboxPanel .toolbox-grid{grid-template-columns:repeat(11,minmax(105px,1fr))!important;overflow-x:auto;align-items:end} #toolboxPanel .toolbox-grid label{min-width:105px}`;
+    style.textContent=`#toolboxPanel .toolbox-grid{grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr))!important;overflow-x:visible!important;align-items:end} #toolboxPanel .toolbox-grid label{min-width:0}`;
     document.head.appendChild(style);
   }
   // Extend the wavelength-multiple table with the same four quantities.
@@ -5688,6 +5688,28 @@ function resizeVisiblePlots(){
   panel.querySelectorAll(".js-plotly-plot").forEach(el=>{
     try{ Plotly.Plots.resize(el); }catch(_err){}
   });
+}
+
+let responsivePlotResizeFrame=0;
+function scheduleVisiblePlotResize(){
+  if(responsivePlotResizeFrame) cancelAnimationFrame(responsivePlotResizeFrame);
+  responsivePlotResizeFrame=requestAnimationFrame(()=>{
+    responsivePlotResizeFrame=requestAnimationFrame(()=>{
+      responsivePlotResizeFrame=0;
+      resizeVisiblePlots();
+    });
+  });
+}
+
+function initializeResponsivePlotResize(){
+  window.addEventListener('resize',scheduleVisiblePlotResize,{passive:true});
+  if(typeof ResizeObserver!=="undefined"){
+    const main=document.querySelector('main');
+    if(main){
+      const observer=new ResizeObserver(scheduleVisiblePlotResize);
+      observer.observe(main);
+    }
+  }
 }
 
 function setActiveTab(name){
@@ -6082,6 +6104,7 @@ async function initialize(){
     finally{ $('cifFileInput').value=''; }
   });
   setToolboxFrom('toolLambda'); updatePowderRelation('powderTwoTheta');
+  initializeResponsivePlotResize();
   setActiveTab(savedActiveTab());
   $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);

@@ -149,21 +149,25 @@
           </div>
 
           <div class="time-estimate-controls">
-            <button id="timeEstimateNow" class="time-set-now" type="button">Set now</button>
-            <button id="timeEstimateCalc" type="button">Calc finish</button>
-            <label class="time-datetime-label">Scan start
+            <div class="time-estimate-button-row">
+              <button id="timeEstimateNow" class="time-set-now" type="button">Set now</button>
+              <button id="timeEstimateCalc" type="button">Calc finish</button>
+              <button id="timeEstimateCalcMcu" type="button">Calc MCU</button>
+            </div>
+            <label class="time-datetime-label time-start-row">
+              <span class="time-datetime-title">Scan start</span>
               <span class="time-datetime-entry">
                 <input id="timeEstimateStartDate" type="date" aria-label="Scan start date">
                 <span class="time-clock-entry"><input id="timeEstimateStartHour" type="text" inputmode="numeric" maxlength="2" placeholder="HH" aria-label="Scan start hour"><span>:</span><input id="timeEstimateStartMinute" type="text" inputmode="numeric" maxlength="2" placeholder="MM" aria-label="Scan start minute"></span>
               </span>
             </label>
-            <label class="time-datetime-label">Scan finish
+            <label class="time-datetime-label time-finish-row">
+              <span class="time-datetime-title">Scan finish</span>
               <span class="time-datetime-entry">
                 <input id="timeEstimateEndDate" type="date" aria-label="Scan finish date">
                 <span class="time-clock-entry"><input id="timeEstimateEndHour" type="text" inputmode="numeric" maxlength="2" placeholder="HH" aria-label="Scan finish hour"><span>:</span><input id="timeEstimateEndMinute" type="text" inputmode="numeric" maxlength="2" placeholder="MM" aria-label="Scan finish minute"></span>
               </span>
             </label>
-            <button id="timeEstimateCalcMcu" type="button">Calc MCU</button>
           </div>
           <div id="timeEstimateMessage" class="time-estimate-message" aria-live="polite"></div>
         </div>

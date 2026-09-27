@@ -1082,3 +1082,179 @@ textarea:disabled {
     overflow-x:visible !important;
   }
 }
+
+/* v19 responsive containment: match Resolution/CIF Generator behavior on tablets.
+   Use the actual main-workspace width rather than viewport width, because the
+   persistent sidebar can leave much less room than the device viewport suggests. */
+main{
+  container-type:inline-size;
+}
+
+#qePanel,
+#singleMain,
+#singleMain .chart-grid,
+#singleMain .chart-grid>div:first-child,
+#singleMain .chart-grid>.geometry-card,
+#toolboxPanel,
+.toolbox-card,
+.absorption-card,
+.absorption-workspace,
+.absorption-left,
+.absorption-right,
+.harmonic-wrap{
+  min-width:0;
+  max-width:100%;
+}
+
+/* Angle calculation and Time estimate must obey identical width constraints. */
+#singleMain .chart-grid>div:first-child,
+#singleMain .chart-grid>.geometry-card{
+  width:100%;
+}
+#singlePlot,
+#geometryPlot{
+  min-width:0!important;
+  max-width:100%!important;
+  width:100%!important;
+}
+
+/* Toolbox entries wrap instead of forcing the whole application wider. */
+#toolboxPanel .toolbox-grid{
+  grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr))!important;
+  overflow-x:visible!important;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+#toolboxPanel .toolbox-grid label,
+#toolboxPanel .toolbox-grid input{
+  min-width:0!important;
+  max-width:100%;
+  width:100%;
+}
+.harmonic-wrap{
+  width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+}
+
+/* Keep the absorption Plotly canvas inside its card at every width. */
+.absorption-right{
+  width:100%;
+  overflow:hidden;
+}
+.absorption-plot{
+  min-width:0!important;
+  max-width:100%!important;
+  width:100%!important;
+}
+
+/* Container-responsive rules: these react to the usable main-column width after
+   subtracting the sidebar, which is what Resolution/CIF Generator effectively do. */
+@container (max-width:1100px){
+  #singleMain .chart-grid,
+  #singleMain .chart-grid.time-estimate-active{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  #singleMain .chart-grid>div:first-child,
+  #singleMain .chart-grid>.geometry-card{
+    min-width:0!important;
+    max-width:100%!important;
+  }
+  #toolboxPanel .toolbox-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  .absorption-workspace{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  .absorption-right,
+  .absorption-plot{
+    min-height:360px;
+  }
+  .absorption-thickness-control{
+    grid-template-columns:minmax(0,1fr) minmax(150px,1.2fr) minmax(0,1fr);
+  }
+}
+
+@container (max-width:700px){
+  #toolboxPanel .toolbox-grid{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  .absorption-beam-controls,
+  .absorption-thickness-control{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  .absorption-thickness-control label:last-child{
+    justify-self:stretch;
+    max-width:none;
+  }
+}
+
+
+/* v20 Time estimate footer: stable three-row layout.
+   Row 1 = action buttons, Row 2 = Scan start, Row 3 = Scan finish. */
+.time-estimate-controls{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  gap:7px;
+  align-items:stretch;
+  margin-top:10px;
+}
+.time-estimate-button-row{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;
+  width:100%;
+  min-width:0;
+}
+.time-estimate-button-row>button{
+  width:100%;
+  min-width:0;
+  min-height:0;
+  padding:4px 8px;
+  font-size:inherit;
+  font-weight:400;
+  white-space:nowrap;
+  margin:0;
+}
+.time-estimate-controls .time-datetime-label{
+  display:grid;
+  grid-template-columns:88px minmax(0,1fr);
+  gap:8px;
+  align-items:center;
+  width:100%;
+  min-width:0;
+  margin:0;
+}
+.time-datetime-title{
+  white-space:nowrap;
+}
+.time-estimate-controls .time-datetime-entry{
+  display:grid;
+  grid-template-columns:minmax(120px,160px) 82px;
+  gap:5px;
+  align-items:center;
+  width:min(100%,250px);
+  min-width:0;
+}
+.time-estimate-controls .time-datetime-entry input{
+  min-width:0;
+  max-width:100%;
+  width:100%;
+}
+.time-estimate-controls .time-set-now{
+  align-self:stretch;
+}
+@media(max-width:520px){
+  .time-estimate-button-row{
+    grid-template-columns:1fr;
+  }
+  .time-estimate-controls .time-datetime-label{
+    grid-template-columns:1fr;
+    gap:3px;
+  }
+  .time-estimate-controls .time-datetime-entry{
+    grid-template-columns:minmax(0,1fr) 82px;
+    width:100%;
+  }
+}
