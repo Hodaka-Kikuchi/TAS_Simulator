@@ -1033,3 +1033,52 @@ textarea:disabled {
   font-size:14px;
   line-height:1.45;
 }
+
+/* v18 tablet workspace: stack the Q-E plot and Angle/Time card on tablets.
+   Keep desktop side-by-side layout, while matching the CIF Generator's stacked feel
+   on narrower viewports and coarse-pointer tablet devices. */
+@media (max-width:1180px){
+  #singleMain .chart-grid,
+  #singleMain .chart-grid.time-estimate-active{
+    grid-template-columns:1fr !important;
+  }
+}
+
+@media (hover:none) and (pointer:coarse) and (min-width:761px) and (max-width:1500px){
+  #singleMain .chart-grid,
+  #singleMain .chart-grid.time-estimate-active{
+    grid-template-columns:1fr !important;
+  }
+
+  /* Use the available main workspace cleanly instead of leaving the Toolbox
+     conversion controls in a squeezed, horizontally-scrolling strip. */
+  .toolbox-card{
+    width:100%;
+    max-width:none;
+  }
+  .toolbox-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    overflow-x:visible !important;
+    padding-bottom:0 !important;
+  }
+  .toolbox-grid input[type=number]{
+    width:100%;
+    min-width:0;
+    max-width:none;
+  }
+
+  /* All four main tabs share the row evenly on tablet widths. */
+  .main-tabs .tab-button{
+    flex:1 1 0;
+    width:auto;
+    padding-left:8px;
+    padding-right:8px;
+  }
+}
+
+@media (hover:none) and (pointer:coarse) and (max-width:760px){
+  .toolbox-grid{
+    grid-template-columns:1fr !important;
+    overflow-x:visible !important;
+  }
+}
