@@ -1023,3 +1023,13 @@ textarea:disabled {
   .time-estimate-controls{grid-template-columns:1fr 1fr;}
   .time-estimate-controls .time-datetime-label{grid-column:span 2;}
 }
+
+
+/* v17: make Angle calculation actions/results match the surrounding Time estimate readability. */
+.geometry-target-buttons button{
+  font-size:inherit;
+}
+.geometry-angles{
+  font-size:14px;
+  line-height:1.45;
+}

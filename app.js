@@ -4451,6 +4451,8 @@ function updateTimeScanRowFields(row,values={}){
       else setTimeEstimateMessage(parsed.error,true);
     });
     input.addEventListener('change',()=>{
+      const parsed=validateTimeRangeInput(input);
+      if(parsed.ok) applyRangeToSelectedTimeScans(row,input);
       saveTimeEstimateState();
       validateAllTimeScanRows({showMessage:true});
     });
@@ -4463,6 +4465,23 @@ function timeScanRows(){
 
 function selectedTimeScanRows(){
   return timeScanRows().filter(row=>row.classList.contains('time-scan-selected'));
+}
+
+function applyRangeToSelectedTimeScans(sourceRow,sourceInput){
+  if(!sourceRow?.classList.contains('time-scan-selected') || !sourceInput) return;
+  const selected=selectedTimeScanRows();
+  if(selected.length<2) return;
+  const variable=sourceRow.querySelector('[data-time-variable]')?.value || '';
+  const key=sourceInput.dataset.timeRangeKey;
+  if(!key) return;
+  const value=sourceInput.value;
+  for(const row of selected){
+    if((row.querySelector('[data-time-variable]')?.value || '')!==variable) continue;
+    const input=row.querySelector(`[data-time-range-key="${key}"]`);
+    if(!input || input===sourceInput) continue;
+    input.value=value;
+    validateTimeRangeInput(input);
+  }
 }
 
 function applyMcuToSelectedTimeScans(sourceRow,value){
