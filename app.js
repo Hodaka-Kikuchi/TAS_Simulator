@@ -526,7 +526,7 @@ function refreshCifAtomRowIndices(){
 function validateCifAtomNumericInput(input){
   if(!input || !["x","y","z","occupancy"].includes(input.dataset.cifAtomField)) return true;
   const raw=String(input.value??"").trim();
-  const n=Number(raw);
+  const n=parseNumericValue(raw);
   const valid=raw!=="" && Number.isFinite(n) && (input.dataset.cifAtomField!=="occupancy" || (n>=0 && n<=1));
   input.classList.toggle("cif-invalid-number",!valid);
   input.setAttribute("aria-invalid",valid?"false":"true");
@@ -544,24 +544,25 @@ function addCifAtomRow(values={}, {invalidate=true}={}){
   row.appendChild(indexCell);
   const specs=[
     ["element","text",values.element ?? ""],
-    ["x","number",values.x ?? 0],
-    ["y","number",values.y ?? 0],
-    ["z","number",values.z ?? 0],
-    ["occupancy","number",values.occupancy ?? 1]
+    ["x","fraction",values.x ?? 0],
+    ["y","fraction",values.y ?? 0],
+    ["z","fraction",values.z ?? 0],
+    ["occupancy","fraction",values.occupancy ?? 1]
   ];
   for(const [key,type,value] of specs){
     const cell=document.createElement("div"); cell.className="cif-atom-cell";
     const input=document.createElement("input");
-    input.type=type; input.dataset.cifAtomField=key; input.value=String(value);
-    if(type==="number") input.step=key==="occupancy" ? "0.01" : "0.0001";
-    if(key==="occupancy"){ input.min="0"; input.max="1"; }
+    input.type=type==="fraction" ? "text" : type;
+    input.dataset.cifAtomField=key;
+    input.value=String(value);
+    if(type==="fraction") input.inputMode="text";
     if(key==="element") input.placeholder="e.g. Cu";
-    if(type==="number"){
+    if(type==="fraction"){
       input.addEventListener("input",()=>validateCifAtomNumericInput(input));
       input.addEventListener("change",()=>validateCifAtomNumericInput(input));
     }
     cell.appendChild(input); row.appendChild(cell);
-    if(type==="number") validateCifAtomNumericInput(input);
+    if(type==="fraction") validateCifAtomNumericInput(input);
   }
   const action=document.createElement("div"); action.className="cif-atom-cell";
   const remove=document.createElement("button"); remove.type="button"; remove.textContent="Remove";
@@ -575,6 +576,28 @@ function addCifAtomRow(values={}, {invalidate=true}={}){
   host.appendChild(row);
   refreshCifAtomRowIndices();
   if(invalidate) invalidateGeneratedCif();
+}
+
+function cifAtomRowValues(row){
+  if(!row) return null;
+  const get=key=>row.querySelector(`[data-cif-atom-field="${key}"]`)?.value ?? "";
+  return {
+    element:get("element"),
+    x:get("x"),
+    y:get("y"),
+    z:get("z"),
+    occupancy:get("occupancy")
+  };
+}
+
+function copyLastCifAtomRow(){
+  const rows=[...document.querySelectorAll("#cifAtomRows .cif-atom-row")];
+  if(!rows.length){
+    addCifAtomRow();
+    return;
+  }
+  const values=cifAtomRowValues(rows[rows.length-1]);
+  addCifAtomRow(values||{});
 }
 
 function replaceCifAtomRows(atoms){
@@ -610,7 +633,7 @@ function readCifGeneratorAtoms(){
     const occInput=rows[i].querySelector('[data-cif-atom-field="occupancy"]');
     const xyzValid=[xInput,yInput,zInput].map(validateCifAtomNumericInput);
     const occValid=validateCifAtomNumericInput(occInput);
-    const x=Number(get("x")), y=Number(get("y")), z=Number(get("z")), occupancy=Number(get("occupancy"));
+    const x=parseNumericValue(get("x")), y=parseNumericValue(get("y")), z=parseNumericValue(get("z")), occupancy=parseNumericValue(get("occupancy"));
     if(!xyzValid.every(Boolean)) throw new Error(`Atom ${i+1}: x, y, and z must be finite fractional coordinates.`);
     if(!occValid) throw new Error(`Atom ${i+1}: occupancy must be between 0 and 1.`);
     atoms.push({element,x,y,z,occupancy});
@@ -1201,6 +1224,7 @@ async function initializeCifGenerator(){
       copyCurrentLatticeToGenerator();
       invalidateGeneratedCif("Current sample lattice copied — press Generate to review the updated CIF.");
     });
+    $("cifCopyAtom")?.addEventListener("click",copyLastCifAtomRow);
     $("cifAddAtom")?.addEventListener("click",()=>addCifAtomRow());
     $("cifLoadExisting")?.addEventListener("click",()=>$("cifLoadFile")?.click());
     $("cifLoadFile")?.addEventListener("change",async ev=>{
@@ -1273,7 +1297,25 @@ async function initializeCifGenerator(){
   }
 }
 
-function num(id){ return Number($(id).value); }
+function parseNumericValue(value){
+  const raw=String(value??"").trim();
+  if(!raw) return NaN;
+  const normalized=raw.replace(/[⁄／]/g,"/");
+  const direct=Number(normalized);
+  if(Number.isFinite(direct)) return direct;
+  const numberPart='[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
+  const match=normalized.match(new RegExp(`^\\s*(${numberPart})\\s*/\\s*(${numberPart})\\s*$`));
+  if(!match) return NaN;
+  const numerator=Number(match[1]);
+  const denominator=Number(match[2]);
+  if(!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator===0) return NaN;
+  return numerator/denominator;
+}
+
+function num(id){
+  const raw=String($(id)?.value??"");
+  return raw.trim()==="" ? Number(raw) : parseNumericValue(raw);
+}
 
 // Temporary numerical sign-label swap.
 // Beamline checks indicate that the current internal +-+ and -+- branches are
@@ -1504,6 +1546,9 @@ function normalizeJsonFileList(value){
 }
 
 function isGitHubPages(){ return window.location.hostname.endsWith("github.io"); }
+function isLocalDirectoryListingHost(){
+  return ["localhost","127.0.0.1","::1"].includes(window.location.hostname);
+}
 
 async function discoverJsonFilesFromGitHub(directory){
   const owner=window.location.hostname.split('.')[0];
@@ -1549,53 +1594,35 @@ async function discoverJsonFilesFromDirectoryListing(directory){
 }
 
 async function discoverJsonFiles(directory){
-  // 1) If an index.json exists, use it. This remains supported for
-  //    compatibility with other static hosting services.
-  try{
-    const manifestResponse = await fetch(
-      `${directory}/index.json`,
-      {cache: "no-store"}
-    );
-
-    if(manifestResponse.ok){
-      const manifest = await manifestResponse.json();
-
-      const files = normalizeJsonFileList(manifest)
-        .filter(name => /\.json$/i.test(name))
-        .filter(name => name.toLowerCase() !== "index.json");
-
-      if(files.length > 0){
-        return files.sort((a,b)=>a.localeCompare(b));
-      }
-    }
-  }catch(_err){
-    // Continue to automatic discovery.
-  }
-
-  // 2) On GitHub Pages, GitHub does not expose an HTML directory listing.
-  //    Query the public GitHub Contents API instead. This means that adding
-  //    a new JSON file to the repository is enough; index.json does not need
-  //    to be maintained manually.
-  if(isGitHubPages()){
-    const files = await discoverJsonFilesFromGitHub(directory);
-
-    if(files.length === 0){
-      throw new Error(`${directory}/ に JSON ファイルがありません。`);
-    }
-
+  // Local development with python -m http.server exposes directory listings.
+  // Prefer that path directly so a missing optional index.json does not create
+  // a harmless-but-noisy 404 in the browser console.
+  if(isLocalDirectoryListingHost()){
+    const files=await discoverJsonFilesFromDirectoryListing(directory);
+    if(files.length===0) throw new Error(`${directory}/ に JSON ファイルを見つけられませんでした。`);
     return files;
   }
 
-  // 3) Local development with e.g. "python -m http.server 8888".
-  //    Python exposes a directory listing, so parse that automatically.
-  const files = await discoverJsonFilesFromDirectoryListing(directory);
+  // Static hosting may provide an explicit manifest.
+  try{
+    const manifestResponse=await fetch(`${directory}/index.json`,{cache:"no-store"});
+    if(manifestResponse.ok){
+      const manifest=await manifestResponse.json();
+      const files=normalizeJsonFileList(manifest)
+        .filter(name=>/\.json$/i.test(name))
+        .filter(name=>name.toLowerCase()!=="index.json");
+      if(files.length>0) return files.sort((a,b)=>a.localeCompare(b));
+    }
+  }catch(_err){}
 
-  if(files.length === 0){
-    throw new Error(
-      `${directory}/ に JSON ファイルを見つけられませんでした。`
-    );
+  if(isGitHubPages()){
+    const files=await discoverJsonFilesFromGitHub(directory);
+    if(files.length===0) throw new Error(`${directory}/ に JSON ファイルがありません。`);
+    return files;
   }
 
+  const files=await discoverJsonFilesFromDirectoryListing(directory);
+  if(files.length===0) throw new Error(`${directory}/ に JSON ファイルを見つけられませんでした。`);
   return files;
 }
 
@@ -1655,6 +1682,10 @@ async function discoverCifFilesFromDirectoryListing(directory){
 }
 
 async function discoverCifFiles(directory){
+  // On the local Python server, the directory listing is authoritative and
+  // avoids probing a non-existent BG_material/index.json first.
+  if(isLocalDirectoryListingHost()) return await discoverCifFilesFromDirectoryListing(directory);
+
   // Optional manifest for static hosts that do not expose directory listings.
   try{
     const response=await fetch(`${directory}/index.json`,{cache:"no-store"});
@@ -1926,14 +1957,15 @@ function createPropagationVectorRow(index,values={}){
   row.className="propagation-row";
   row.dataset.qIndex=String(index);
   row.innerHTML=`<label class="checkbox-label propagation-enable"><input id="q_enable${index}" type="checkbox"><span>k${index}</span></label>`+
-    `<label>k${index}_h<input id="q${index}_h" type="number" value="0" step="0.01"></label>`+
-    `<label>k${index}_k<input id="q${index}_k" type="number" value="0" step="0.01"></label>`+
-    `<label>k${index}_l<input id="q${index}_l" type="number" value="0" step="0.01"></label>`+
+    `<label>k${index}_h<input id="q${index}_h" type="text" inputmode="text" value="0"></label>`+
+    `<label>k${index}_k<input id="q${index}_k" type="text" inputmode="text" value="0"></label>`+
+    `<label>k${index}_l<input id="q${index}_l" type="text" inputmode="text" value="0"></label>`+
     `<button type="button" class="remove-propagation-vector" data-q-index="${index}">Remove</button>`;
   row.querySelector(`#q_enable${index}`).checked=values.enabled!==undefined ? !!values.enabled : true;
   for(const c of ["h","k","l"]){
-    const value=Number(values[c]);
-    row.querySelector(`#q${index}_${c}`).value=Number.isFinite(value)?String(value):"0";
+    const raw=values[c] ?? 0;
+    const value=parseNumericValue(raw);
+    row.querySelector(`#q${index}_${c}`).value=Number.isFinite(value)?String(raw):"0";
   }
   return row;
 }
@@ -1941,7 +1973,11 @@ function createPropagationVectorRow(index,values={}){
 function propagationVectorValues(){
   return propagationVectorIndices().map(index=>({
     enabled:!!$(`q_enable${index}`)?.checked,
-    h:num(`q${index}_h`), k:num(`q${index}_k`), l:num(`q${index}_l`)
+    // Preserve the user's exact text (including fractions) when rows are
+    // added/removed; numerical calculations parse these values via num().
+    h:$(`q${index}_h`)?.value ?? "0",
+    k:$(`q${index}_k`)?.value ?? "0",
+    l:$(`q${index}_l`)?.value ?? "0"
   }));
 }
 
@@ -2854,10 +2890,13 @@ function bindSingleZoomLabelScaling(cache,Qplot){
     if(Number.isFinite(x0)&&Number.isFinite(x1)){ applyOffset(Math.abs(x1-x0)); return; }
     if(Number.isFinite(y0)&&Number.isFinite(y1)){ applyOffset(Math.abs(y1-y0)); return; }
     requestAnimationFrame(()=>{
-      const xr=gd?._fullLayout?.xaxis?.range, yr=gd?._fullLayout?.yaxis?.range;
-      if(Array.isArray(xr)&&xr.length===2&&xr.every(Number.isFinite)) applyOffset(Math.abs(xr[1]-xr[0]));
-      else if(Array.isArray(yr)&&yr.length===2&&yr.every(Number.isFinite)) applyOffset(Math.abs(yr[1]-yr[0]));
-      else applyOffset(fullSpan);
+      const xRange=gd?._fullLayout?.xaxis?.range;
+      const yRange=gd?._fullLayout?.yaxis?.range;
+      if(Array.isArray(xRange) && xRange.length>=2 && Number.isFinite(Number(xRange[0])) && Number.isFinite(Number(xRange[1]))){
+        applyOffset(Math.abs(Number(xRange[1])-Number(xRange[0])));
+      }else if(Array.isArray(yRange) && yRange.length>=2 && Number.isFinite(Number(yRange[0])) && Number.isFinite(Number(yRange[1]))){
+        applyOffset(Math.abs(Number(yRange[1])-Number(yRange[0])));
+      }
     });
   };
   gd.__tasLabelRelayoutHandler=handler;
@@ -4236,6 +4275,7 @@ $('S2maxEffective')?.addEventListener('input',syncS2DeltaFromEffective);
 $('S2maxEffective')?.addEventListener('change',syncS2DeltaFromEffective);
 
 document.querySelectorAll("input,select").forEach(el=>{
+  if(el.closest?.('.time-estimate-pane')) return;
   if([
     "instrument",
     "seSelect","seSelect2","seSelect3",
@@ -4248,6 +4288,666 @@ document.querySelectorAll("input,select").forEach(el=>{
   el.addEventListener("change",scheduleRecalc);
 });
 
+
+
+// ==================== Time estimate ====================
+let timeScanRowCounter=0;
+let timeScanSelectionAnchor=null;
+const TIME_ESTIMATE_STORAGE_KEY='tas-simulator-time-estimate-v1';
+let restoringTimeEstimate=false;
+
+function setGeometryCardTab(name){
+  const time=name==='time';
+  $('geometryTabAngles')?.classList.toggle('active',!time);
+  $('geometryTabTime')?.classList.toggle('active',time);
+  $('geometryTabAngles')?.setAttribute('aria-selected',String(!time));
+  $('geometryTabTime')?.setAttribute('aria-selected',String(time));
+  $('geometryAnglesPane')?.classList.toggle('hidden',time);
+  $('geometryTimePane')?.classList.toggle('hidden',!time);
+  $('singleMain')?.querySelector('.chart-grid')?.classList.toggle('time-estimate-active',time);
+  saveTimeEstimateState();
+  if(time && $('timeScanRows')?.children.length){
+    requestAnimationFrame(()=>validateAllTimeScanRows({showMessage:true}));
+  }
+  // Both tabs share the same card width. Resize Plotly after switching panes
+  // so it follows any responsive layout change without changing column widths.
+  requestAnimationFrame(()=>{
+    try{ Plotly.Plots.resize($('singlePlot')); }catch(_e){}
+    if(!time && singleCache){
+      try{ Plotly.Plots.resize($('geometryPlot')); }catch(_e){}
+    }
+    if(time){
+      updateTimeScanScrollState();
+    }
+  });
+}
+
+function currentGeometryCardTab(){
+  return $('geometryTabTime')?.classList.contains('active') ? 'time' : 'angles';
+}
+
+function timeEstimateStoredState(){
+  const rows=[...document.querySelectorAll('#timeScanRows .time-scan-row')]
+    .map(timeScanRowValues).filter(Boolean);
+  const fields={};
+  for(const prefix of ['Start','End']){
+    const ids=timeEstimateDatePartIds(prefix);
+    fields[prefix.toLowerCase()]={
+      date:$(ids.date)?.value||'',
+      hour:$(ids.hour)?.value||'',
+      minute:$(ids.minute)?.value||''
+    };
+  }
+  return {version:2,tab:currentGeometryCardTab(),rows,fields};
+}
+
+function saveTimeEstimateState(){
+  if(restoringTimeEstimate) return;
+  try{ localStorage.setItem(TIME_ESTIMATE_STORAGE_KEY,JSON.stringify(timeEstimateStoredState())); }
+  catch(_e){ /* localStorage can be unavailable in restricted browser contexts. */ }
+}
+
+function restoreTimeEstimateState(){
+  let saved;
+  try{ saved=JSON.parse(localStorage.getItem(TIME_ESTIMATE_STORAGE_KEY)||'null'); }
+  catch(_e){ return false; }
+  if(!saved || ![1,2].includes(saved.version) || !Array.isArray(saved.rows)) return false;
+  restoringTimeEstimate=true;
+  try{
+    const host=$('timeScanRows');
+    if(host) host.replaceChildren();
+    timeScanRowCounter=0;
+    for(const values of saved.rows) addTimeScanRow(values||{});
+    if(!saved.rows.length) addTimeScanRow({variable:'s1'});
+    for(const prefix of ['Start','End']){
+      const ids=timeEstimateDatePartIds(prefix);
+      const values=saved.fields?.[prefix.toLowerCase()]||{};
+      if($(ids.date)) $(ids.date).value=String(values.date||'');
+      if($(ids.hour)) $(ids.hour).value=String(values.hour||'');
+      if($(ids.minute)) $(ids.minute).value=String(values.minute||'');
+    }
+    setGeometryCardTab(saved.tab==='time'?'time':'angles');
+    updateTimeScanScrollState();
+    updateTimeFixHeaderState();
+    return true;
+  }finally{ restoringTimeEstimate=false; }
+}
+
+function setTimeScanRowWarning(row,warning){
+  if(!row) return;
+  row.classList.toggle('time-scan-warning',!!warning);
+  const index=row.querySelector('[data-time-index]');
+  if(index) index.setAttribute('aria-invalid',warning?'true':'false');
+}
+
+function clearTimeScanRowWarnings(){
+  document.querySelectorAll('#timeScanRows .time-scan-row').forEach(row=>setTimeScanRowWarning(row,false));
+}
+
+function timeHklValueAt(parsed,index){
+  if(parsed.fixed) return parsed.value;
+  const direction=parsed.final>=parsed.initial ? 1 : -1;
+  return parsed.initial + direction*parsed.step*index;
+}
+
+function hklInCurrentScatteringPlane(hkl){
+  try{
+    const {rl}=buildResolutionLattice();
+    const U=[num('Uh'),num('Uk'),num('Ul')], V=[num('Vh'),num('Vk'),num('Vl')];
+    const qU=hklToQ(rl,U), qV=hklToQ(rl,V), q=hklToQ(rl,hkl);
+    const normal=cross(qU,qV), nn=norm(normal), qn=norm(q);
+    if(!(nn>1e-12)) return {ok:false,error:'Current U and V do not define a valid scattering plane.'};
+    if(qn<=1e-12) return {ok:true};
+    const relative=Math.abs(dot(normal,q))/(nn*qn);
+    return {ok:relative<=1e-8,relative};
+  }catch(err){
+    return {ok:false,error:err?.message||String(err)};
+  }
+}
+
+function validateHkleScanPlane(parsedByKey,points){
+  const last=Math.max(0,points-1);
+  for(const i of [...new Set([0,last])]){
+    const hkl=['h','k','l'].map(key=>timeHklValueAt(parsedByKey[key],i));
+    const result=hklInCurrentScatteringPlane(hkl);
+    if(!result.ok) return {ok:false,hkl,error:result.error};
+  }
+  return {ok:true};
+}
+
+function timeRangeSpec(variable){
+  if(variable==='qe') return [{key:'q',label:'Q'},{key:'hw',label:'ħω'}];
+  if(variable==='hkle') return [{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'},{key:'hw',label:'ħω'}];
+  if(variable==='s1') return [{key:'s1',label:'S1'}];
+  if(variable==='s2') return [{key:'s2',label:'S2'}];
+  return [{key:'th2th',label:'th2th'}];
+}
+
+function setTimeInputInvalid(input,invalid){
+  if(!input) return;
+  input.classList.toggle('time-invalid-number',!!invalid);
+  input.setAttribute('aria-invalid',invalid?'true':'false');
+}
+
+function timeRangeInputHtml(spec,value=''){
+  return `<label class="time-range-field"><span class="time-range-label">${spec.label}</span><input type="text" inputmode="text" data-time-range-key="${spec.key}" value="${String(value??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="fixed or initial, final, step"></label>`;
+}
+
+function updateTimeScanRowFields(row,values={}){
+  if(!row) return;
+  const variable=row.querySelector('[data-time-variable]')?.value || 's1';
+  const host=row.querySelector('[data-time-range-host]');
+  if(!host) return;
+  const previous={};
+  for(const input of host.querySelectorAll('[data-time-range-key]')) previous[input.dataset.timeRangeKey]=input.value;
+  const spec=timeRangeSpec(variable);
+  host.style.setProperty('--time-range-cols',String(spec.length));
+  host.innerHTML=spec.map(s=>timeRangeInputHtml(s,values[s.key] ?? previous[s.key] ?? '')).join('');
+  host.querySelectorAll('input').forEach(input=>{
+    input.addEventListener('input',()=>{
+      const parsed=validateTimeRangeInput(input);
+      saveTimeEstimateState();
+      if(parsed.ok) clearTimeEstimateMessage();
+      else setTimeEstimateMessage(parsed.error,true);
+    });
+    input.addEventListener('change',()=>{
+      saveTimeEstimateState();
+      validateAllTimeScanRows({showMessage:true});
+    });
+  });
+}
+
+function timeScanRows(){
+  return [...document.querySelectorAll('#timeScanRows .time-scan-row')];
+}
+
+function selectedTimeScanRows(){
+  return timeScanRows().filter(row=>row.classList.contains('time-scan-selected'));
+}
+
+function applyMcuToSelectedTimeScans(sourceRow,value){
+  if(!sourceRow?.classList.contains('time-scan-selected')) return;
+  const selected=selectedTimeScanRows();
+  if(selected.length<2) return;
+  for(const row of selected){
+    const input=row.querySelector('[data-time-mcu]');
+    if(!input) continue;
+    input.value=value;
+    setTimeInputInvalid(input,false);
+  }
+}
+
+function updateTimeFixHeaderState(){
+  const header=$('timeFixAll');
+  if(!header) return;
+  const selected=selectedTimeScanRows();
+  const targets=selected.length ? selected : timeScanRows();
+  const states=targets.map(row=>!!row.querySelector('[data-time-fix]')?.checked);
+  header.disabled=!targets.length;
+  header.checked=states.length>0 && states.every(Boolean);
+  header.indeterminate=states.some(Boolean) && !states.every(Boolean);
+  header.title=selected.length ? `Apply Fix to ${selected.length} selected scan${selected.length===1?'':'s'}` : 'Apply Fix to all scans';
+  const remove=$('timeRemoveScan');
+  if(remove){
+    remove.disabled=selected.length===0;
+    remove.title=selected.length ? `Remove ${selected.length} selected scan${selected.length===1?'':'s'}` : 'Select one or more scan indices to remove';
+  }
+}
+
+function clearTimeScanSelection(){
+  for(const row of timeScanRows()) row.classList.remove('time-scan-selected');
+  timeScanSelectionAnchor=null;
+  updateTimeFixHeaderState();
+}
+
+function selectTimeScanIndex(row,event){
+  const rows=timeScanRows();
+  const index=rows.indexOf(row);
+  if(index<0) return;
+  const anchorIndex=timeScanSelectionAnchor ? rows.indexOf(timeScanSelectionAnchor) : -1;
+  if(event.shiftKey && anchorIndex>=0){
+    for(const r of rows) r.classList.remove('time-scan-selected');
+    const a=Math.min(anchorIndex,index), b=Math.max(anchorIndex,index);
+    for(let i=a;i<=b;i++) rows[i].classList.add('time-scan-selected');
+  }else if(event.ctrlKey || event.metaKey){
+    row.classList.toggle('time-scan-selected');
+    timeScanSelectionAnchor=row;
+  }else{
+    for(const r of rows) r.classList.remove('time-scan-selected');
+    row.classList.add('time-scan-selected');
+    timeScanSelectionAnchor=row;
+  }
+  updateTimeFixHeaderState();
+}
+
+function applyTimeFixHeader(){
+  const header=$('timeFixAll');
+  if(!header) return;
+  const selected=selectedTimeScanRows();
+  const targets=selected.length ? selected : timeScanRows();
+  for(const row of targets){
+    const input=row.querySelector('[data-time-fix]');
+    if(input) input.checked=header.checked;
+  }
+  updateTimeFixHeaderState();
+  saveTimeEstimateState();
+}
+
+function updateTimeScanScrollState(){
+  const wrap=document.querySelector('#geometryTimePane .time-scan-table-wrap');
+  if(!wrap) return;
+  // Keep the table geometry deterministic: show up to 10 scan rows, then scroll.
+  // Do not derive this height from the Q-E plot or message/footer content.
+  wrap.style.maxHeight='';
+  wrap.classList.toggle('time-scan-scroll',timeScanRows().length>10);
+}
+
+function renumberTimeScanRows(){
+  timeScanRows().forEach((row,i)=>{
+    const cell=row.querySelector('[data-time-index]');
+    if(cell) cell.textContent=String(i+1);
+  });
+  updateTimeScanScrollState();
+  updateTimeFixHeaderState();
+}
+
+function formatTimeMcuValue(value){
+  const n=parseNumericValue(value);
+  return Number.isFinite(n) ? n.toFixed(2) : String(value??'');
+}
+
+function addTimeScanRow(values={}){
+  const host=$('timeScanRows');
+  if(!host) return null;
+  const row=document.createElement('div');
+  row.className='time-scan-row';
+  row.dataset.timeScanId=String(++timeScanRowCounter);
+  row.innerHTML=`
+    <div class="time-scan-cell time-scan-index" data-time-index></div>
+    <div class="time-scan-cell"><select data-time-variable aria-label="Scan variable">
+      <option value="s1">S1</option><option value="s2">S2</option><option value="th2th">th2th</option><option value="qe">QE</option><option value="hkle">HKLE</option>
+    </select></div>
+    <div class="time-scan-cell"><div class="time-range-inputs" data-time-range-host></div></div>
+    <div class="time-scan-cell"><span class="time-mcu-entry"><input type="text" inputmode="text" data-time-mcu value="${String(values.mcu??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="0.00"></span></div>
+    <div class="time-scan-cell time-fix-cell"><input type="checkbox" data-time-fix aria-label="Fix MCU for this scan"></div>`;
+  host.appendChild(row);
+  const variable=row.querySelector('[data-time-variable]');
+  variable.value=['s1','s2','th2th','qe','hkle'].includes(values.variable)?values.variable:'s1';
+  const fix=row.querySelector('[data-time-fix]');
+  if(fix) fix.checked=!!values.fixed;
+  const initialMcu=row.querySelector('[data-time-mcu]');
+  if(initialMcu && String(initialMcu.value).trim()!=='' && Number.isFinite(parseNumericValue(initialMcu.value))) initialMcu.value=formatTimeMcuValue(initialMcu.value);
+  updateTimeScanRowFields(row,values.ranges||{});
+  variable.addEventListener('change',()=>{ updateTimeScanRowFields(row); clearTimeEstimateMessage(); saveTimeEstimateState(); });
+  const mcu=row.querySelector('[data-time-mcu]');
+  mcu.addEventListener('input',()=>{
+    const parsed=validateTimeMcuInput(mcu);
+    saveTimeEstimateState();
+    if(parsed.ok) clearTimeEstimateMessage();
+    else setTimeEstimateMessage('MCU (sec) must be a non-negative number.',true);
+  });
+  mcu.addEventListener('change',()=>{
+    const parsed=validateTimeMcuInput(mcu);
+    if(parsed.ok){
+      mcu.value=formatTimeMcuValue(parsed.value);
+      applyMcuToSelectedTimeScans(row,mcu.value);
+    }
+    saveTimeEstimateState();
+    validateAllTimeScanRows({showMessage:true});
+  });
+  fix?.addEventListener('change',()=>{ updateTimeFixHeaderState(); saveTimeEstimateState(); });
+  const indexCell=row.querySelector('[data-time-index]');
+  indexCell?.addEventListener('click',event=>{ event.stopPropagation(); selectTimeScanIndex(row,event); });
+  renumberTimeScanRows();
+  saveTimeEstimateState();
+  return row;
+}
+
+function timeScanRowValues(row){
+  if(!row) return null;
+  const variable=row.querySelector('[data-time-variable]')?.value || 's1';
+  const ranges={};
+  row.querySelectorAll('[data-time-range-key]').forEach(input=>{ ranges[input.dataset.timeRangeKey]=input.value; });
+  return {
+    variable,
+    ranges,
+    mcu:row.querySelector('[data-time-mcu]')?.value ?? '',
+    fixed:!!row.querySelector('[data-time-fix]')?.checked
+  };
+}
+
+function copySelectedOrLastTimeScanRows(){
+  const rows=timeScanRows();
+  if(!rows.length){ setTimeEstimateMessage('There is no scan to copy.',true); return; }
+
+  // File-manager style: when indices are selected, copy every selected row in
+  // the same top-to-bottom order.  With no selection, preserve the legacy
+  // behaviour and copy only the last scan.
+  const selected=selectedTimeScanRows();
+  const sources=selected.length ? selected : [rows[rows.length-1]];
+  const copies=sources.map(row=>timeScanRowValues(row)).filter(Boolean);
+  for(const values of copies) addTimeScanRow(values);
+
+  clearTimeEstimateMessage();
+  saveTimeEstimateState();
+}
+
+function removeSelectedTimeScanRows(){
+  const selected=selectedTimeScanRows();
+  if(!selected.length) return;
+  for(const row of selected){
+    if(timeScanSelectionAnchor===row) timeScanSelectionAnchor=null;
+    row.remove();
+  }
+  clearTimeScanSelection();
+  renumberTimeScanRows();
+  clearTimeEstimateMessage();
+  saveTimeEstimateState();
+}
+
+function parseTimeRange(raw){
+  const text=String(raw??'').trim();
+  if(!text) return {ok:false,error:'Enter one fixed value or initial, final, step.'};
+  const parts=text.split(',').map(s=>s.trim());
+  if(parts.length!==1 && parts.length!==3) return {ok:false,error:'Use one value or three comma-separated values: initial, final, step.'};
+  const nums=parts.map(parseNumericValue);
+  if(nums.some(v=>!Number.isFinite(v))) return {ok:false,error:'Every range value must be numeric.'};
+  if(parts.length===1) return {ok:true,fixed:true,count:1,value:nums[0]};
+  const [initial,final,enteredStep]=nums;
+  const step=Math.abs(enteredStep);
+  if(!(step>0)) return {ok:false,error:'Step must be non-zero.'};
+  const distance=Math.abs(final-initial);
+  const count=distance<1e-12 ? 1 : Math.floor(distance/step+1e-10)+1;
+  if(!(count>=1) || !Number.isFinite(count)) return {ok:false,error:'Could not determine the number of scan points.'};
+  return {ok:true,fixed:false,count,initial,final,step};
+}
+
+function validateTimeRangeInput(input){
+  const parsed=parseTimeRange(input?.value);
+  setTimeInputInvalid(input,!parsed.ok);
+  return parsed;
+}
+
+function validateTimeMcuInput(input){
+  const value=parseNumericValue(input?.value);
+  const ok=Number.isFinite(value) && value>=0 && String(input?.value??'').trim()!=='';
+  setTimeInputInvalid(input,!ok);
+  return {ok,value};
+}
+
+function clearTimeEstimateMessage(){
+  const box=$('timeEstimateMessage');
+  if(!box) return;
+  box.textContent='';
+  box.classList.remove('error-text');
+  if(currentGeometryCardTab()==='time') requestAnimationFrame(updateTimeScanScrollState);
+}
+
+function setTimeEstimateMessage(message,error=false){
+  const box=$('timeEstimateMessage');
+  if(!box) return;
+  box.textContent=message;
+  box.classList.toggle('error-text',!!error);
+  if(currentGeometryCardTab()==='time') requestAnimationFrame(updateTimeScanScrollState);
+}
+
+function readTimeScanRow(row,index){
+  setTimeScanRowWarning(row,false);
+  const variable=row.querySelector('[data-time-variable]')?.value || 's1';
+  const rangeInputs=[...row.querySelectorAll('[data-time-range-key]')];
+  const parsed=rangeInputs.map(input=>({input,key:input.dataset.timeRangeKey,parsed:validateTimeRangeInput(input)}));
+  const mcuInput=row.querySelector('[data-time-mcu]');
+  const mcu=validateTimeMcuInput(mcuInput);
+  const invalidRange=parsed.find(x=>!x.parsed.ok);
+  if(invalidRange){
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Scan ${index}: ${invalidRange.parsed.error}`};
+  }
+  if(!mcu.ok){
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Scan ${index}: MCU (sec) must be a non-negative number.`};
+  }
+  const movingCounts=parsed.map(x=>x.parsed.count).filter(n=>n>1);
+  const unique=[...new Set(movingCounts)];
+  if(unique.length>1){
+    for(const x of parsed) if(x.parsed.count>1) setTimeInputInvalid(x.input,true);
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Scan ${index}: ranged variables do not contain the same number of scan points.`};
+  }
+  const points=unique[0]||1;
+  if(variable==='hkle'){
+    const parsedByKey=Object.fromEntries(parsed.map(x=>[x.key,x.parsed]));
+    const plane=validateHkleScanPlane(parsedByKey,points);
+    if(!plane.ok){
+      setTimeScanRowWarning(row,true);
+      const where=plane.hkl ? ` (${plane.hkl.map(v=>Number(v.toPrecision(6))).join(', ')})` : '';
+      const detail=plane.error ? ` ${plane.error}` : '';
+      return {ok:false,error:`Scan ${index}: HKL scan is outside the current U-V scattering plane${where}.${detail}`};
+    }
+  }
+  return {ok:true,points,mcuSeconds:mcu.value,seconds:points*mcu.value,fixed:!!row.querySelector('[data-time-fix]')?.checked};
+}
+
+function validateAllTimeScanRows({showMessage=false}={}){
+  const rows=[...document.querySelectorAll('#timeScanRows .time-scan-row')];
+  const results=[],errors=[];
+  for(let i=0;i<rows.length;i++){
+    const result=readTimeScanRow(rows[i],i+1);
+    results.push(result);
+    if(!result.ok) errors.push(result.error);
+  }
+  if(showMessage){
+    if(errors.length) setTimeEstimateMessage(errors.join(' / '),true);
+    else clearTimeEstimateMessage();
+  }
+  return {ok:errors.length===0,rows,results,errors};
+}
+
+function pad2(v){ return String(v).padStart(2,'0'); }
+function ceilDateToMinute(date){
+  const d=new Date(date.getTime());
+  if(d.getSeconds()!==0 || d.getMilliseconds()!==0) d.setMinutes(d.getMinutes()+1);
+  d.setSeconds(0,0);
+  return d;
+}
+function timeEstimateDatePartIds(prefix){
+  return {
+    date:`timeEstimate${prefix}Date`,
+    hour:`timeEstimate${prefix}Hour`,
+    minute:`timeEstimate${prefix}Minute`
+  };
+}
+function writeTimeEstimateDate(prefix,date){
+  const ids=timeEstimateDatePartIds(prefix);
+  const dateInput=$(ids.date), hourInput=$(ids.hour), minuteInput=$(ids.minute);
+  if(dateInput) dateInput.value=`${date.getFullYear()}-${pad2(date.getMonth()+1)}-${pad2(date.getDate())}`;
+  if(hourInput) hourInput.value=pad2(date.getHours());
+  if(minuteInput) minuteInput.value=pad2(date.getMinutes());
+  for(const input of [dateInput,hourInput,minuteInput]) setTimeInputInvalid(input,false);
+  saveTimeEstimateState();
+}
+function normalizeTimeDigits(input,max){
+  if(!input) return;
+  let value=String(input.value||'').replace(/\D/g,'').slice(0,2);
+  input.value=value;
+  if(value==='') return;
+  const n=Number(value);
+  if(Number.isInteger(n) && n>=0 && n<=max) setTimeInputInvalid(input,false);
+}
+function readTimeEstimateDate(prefix,label){
+  const ids=timeEstimateDatePartIds(prefix);
+  const dateInput=$(ids.date), hourInput=$(ids.hour), minuteInput=$(ids.minute);
+  const dateText=String(dateInput?.value||'').trim();
+  const hourText=String(hourInput?.value||'').trim();
+  const minuteText=String(minuteInput?.value||'').trim();
+  const dateMatch=/^(\d{4})-(\d{2})-(\d{2})$/.exec(dateText);
+  const hour=Number(hourText), minute=Number(minuteText);
+  const dateOk=!!dateMatch;
+  const hourOk=/^\d{1,2}$/.test(hourText) && Number.isInteger(hour) && hour>=0 && hour<=23;
+  const minuteOk=/^\d{1,2}$/.test(minuteText) && Number.isInteger(minute) && minute>=0 && minute<=59;
+  setTimeInputInvalid(dateInput,!dateOk);
+  setTimeInputInvalid(hourInput,!hourOk);
+  setTimeInputInvalid(minuteInput,!minuteOk);
+  if(!dateOk || !hourOk || !minuteOk) return {ok:false,error:`Enter a valid ${label} (24-hour HH:MM).`};
+  const year=Number(dateMatch[1]), month=Number(dateMatch[2]), day=Number(dateMatch[3]);
+  const date=new Date(year,month-1,day,hour,minute,0,0);
+  const exact=date.getFullYear()===year && date.getMonth()===month-1 && date.getDate()===day && date.getHours()===hour && date.getMinutes()===minute;
+  if(!exact){
+    setTimeInputInvalid(dateInput,true);
+    return {ok:false,error:`Enter a valid ${label}.`};
+  }
+  return {ok:true,date,dateInput,hourInput,minuteInput};
+}
+function setTimeEstimateStartToNow(){
+  writeTimeEstimateDate('Start',ceilDateToMinute(new Date()));
+  clearTimeEstimateMessage();
+}
+function formatEstimatedDuration(seconds){
+  const s=Math.max(0,Math.ceil(seconds));
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  const parts=[];
+  if(h) parts.push(`${h} h`);
+  if(m || h) parts.push(`${m} min`);
+  parts.push(`${sec} s`);
+  return parts.join(' ');
+}
+
+function calculateTimeEstimate(){
+  clearTimeEstimateMessage();
+  const scanData=readAllTimeScans();
+  if(!scanData.ok){ setTimeEstimateMessage(scanData.error,true); return; }
+  const startResult=readTimeEstimateDate('Start','scan start time');
+  if(!startResult.ok){ setTimeEstimateMessage(startResult.error,true); return; }
+  const endExact=new Date(startResult.date.getTime()+scanData.totalSeconds*1000);
+  const endDisplay=ceilDateToMinute(endExact);
+  writeTimeEstimateDate('End',endDisplay);
+  saveTimeEstimateState();
+  setTimeEstimateMessage(`Estimated duration: ${formatEstimatedDuration(scanData.totalSeconds)} / ${scanData.totalPoints} point${scanData.totalPoints===1?'':'s'} in ${scanData.rows.length} scan${scanData.rows.length===1?'':'s'}.`);
+}
+
+function readAllTimeScans(){
+  const rows=[...document.querySelectorAll('#timeScanRows .time-scan-row')];
+  if(!rows.length) return {ok:false,error:'Add at least one scan.'};
+  const validation=validateAllTimeScanRows();
+  if(!validation.ok) return {ok:false,error:validation.errors.join(' / ')};
+  const scans=[];
+  let totalSeconds=0,totalPoints=0;
+  for(let i=0;i<rows.length;i++){
+    const result=validation.results[i];
+    scans.push({row:rows[i],...result});
+    totalSeconds+=result.seconds;
+    totalPoints+=result.points;
+  }
+  return {ok:true,rows,scans,totalSeconds,totalPoints};
+}
+
+function validTimeEstimateDateInput(prefix,label){
+  return readTimeEstimateDate(prefix,label);
+}
+
+function formatScaledMcu(value){
+  if(!Number.isFinite(value)) return '';
+  return Math.max(0,value).toFixed(2);
+}
+
+function calculateTimeEstimateMcu(){
+  clearTimeEstimateMessage();
+  const scanData=readAllTimeScans();
+  if(!scanData.ok){ setTimeEstimateMessage(scanData.error,true); return; }
+  const startResult=validTimeEstimateDateInput('Start','scan start time');
+  if(!startResult.ok){ setTimeEstimateMessage(startResult.error,true); return; }
+  const endResult=validTimeEstimateDateInput('End','scan finish time');
+  if(!endResult.ok){ setTimeEstimateMessage(endResult.error,true); return; }
+  const targetSeconds=(endResult.date.getTime()-startResult.date.getTime())/1000;
+  if(!(targetSeconds>0)){
+    for(const input of [endResult.dateInput,endResult.hourInput,endResult.minuteInput]) setTimeInputInvalid(input,true);
+    setTimeEstimateMessage('Scan finish must be later than scan start.',true);
+    return;
+  }
+
+  const fixedScans=scanData.scans.filter(scan=>scan.fixed);
+  const adjustableScans=scanData.scans.filter(scan=>!scan.fixed);
+  const fixedSeconds=fixedScans.reduce((sum,scan)=>sum+scan.seconds,0);
+  const adjustableSeconds=adjustableScans.reduce((sum,scan)=>sum+scan.seconds,0);
+  const remainingSeconds=targetSeconds-fixedSeconds;
+  const eps=1e-9;
+
+  if(remainingSeconds < -eps){
+    setTimeEstimateMessage(`Fixed scans already require ${formatEstimatedDuration(fixedSeconds)}, which exceeds the available ${formatEstimatedDuration(targetSeconds)}.`,true);
+    return;
+  }
+  if(!adjustableScans.length){
+    const difference=Math.abs(targetSeconds-fixedSeconds);
+    if(difference<=0.01) setTimeEstimateMessage('All scans are fixed. The fixed MCU values already match the requested finish time.');
+    else setTimeEstimateMessage('All scans are fixed, so there are no MCU values available to adjust.',true);
+    return;
+  }
+  if(!(adjustableSeconds>0)){
+    if(remainingSeconds<=eps){
+      for(const scan of adjustableScans){
+        const input=scan.row.querySelector('[data-time-mcu]');
+        if(input) input.value='0.00';
+      }
+      saveTimeEstimateState();
+      setTimeEstimateMessage('Unfixed MCU values set to 0.00 sec; fixed scans use the full available time.');
+      return;
+    }
+    setTimeEstimateMessage('At least one unfixed MCU value must be greater than zero to use the unfixed values as relative weights.',true);
+    return;
+  }
+
+  const scale=Math.max(0,remainingSeconds)/adjustableSeconds;
+  for(const scan of adjustableScans){
+    const input=scan.row.querySelector('[data-time-mcu]');
+    if(!input) continue;
+    input.value=formatScaledMcu(scan.mcuSeconds*scale);
+    setTimeInputInvalid(input,false);
+  }
+  // Fixed rows remain untouched. Every unfixed MCU is multiplied by the same
+  // scale factor, preserving the relative weighting among adjustable scans.
+  saveTimeEstimateState();
+  const updated=readAllTimeScans();
+  const actual=updated.ok?updated.totalSeconds:targetSeconds;
+  setTimeEstimateMessage(`Unfixed MCU values scaled by ×${Number(scale.toPrecision(6))}; ${fixedScans.length} fixed scan${fixedScans.length===1?'':'s'} unchanged. Target duration: ${formatEstimatedDuration(targetSeconds)}; calculated duration: ${formatEstimatedDuration(actual)}.`);
+}
+
+function initializeTimeEstimateUI(){
+  $('geometryTabAngles')?.addEventListener('click',()=>setGeometryCardTab('angles'));
+  $('geometryTabTime')?.addEventListener('click',()=>setGeometryCardTab('time'));
+  $('timeAddScan')?.addEventListener('click',()=>{ addTimeScanRow(); saveTimeEstimateState(); });
+  $('timeCopyScan')?.addEventListener('click',event=>{ event.stopPropagation(); copySelectedOrLastTimeScanRows(); });
+  $('timeRemoveScan')?.addEventListener('click',event=>{ event.stopPropagation(); removeSelectedTimeScanRows(); });
+  $('timeEstimateCalc')?.addEventListener('click',calculateTimeEstimate);
+  $('timeEstimateCalcMcu')?.addEventListener('click',calculateTimeEstimateMcu);
+  $('timeEstimateNow')?.addEventListener('click',setTimeEstimateStartToNow);
+  window.addEventListener('resize',()=>{if(currentGeometryCardTab()==='time'){updateTimeScanScrollState();}});
+  $('timeFixAll')?.addEventListener('click',event=>event.stopPropagation());
+  $('timeFixAll')?.addEventListener('change',applyTimeFixHeader);
+  document.addEventListener('click',event=>{
+    if(!selectedTimeScanRows().length) return;
+    if(event.target.closest?.('.time-scan-table-wrap')) return;
+    clearTimeScanSelection();
+  });
+  for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']){
+    $(id)?.addEventListener('change',()=>{ if(currentGeometryCardTab()==='time') validateAllTimeScanRows({showMessage:true}); });
+  }
+  for(const prefix of ['Start','End']){
+    const ids=timeEstimateDatePartIds(prefix);
+    $(ids.date)?.addEventListener('input',()=>{ setTimeInputInvalid($(ids.date),false); clearTimeEstimateMessage(); saveTimeEstimateState(); });
+    $(ids.hour)?.addEventListener('input',()=>{ normalizeTimeDigits($(ids.hour),23); clearTimeEstimateMessage(); saveTimeEstimateState(); });
+    $(ids.minute)?.addEventListener('input',()=>{ normalizeTimeDigits($(ids.minute),59); clearTimeEstimateMessage(); saveTimeEstimateState(); });
+    $(ids.hour)?.addEventListener('blur',()=>{ const input=$(ids.hour); if(input?.value!=='') input.value=pad2(Number(input.value)); readTimeEstimateDate(prefix,`${prefix.toLowerCase()} time`); saveTimeEstimateState(); });
+    $(ids.minute)?.addEventListener('blur',()=>{ const input=$(ids.minute); if(input?.value!=='') input.value=pad2(Number(input.value)); readTimeEstimateDate(prefix,`${prefix.toLowerCase()} time`); saveTimeEstimateState(); });
+    $(ids.date)?.addEventListener('change',()=>{ readTimeEstimateDate(prefix,`${prefix.toLowerCase()} time`); saveTimeEstimateState(); });
+  }
+  const restored=restoreTimeEstimateState();
+  if(!restored){
+    if(!$('timeScanRows')?.children.length) addTimeScanRow({variable:'s1'});
+    if(!$('timeEstimateStartDate')?.value) setTimeEstimateStartToNow();
+    setGeometryCardTab('angles');
+    saveTimeEstimateState();
+  }
+}
 
 // ==================== Resolution calculator ====================
 let scanResults=[];
@@ -5034,7 +5734,7 @@ function setupAppHeader(){
 
 function rightPanelControls(){
   return [...document.querySelectorAll('#qePanel input[id], #qePanel select[id], #resolutionPanel input[id], #resolutionPanel select[id], #toolboxPanel input[id], #toolboxPanel select[id]')]
-    .filter(el=>el.type!=='button' && el.type!=='submit' && el.type!=='file');
+    .filter(el=>!el.closest?.('.time-estimate-pane') && el.type!=='button' && el.type!=='submit' && el.type!=='file');
 }
 
 function saveRightPanelState(){
@@ -5231,6 +5931,7 @@ function mergeLegacyRangeData(){
 }
 async function initialize(){
   clearError(); fillCrystal('monoCrystal','dMono');fillCrystal('anaCrystal','dAna');updateModeVisibility();updateEnergyLabel();updateCalcMode();updateSupermirrorUI();updateAutoW();
+  initializeTimeEstimateUI();
 
   // Register the main tabs before any optional async data source is loaded.
   // A missing optional directory or CIF-generator asset must never leave the
@@ -5245,12 +5946,18 @@ async function initialize(){
   try{ nNeutron=await initializeNeutronData(); }
   catch(err){ console.warn('Neutron data load warning:',err); }
   const nInstrument=await loadJsonDirectory('instrument',instruments);
-  const [nBG,nSE]=await Promise.all([tryLoadCifDir('BG_material',backgroundMaterials),tryLoadDir('sample_environments',sampleEnvironments)]);
-  // Only probe the legacy instruments/ directory when at least one unified
-  // instrument still needs legacy Q-E range data. This avoids needless 404s
-  // on projects which have already migrated fully to instrument/.
+  const [nBG,nSE]=await Promise.all([
+    tryLoadCifDir('BG_material',backgroundMaterials),
+    tryLoadDir('sample_environments',sampleEnvironments)
+  ]);
+  // The unified instrument/ directory is the preferred source. On localhost,
+  // do not probe a possibly absent legacy instruments/ directory at startup;
+  // that failed compatibility probe only creates noisy 404s. Static/GitHub
+  // deployments retain the legacy fallback during migration.
   const needsLegacy=[...instruments.values()].some(inst=>!(Array.isArray(inst.S2_limits)||(inst.qe_range&&(Array.isArray(inst.qe_range.S2_limits)||Array.isArray(inst.qe_range.configuration)))));
-  if(needsLegacy) await tryLoadDir('instruments',legacyRangeInstruments);
+  if(needsLegacy && !isLocalDirectoryListingHost()){
+    await tryLoadDir('instruments',legacyRangeInstruments);
+  }
   mergeLegacyRangeData();
   refreshSelect(instruments,$('instrument'),null);setBackgroundCount(Number($('backgroundCount')?.value)||1);for(const slot of darkAssetSlots()) refreshDarkEnvironmentSelect(slot);
   if(!instruments.size) throw new Error('instrument directory has no JSON files.');
@@ -5258,6 +5965,7 @@ async function initialize(){
   // JSON configuration is now fully loaded.  Only at this point is it safe to
   // overlay browser-local user parameters (including the selected instrument).
   const restoredLocalState=restoreLeftPanelState();
+  if(currentGeometryCardTab()==='time') validateAllTimeScanRows({showMessage:true});
   // Restoring sidebar values can change Dark-angle Reference after the sample-
   // environment defaults were applied.  Re-sync the h/k/l row explicitly.
   for(const slot of darkAssetSlots()) updateDarkReferenceUI(slot);

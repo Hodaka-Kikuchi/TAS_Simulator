@@ -108,7 +108,7 @@
 .propagation-vectors{display:grid;gap:5px}
 .propagation-row{display:grid;grid-template-columns:52px repeat(3,minmax(0,1fr)) 70px;gap:5px;align-items:end}
 .propagation-row label{min-width:0}
-.propagation-row input[type=number]{width:100%;min-width:0}
+.propagation-row input[type=number],.propagation-row input[type=text]{width:100%;min-width:0}
 .propagation-enable{align-self:center;margin:0;padding-top:15px}
 
 /* v76: quick elastic targets for Angle calculation & TAS geometry */
@@ -756,4 +756,270 @@ textarea:disabled {
   .absorption-beam-controls{grid-template-columns:1fr;}
   .absorption-summary-cards{grid-template-columns:1fr;}
   .absorption-summary-cards > .absorption-summary-card{grid-column:span 1!important;}
+}
+
+
+/* Time estimate tab inside Angle calculation & TAS geometry card */
+.geometry-card-tabs{display:flex;gap:4px;padding:5px 5px 0;border-bottom:1px solid #ddd;background:#f7f7f7}
+.geometry-card-tab{flex:1;padding:8px 7px;border:1px solid transparent;border-bottom:0;border-radius:6px 6px 0 0;background:transparent;font-weight:650;font-size:13px}
+.geometry-card-tab:hover{background:#fff}
+.geometry-card-tab.active{background:#fff;border-color:#ccc;position:relative;bottom:-1px}
+.geometry-card-tab:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.geometry-card-pane{min-width:0}
+.time-estimate-pane{padding:10px 8px 12px}
+.time-scan-table-wrap{overflow-x:visible;max-width:100%;min-width:0}
+.time-scan-table{display:grid;grid-template-columns:46px 96px minmax(0,1fr) 94px 76px;width:100%;min-width:0;border-left:1px solid #ccc;border-top:1px solid #ccc;background:#fff}
+.time-scan-header{font-size:12px;font-weight:650;background:#f7f7f7;padding:7px 4px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;text-align:center}
+.time-scan-rows,.time-scan-row{display:contents}
+.time-scan-cell{padding:5px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;background:#fff;min-width:0}
+.time-scan-index{display:flex;align-items:center;justify-content:center;font-weight:650;color:#555;background:#fafafa}
+.time-scan-cell select,.time-scan-cell input{width:100%;max-width:none;min-width:0}
+.time-scan-cell button{width:100%;white-space:nowrap}
+.time-range-inputs{display:grid;gap:4px;grid-template-columns:repeat(var(--time-range-cols,1),minmax(0,1fr))}
+.time-range-field{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px;align-items:center}
+.time-range-label{font-size:11px;font-weight:650;color:#555;white-space:nowrap}
+.time-mcu-entry{display:block;min-width:0}
+.time-scan-actions{display:flex;gap:6px;margin-top:7px;align-items:center}
+.time-scan-actions button{width:auto;min-height:0;font-weight:400}
+.time-mcu-help{margin:8px 0 10px;font-size:14px;line-height:1.4;color:#555;}
+.time-estimate-controls{display:grid;grid-template-columns:auto auto minmax(310px,1fr) minmax(310px,1fr);gap:8px;align-items:end;margin-top:12px}
+.time-estimate-controls>button{min-height:0;padding:4px 8px;font-weight:400;white-space:nowrap}
+.time-datetime-label{min-width:0}
+.time-datetime-entry{display:grid;grid-template-columns:minmax(128px,1fr) 92px auto;gap:5px;align-items:center;min-width:0}
+.time-datetime-entry-end{grid-template-columns:minmax(128px,1fr) 92px auto}
+.time-datetime-entry-end::after{content:"";display:block;width:42px}
+.time-datetime-entry input{width:100%;max-width:none;min-width:0}
+.time-clock-entry{display:grid;grid-template-columns:1fr auto 1fr;gap:3px;align-items:center}
+.time-clock-entry input{text-align:center;padding-left:3px;padding-right:3px}
+.time-clock-entry>span{font-weight:650}
+.time-invalid-number{background:#f2b19d!important;border-color:#c55235!important;box-shadow:0 0 0 1px rgba(197,82,53,.12) inset}
+.time-estimate-message{min-height:20px;margin-top:8px;font-size:14px;color:#555;line-height:1.4}
+.time-estimate-message.error-text{color:#a22;background:#fff4f4;border:1px solid #e0aaaa;border-radius:4px;padding:6px 8px}
+@media(max-width:760px){
+  .geometry-card-tabs{flex-direction:column;border-bottom:0}
+  .geometry-card-tab{border:1px solid #ccc;border-radius:6px}
+  .geometry-card-tab.active{bottom:0}
+  .time-scan-actions{flex-wrap:wrap}
+  .time-estimate-controls{grid-template-columns:1fr}
+}
+
+/* Time estimate: widen the geometry card only while this tab is active. */
+@media(min-width:1501px){
+  #singleMain .chart-grid.time-estimate-active{grid-template-columns:minmax(420px,.78fr) minmax(680px,1.22fr)}
+  #singleMain .chart-grid.time-estimate-active>div:first-child{min-width:0}
+  #singleMain .chart-grid.time-estimate-active .qe-plot{min-width:0;width:100%}
+}
+@media(min-width:1051px) and (max-width:1500px){
+  #singleMain .chart-grid.time-estimate-active{grid-template-columns:1fr}
+}
+#singleMain .chart-grid.time-estimate-active .time-scan-table-wrap{overflow-x:visible}
+
+/* Time-estimate validation: make the problematic scan index unmistakable. */
+.time-scan-row.time-scan-warning .time-scan-index{
+  background:#e96b4c;
+  color:#fff;
+  border-color:#b94e35;
+}
+
+/* v7 Time estimate + CIF atom action layout refinements */
+.time-scan-actions{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+  margin-top:7px;
+}
+.time-scan-actions button{width:100%;}
+.time-range-help{
+  margin-top:6px;
+  font-size:12px;
+  line-height:1.35;
+  color:#555;
+}
+.cif-atom-actions{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+  margin-top:6px;
+}
+.cif-atom-actions button{width:100%;}
+.time-estimate-controls{
+  grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr);
+}
+.time-datetime-entry,
+.time-datetime-entry-end{
+  display:grid;
+  grid-template-columns:minmax(128px,1fr) 92px;
+  gap:5px;
+  align-items:center;
+  min-width:0;
+}
+.time-datetime-entry-end::after{display:none;content:none;}
+.time-set-now{
+  align-self:start;
+  margin-top:5px;
+  width:auto;
+}
+@media(min-width:1051px){
+  #singleMain .chart-grid.time-estimate-active{
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  }
+  #singleMain .chart-grid.time-estimate-active>div:first-child,
+  #singleMain .chart-grid.time-estimate-active>.geometry-card{
+    min-width:0;
+  }
+  #singleMain .chart-grid.time-estimate-active .qe-plot{
+    min-width:0;
+    width:100%;
+  }
+}
+@media(max-width:760px){
+  .time-scan-actions,.cif-atom-actions{grid-template-columns:1fr;}
+}
+
+
+/* v8 Time estimate footer: one compact row with matched controls. */
+.time-estimate-controls{
+  display:grid;
+  grid-template-columns:auto auto auto minmax(220px,1fr) minmax(220px,1fr);
+  gap:6px;
+  align-items:end;
+  margin-top:10px;
+}
+.time-estimate-controls>button{
+  min-height:0;
+  padding:4px 8px;
+  font-size:inherit;
+  font-weight:400;
+  white-space:nowrap;
+  align-self:end;
+}
+.time-datetime-label{min-width:0;margin:0}
+.time-datetime-entry{
+  display:grid;
+  grid-template-columns:112px 78px;
+  gap:4px;
+  align-items:center;
+  min-width:0;
+}
+.time-datetime-entry input{min-width:0;max-width:100%;width:100%}
+.time-clock-entry{display:grid;grid-template-columns:1fr auto 1fr;gap:2px;align-items:center}
+.time-clock-entry input{min-width:0;width:100%;text-align:center;padding-left:2px;padding-right:2px}
+.time-set-now{margin-top:0;width:auto;align-self:end}
+@media(max-width:1180px){
+  .time-estimate-controls{grid-template-columns:auto auto auto 1fr 1fr}
+  .time-datetime-entry{grid-template-columns:minmax(104px,1fr) 76px}
+}
+@media(max-width:900px){
+  .time-estimate-controls{grid-template-columns:1fr 1fr}
+  .time-estimate-controls .time-datetime-label{grid-column:span 2}
+}
+
+
+/* Time estimate: selection, Fix weighting, MCU formatting. */
+.time-range-help{
+  margin:0 0 8px;
+  font-size:14px;
+  line-height:1.4;
+  font-weight:600;
+  color:#444;
+}
+.time-scan-table{grid-template-columns:46px 96px minmax(0,1fr) 94px 48px 76px}
+.time-fix-header{display:flex;align-items:center;justify-content:center;gap:5px}
+.time-fix-header input,.time-fix-cell input{width:auto;margin:0}
+.time-fix-cell{display:flex;align-items:center;justify-content:center}
+.time-scan-index{cursor:pointer;user-select:none}
+.time-scan-row.time-scan-selected .time-scan-cell{background:#eaf2ff}
+.time-scan-row.time-scan-selected .time-scan-index{background:#dbe9ff;color:#234b7a}
+.time-scan-row.time-scan-warning .time-scan-index{background:#e96b4c;color:#fff;border-color:#b94e35}
+.time-scan-table-wrap{min-height:0;}
+
+.time-scan-table-wrap.time-scan-scroll{overflow-y:auto;scrollbar-gutter:stable;}
+
+.time-scan-table-wrap.time-scan-scroll .time-scan-header{position:sticky;top:0;z-index:3;background:#f7f7f7;}
+
+
+/* v14: keep Angle calculation / TAS geometry and Time estimate at one stable width.
+   The former geometry column was ~1/3 of the workspace; 1.4:1 makes it ~1.25x wider. */
+@media(min-width:1351px){
+  #singleMain .chart-grid,
+  #singleMain .chart-grid.time-estimate-active{
+    grid-template-columns:minmax(520px,1.4fr) minmax(400px,1fr);
+    align-items:stretch;
+  }
+}
+@media(min-width:1051px) and (max-width:1350px){
+  #singleMain .chart-grid,
+  #singleMain .chart-grid.time-estimate-active{
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    align-items:stretch;
+  }
+}
+
+/* v14: compact Time estimate table so HKL & E range fields fit the stable card width. */
+.time-scan-table{
+  grid-template-columns:42px 86px minmax(0,1fr) 82px 44px 68px;
+}
+.time-scan-cell{padding:4px;}
+.time-range-inputs{gap:3px;}
+.time-range-field{grid-template-columns:max-content minmax(0,1fr);gap:2px;}
+.time-range-field input{
+  padding:3px 4px;
+  font-size:11.5px;
+}
+.time-range-label{font-size:10.5px;}
+
+/* Propagation-vector entries are text fields so simple fractions (e.g. 1/2) can be entered. */
+.propagation-row input[type=text]{width:100%;min-width:0;max-width:none;}
+
+
+/* v15 Time estimate: deterministic 10-row viewport and grouped scan actions. */
+.time-scan-table{
+  grid-template-columns:42px 78px minmax(0,1fr) 82px 44px;
+}
+.time-scan-actions{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+.time-scan-table-wrap.time-scan-scroll{
+  /* Header + ten compact scan rows.  The height no longer depends on the Q-E plot,
+     footer text, validation messages, Calc finish, Add, or Remove operations. */
+  max-height:434px;
+  overflow-y:auto;
+  overflow-x:visible;
+  scrollbar-gutter:stable;
+}
+.time-scan-table-wrap.time-scan-scroll .time-scan-header{
+  position:sticky;
+  top:0;
+  z-index:3;
+  background:#f7f7f7;
+}
+@media(max-width:760px){
+  .time-scan-actions{grid-template-columns:1fr;}
+}
+
+/* v15 row geometry: exactly ten body rows are visible before vertical scrolling. */
+.time-scan-header{
+  height:34px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.time-scan-cell{
+  height:38px;
+  overflow:hidden;
+}
+.time-scan-table-wrap.time-scan-scroll{
+  max-height:415px; /* 1 px top border + 34 px header + 10 × 38 px rows */
+}
+
+/* v16 Time estimate footer order: Set now, Calc finish, Scan start, Scan finish, Calc MCU. */
+.time-estimate-controls{
+  grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr) auto;
+}
+@media(max-width:1180px){
+  .time-estimate-controls{grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr) auto;}
+}
+@media(max-width:900px){
+  .time-estimate-controls{grid-template-columns:1fr 1fr;}
+  .time-estimate-controls .time-datetime-label{grid-column:span 2;}
 }
