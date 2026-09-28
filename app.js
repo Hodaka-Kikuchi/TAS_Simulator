@@ -22,14 +22,44 @@ async function initializeNeutronData(){
   return Object.keys(payload?.elements||{}).length;
 }
 
-// Four fixed background-scattering slots keep the sidebar compact. Each slot
-// now selects a CIF structure loaded from BG_material/*.cif.
-const BACKGROUND_SLOTS=[
-  {id:"backgroundSelect1",rgb:[0,0,128]},      // navy
-  {id:"backgroundSelect2",rgb:[165,42,42]},    // brown
-  {id:"backgroundSelect3",rgb:[44,160,44]},    // green
-  {id:"backgroundSelect4",rgb:[148,103,189]}   // purple
+// Background-scattering slots are dynamic. Preserve the original first four
+// colors, then continue through a high-contrast palette and generated hues.
+const BACKGROUND_COLOR_PALETTE=[
+  [0,0,128],      // navy
+  [165,42,42],    // brown
+  [44,160,44],    // green
+  [148,103,189],  // purple
+  [255,127,14],   // orange
+  [23,190,207],   // cyan
+  [214,39,40],    // red
+  [188,189,34],   // olive
+  [227,119,194],  // pink
+  [127,127,127],  // gray
+  [31,119,180],   // blue
+  [140,86,75]     // muted brown
 ];
+const BACKGROUND_SLOTS=[];
+function backgroundRgbForIndex(index){
+  const i=Math.max(1,Math.floor(Number(index)||1));
+  if(i<=BACKGROUND_COLOR_PALETTE.length) return BACKGROUND_COLOR_PALETTE[i-1].slice();
+  // Golden-angle hue stepping keeps later backgrounds visually separated.
+  const h=((i-BACKGROUND_COLOR_PALETTE.length)*137.508)%360;
+  const c=0.62, l=0.48, hp=h/60, x=c*(1-Math.abs((hp%2)-1));
+  let r=0,g=0,b=0;
+  if(hp<1){r=c;g=x;} else if(hp<2){r=x;g=c;} else if(hp<3){g=c;b=x;}
+  else if(hp<4){g=x;b=c;} else if(hp<5){r=x;b=c;} else {r=c;b=x;}
+  const m=l-c/2;
+  return [r,g,b].map(v=>Math.round((v+m)*255));
+}
+function backgroundSlot(index){
+  const i=Math.max(1,Math.floor(Number(index)||1));
+  while(BACKGROUND_SLOTS.length<i){
+    const n=BACKGROUND_SLOTS.length+1;
+    BACKGROUND_SLOTS.push({id:`backgroundSelect${n}`,rgb:backgroundRgbForIndex(n)});
+  }
+  return BACKGROUND_SLOTS[i-1];
+}
+for(let i=1;i<=4;i++) backgroundSlot(i);
 function selectedBackgrounds(){
   return BACKGROUND_SLOTS.map((slot,index)=>({slot,index,key:$(slot.id)?.value||""}))
     .filter(x=>x.key && backgroundMaterials.has(x.key));
@@ -80,12 +110,12 @@ function backgroundRowValues(){
 }
 
 function createBackgroundRow(index,value={}){
-  const slot=BACKGROUND_SLOTS[index-1];
-  if(!slot) return null;
+  const slot=backgroundSlot(index);
+  const [r,g,b]=slot.rgb;
   const row=document.createElement("div");
   row.className="background-row";
   row.dataset.backgroundIndex=String(index);
-  row.innerHTML=`<label><span class="background-label"><i class="bg-swatch bg${index}"></i>BG${index}</span><select id="backgroundSelect${index}"><option value="">None</option></select></label>`+
+  row.innerHTML=`<label><span class="background-label"><i class="bg-swatch bg${index}" style="background:rgb(${r},${g},${b})"></i>BG${index}</span><select id="backgroundSelect${index}"><option value="">None</option></select></label>`+
     `<button type="button" class="remove-background" data-background-index="${index}">Remove</button>`;
   const select=row.querySelector(`#backgroundSelect${index}`);
   refreshBackgroundSelect(select,"None");
@@ -98,21 +128,22 @@ function replaceBackgroundRows(values,{recalc=false}={}){
   const host=$("backgroundRows");
   if(!host) return;
   const rows=(Array.isArray(values)&&values.length)?values:[{}];
-  const limited=rows.slice(0,BACKGROUND_SLOTS.length);
+  backgroundSlot(rows.length);
   host.replaceChildren();
-  limited.forEach((value,i)=>{
+  rows.forEach((value,i)=>{
     const row=createBackgroundRow(i+1,value);
     if(row) host.appendChild(row);
   });
-  if($("backgroundCount")) $("backgroundCount").value=String(limited.length);
+  if($("backgroundCount")) $("backgroundCount").value=String(rows.length);
   updateBackgroundSelectAvailability();
   const add=$("addBackground");
-  if(add) add.disabled=limited.length>=BACKGROUND_SLOTS.length;
+  if(add) add.disabled=false;
   if(recalc) scheduleRecalc();
 }
 
 function setBackgroundCount(count,{recalc=false}={}){
-  count=Math.max(1,Math.min(BACKGROUND_SLOTS.length,Math.floor(Number(count)||1)));
+  count=Math.max(1,Math.floor(Number(count)||1));
+  backgroundSlot(count);
   const values=backgroundRowValues();
   while(values.length<count) values.push({});
   values.length=count;
@@ -658,6 +689,16 @@ function cleanCifBaseName(raw){
 }
 function cleanCifFileName(raw){
   return `${cleanCifBaseName(raw)}.cif`;
+}
+function nextCifGeneratedBaseName(raw){
+  const current=cleanCifBaseName(raw);
+  const numbered=current.match(/^(.*)_generate(\d+)$/i);
+  if(numbered){
+    const n=Math.max(0,Number(numbered[2])||0)+1;
+    return `${numbered[1]}_generate${String(n).padStart(2,"0")}`;
+  }
+  const base=current.replace(/_generate$/i,"");
+  return `${base}_generate01`;
 }
 
 function buildGeneratedCif(){
@@ -1236,8 +1277,12 @@ async function initializeCifGenerator(){
     });
 
     $("cifGenerate")?.addEventListener("click",()=>{
+      const nameInput=$("cifGeneratedName");
+      const previousName=nameInput?.value ?? "generated_structure";
+      if(nameInput) nameInput.value=nextCifGeneratedBaseName(previousName);
       try{ generateCifForReview(); }
       catch(err){
+        if(nameInput) nameInput.value=previousName;
         invalidateGeneratedCif("");
         setCifGeneratorMessage(err?.message||String(err),true);
       }
@@ -1340,8 +1385,12 @@ function setRadio(name,value){
   const el=document.querySelector(`input[name="${name}"][value="${CSS.escape(value)}"]`);
   if(el) el.checked=true;
 }
+function userFacingTasMessage(value){
+  return String(value??'').replace(/\bsv1\b/g,'U').replace(/\bsv2\b/g,'V');
+}
 function showError(err){
-  $("errorBox").textContent = err instanceof Error ? err.message : String(err);
+  const raw=err instanceof Error ? err.message : String(err);
+  $("errorBox").textContent = userFacingTasMessage(raw);
   $("errorBox").classList.remove("hidden");
 }
 function clearError(){ $("errorBox").classList.add("hidden"); $("errorBox").textContent=""; }
@@ -2209,7 +2258,6 @@ function bindDynamicSidebarUI(){
   }
   $("addBackground")?.addEventListener("click",()=>{
     const values=backgroundRowValues();
-    if(values.length>=BACKGROUND_SLOTS.length) return;
     values.push({});
     replaceBackgroundRows(values,{recalc:true});
   });
@@ -3277,7 +3325,7 @@ function renderGeometry(cache,index=0){
   let target=null;
   let targetError="";
   try{ target=isPowder ? powderGeometryTarget() : qeGeometryAngles(cache); }
-  catch(err){ targetError=err?.message || String(err); }
+  catch(err){ targetError=userFacingTasMessage(err?.message || String(err)); }
 
   const L=2.05;
   let source,mono,sample,analyzer,detector;
@@ -4324,6 +4372,8 @@ document.querySelectorAll("input,select").forEach(el=>{
 // ==================== Time estimate ====================
 let timeScanRowCounter=0;
 let timeScanSelectionAnchor=null;
+let timeScanDragState=null;
+let timeLoopPairCounter=0;
 const TIME_ESTIMATE_STORAGE_KEY='tas-simulator-time-estimate-v1';
 let restoringTimeEstimate=false;
 
@@ -4370,7 +4420,7 @@ function timeEstimateStoredState(){
       minute:$(ids.minute)?.value||''
     };
   }
-  return {version:2,tab:currentGeometryCardTab(),rows,fields};
+  return {version:4,tab:currentGeometryCardTab(),rows,fields};
 }
 
 function saveTimeEstimateState(){
@@ -4383,13 +4433,15 @@ function restoreTimeEstimateState(){
   let saved;
   try{ saved=JSON.parse(localStorage.getItem(TIME_ESTIMATE_STORAGE_KEY)||'null'); }
   catch(_e){ return false; }
-  if(!saved || ![1,2].includes(saved.version) || !Array.isArray(saved.rows)) return false;
+  if(!saved || ![1,2,3,4].includes(saved.version) || !Array.isArray(saved.rows)) return false;
   restoringTimeEstimate=true;
   try{
     const host=$('timeScanRows');
     if(host) host.replaceChildren();
     timeScanRowCounter=0;
-    for(const values of saved.rows) addTimeScanRow(values||{});
+    timeLoopPairCounter=0;
+    for(const values of saved.rows) addTimeScanRow(values||{},{suppressAutoPair:true});
+    ensureTimeLoopPairIds();
     if(!saved.rows.length) addTimeScanRow({variable:'s1'});
     for(const prefix of ['Start','End']){
       const ids=timeEstimateDatePartIds(prefix);
@@ -4433,7 +4485,7 @@ function hklInCurrentScatteringPlane(hkl){
     const relative=Math.abs(dot(normal,q))/(nn*qn);
     return {ok:relative<=1e-8,relative};
   }catch(err){
-    return {ok:false,error:err?.message||String(err)};
+    return {ok:false,error:userFacingTasMessage(err?.message||String(err))};
   }
 }
 
@@ -4447,13 +4499,32 @@ function validateHkleScanPlane(parsedByKey,points){
   return {ok:true};
 }
 
-function timeRangeSpec(variable){
-  if(variable==='qe') return [{key:'q',label:'Q'},{key:'hw',label:'ħω'}];
-  if(variable==='hkle') return [{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'},{key:'hw',label:'ħω'}];
-  if(variable==='s1') return [{key:'s1',label:'S1'}];
-  if(variable==='s2') return [{key:'s2',label:'S2'}];
-  return [{key:'th2th',label:'th2th'}];
+function timeCommandMeta(command){
+  const c=String(command||'s1');
+  if(c==='qe') return {kind:'scan',specs:[{key:'q',label:'Q'},{key:'hw',label:'ħω'}]};
+  if(c==='hkle') return {kind:'scan',specs:[{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'},{key:'hw',label:'ħω'}]};
+  if(c==='s1') return {kind:'scan',specs:[{key:'s1',label:'S1'}]};
+  if(c==='s2') return {kind:'scan',specs:[{key:'s2',label:'S2'}]};
+  if(c==='rels1') return {kind:'scan',specs:[{key:'s1',label:'rel S1'}]};
+  if(c==='rels2') return {kind:'scan',specs:[{key:'s2',label:'rel S2'}]};
+  if(c==='th2th') return {kind:'scan',specs:[{key:'th2th',label:'th2th'}]};
+  if(c==='temp') return {kind:'drive',specs:[{key:'target',label:'Target'}]};
+  if(c==='field') return {kind:'drive',specs:[{key:'target',label:'Target'}]};
+  if(c==='wait') return {kind:'wait',specs:[]};
+  if(c==='loop') return {kind:'loop',specs:[{key:'loop',label:'Loop'}]};
+  if(c==='endloop') return {kind:'endloop',specs:[]};
+  return {kind:'scan',specs:[{key:'s1',label:'S1'}]};
 }
+
+function timeRangeSpec(command){
+  return timeCommandMeta(command).specs;
+}
+
+function timeCommandIsScan(command){ return timeCommandMeta(command).kind==='scan'; }
+function timeCommandIsDrive(command){ return timeCommandMeta(command).kind==='drive'; }
+function timeCommandIsWait(command){ return timeCommandMeta(command).kind==='wait'; }
+function timeCommandIsLoop(command){ return timeCommandMeta(command).kind==='loop'; }
+function timeCommandIsEndLoop(command){ return timeCommandMeta(command).kind==='endloop'; }
 
 function setTimeInputInvalid(input,invalid){
   if(!input) return;
@@ -4461,22 +4532,76 @@ function setTimeInputInvalid(input,invalid){
   input.setAttribute('aria-invalid',invalid?'true':'false');
 }
 
-function timeRangeInputHtml(spec,value=''){
-  return `<label class="time-range-field"><span class="time-range-label">${spec.label}</span><input type="text" inputmode="text" data-time-range-key="${spec.key}" value="${String(value??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="fixed or initial, final, step"></label>`;
+function timeRangeInputHtml(spec,value='',command='s1'){
+  const kind=timeCommandMeta(command).kind;
+  let placeholder='target value or loopN';
+  if(kind==='scan') placeholder='fixed, loopN, or initial final step';
+  else if(kind==='loop') placeholder='initial final step';
+  return `<label class="time-range-field"><span class="time-range-label">${spec.label}</span><input type="text" inputmode="text" data-time-range-key="${spec.key}" value="${String(value??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="${placeholder}"></label>`;
+}
+
+function updateTimeCommandTimeCell(row){
+  if(!row) return;
+  const command=row.querySelector('[data-time-variable]')?.value || 's1';
+  const kind=timeCommandMeta(command).kind;
+  const timeInput=row.querySelector('[data-time-mcu]');
+  const fix=row.querySelector('[data-time-fix]');
+  const detailInputs=[...row.querySelectorAll('[data-time-range-key]')];
+  const parsedDetails=detailInputs.map(input=>parseTimeDetail(input.value,command,row));
+  const allDetailsValid=parsedDetails.length>0 && parsedDetails.every(parsed=>parsed.ok);
+  const allDetailsFixed=allDetailsValid && parsedDetails.every(parsed=>parsed.fixed);
+  const structural=(kind==='loop' || kind==='endloop');
+  const automaticZero=structural || (kind==='drive') || (kind==='scan' && allDetailsFixed);
+
+  if(timeInput){
+    if(automaticZero){
+      timeInput.value='0';
+      timeInput.readOnly=true;
+      timeInput.classList.add('time-readonly');
+      setTimeInputInvalid(timeInput,false);
+      timeInput.title='Detail is fixed, so t (s) is automatically 0.';
+    }else{
+      timeInput.readOnly=false;
+      timeInput.classList.remove('time-readonly');
+      timeInput.title=kind==='wait' ? 'Wait duration (seconds)' : 'Time per scan point (whole seconds)';
+    }
+  }
+
+  if(fix){
+    const forced=(kind!=='scan') || automaticZero;
+    if(forced){
+      if(row.dataset.timeFixBeforeForced===undefined) row.dataset.timeFixBeforeForced=fix.checked?'1':'0';
+      fix.checked=true;
+      fix.disabled=true;
+    }else{
+      fix.disabled=false;
+      if(row.dataset.timeFixBeforeForced!==undefined){
+        fix.checked=row.dataset.timeFixBeforeForced==='1';
+        delete row.dataset.timeFixBeforeForced;
+      }
+    }
+    if(kind==='wait') fix.title='Wait time is excluded from Calc MCU.';
+    else if(structural) fix.title='Loop structure uses t (s) = 0 and is excluded from Calc MCU.';
+    else if(automaticZero) fix.title='Fixed Detail automatically uses t (s) = 0 and is excluded from Calc MCU.';
+    else if(kind==='drive') fix.title='Drive command time is fixed and excluded from Calc MCU.';
+    else fix.title='Keep this scan time fixed during Calc MCU.';
+  }
 }
 
 function updateTimeScanRowFields(row,values={}){
   if(!row) return;
-  const variable=row.querySelector('[data-time-variable]')?.value || 's1';
+  const command=row.querySelector('[data-time-variable]')?.value || 's1';
   const host=row.querySelector('[data-time-range-host]');
   if(!host) return;
   const previous={};
   for(const input of host.querySelectorAll('[data-time-range-key]')) previous[input.dataset.timeRangeKey]=input.value;
-  const spec=timeRangeSpec(variable);
+  const spec=timeRangeSpec(command);
   host.style.setProperty('--time-range-cols',String(spec.length));
-  host.innerHTML=spec.map(s=>timeRangeInputHtml(s,values[s.key] ?? previous[s.key] ?? '')).join('');
+  host.innerHTML=spec.map(item=>timeRangeInputHtml(item,values[item.key] ?? previous[item.key] ?? '',command)).join('');
   host.querySelectorAll('input').forEach(input=>{
     input.addEventListener('input',()=>{
+      delete input.dataset.timeLoopRefBroken;
+      delete input.dataset.timeLoopRefPair;
       const parsed=validateTimeRangeInput(input);
       saveTimeEstimateState();
       if(parsed.ok) clearTimeEstimateMessage();
@@ -4485,10 +4610,13 @@ function updateTimeScanRowFields(row,values={}){
     input.addEventListener('change',()=>{
       const parsed=validateTimeRangeInput(input);
       if(parsed.ok) applyRangeToSelectedTimeScans(row,input);
+      updateTimeCommandTimeCell(row);
       saveTimeEstimateState();
       validateAllTimeScanRows({showMessage:true});
     });
   });
+  updateTimeCommandTimeCell(row);
+  updateTimeLoopIndentation();
 }
 
 function timeScanRows(){
@@ -4497,6 +4625,129 @@ function timeScanRows(){
 
 function selectedTimeScanRows(){
   return timeScanRows().filter(row=>row.classList.contains('time-scan-selected'));
+}
+
+function analyzeTimeLoopStructure(){
+  const rows=timeScanRows();
+  const stack=[];
+  const info=new Map();
+  const pairs=[];
+  const unmatchedEnd=[];
+  for(const row of rows){
+    const command=row.querySelector('[data-time-variable]')?.value || 's1';
+    if(command==='loop'){
+      const level=stack.length+1;
+      const entry={row,level,parentLoops:stack.map(x=>x.row)};
+      info.set(row,{kind:'loop',level,depth:level-1,parentLoops:entry.parentLoops,pairRow:null});
+      stack.push(entry);
+      continue;
+    }
+    if(command==='endloop'){
+      const opened=stack.pop();
+      if(opened){
+        const loopInfo=info.get(opened.row);
+        loopInfo.pairRow=row;
+        info.set(row,{kind:'endloop',level:opened.level,depth:opened.level-1,parentLoops:stack.map(x=>x.row),pairRow:opened.row});
+        pairs.push({loopRow:opened.row,endRow:row,level:opened.level});
+      }else{
+        info.set(row,{kind:'endloop',level:0,depth:0,parentLoops:[],pairRow:null});
+        unmatchedEnd.push(row);
+      }
+      continue;
+    }
+    info.set(row,{kind:'command',level:0,depth:stack.length,parentLoops:stack.map(x=>x.row),pairRow:null});
+  }
+  return {rows,info,pairs,unmatchedLoops:stack.map(x=>x.row),unmatchedEnd};
+}
+
+function ensureTimeLoopPairIds(){
+  const structure=analyzeTimeLoopStructure();
+  for(const {loopRow,endRow} of structure.pairs){
+    let pair=loopRow.dataset.timeLoopPair || endRow.dataset.timeLoopPair || '';
+    if(!pair) pair=`lp${++timeLoopPairCounter}`;
+    loopRow.dataset.timeLoopPair=pair;
+    endRow.dataset.timeLoopPair=pair;
+  }
+  return structure;
+}
+
+function matchingTimeLoopRow(row){
+  if(!row) return null;
+  const pair=row.dataset.timeLoopPair;
+  if(pair){
+    return timeScanRows().find(candidate=>candidate!==row && candidate.dataset.timeLoopPair===pair) || null;
+  }
+  const structure=ensureTimeLoopPairIds();
+  return structure.info.get(row)?.pairRow || null;
+}
+
+function timeLoopLevelForRow(row){
+  return analyzeTimeLoopStructure().info.get(row)?.level || 0;
+}
+
+function updateTimeLoopCommandLabels(){
+  const structure=ensureTimeLoopPairIds();
+  for(const row of structure.rows){
+    const select=row.querySelector('[data-time-variable]');
+    if(!select) continue;
+    const rowInfo=structure.info.get(row);
+    const loopOption=[...select.options].find(option=>option.value==='loop');
+    const endOption=[...select.options].find(option=>option.value==='endloop');
+    const proposedLevel=(select.value==='loop' && rowInfo?.level) ? rowInfo.level : Math.max(1,(rowInfo?.depth||0)+1);
+    if(loopOption) loopOption.textContent=`loop${proposedLevel}`;
+    if(endOption){
+      endOption.textContent=(select.value==='endloop' && rowInfo?.level) ? `endloop${rowInfo.level}` : 'endloop';
+      endOption.disabled=select.value!=='endloop';
+      endOption.hidden=select.value!=='endloop';
+    }
+    select.disabled=select.value==='endloop';
+    select.title=select.value==='endloop' ? 'This endloop is paired automatically with its loop command.' : '';
+  }
+  return structure;
+}
+
+function updateTimeLoopIndentation(){
+  const structure=updateTimeLoopCommandLabels();
+  for(const row of structure.rows){
+    const rowInfo=structure.info.get(row);
+    const depth=Math.max(0,rowInfo?.depth||0);
+    row.style.setProperty('--time-loop-depth',String(depth));
+    row.dataset.timeLoopDepth=String(depth);
+    row.dataset.timeLoopLevel=String(rowInfo?.level||0);
+    const commandCell=row.querySelector('.time-command-cell');
+    if(commandCell) commandCell.style.paddingLeft=`${5+depth*14}px`;
+  }
+}
+
+function parseTimeLoopReferenceToken(raw,row){
+  const token=String(raw??'').trim();
+  const match=/^loop([1-9]\d*)$/i.exec(token);
+  if(!match) return null;
+  const level=Number(match[1]);
+  const rowInfo=ensureTimeLoopPairIds().info.get(row);
+  const enclosing=rowInfo?.parentLoops||[];
+  const loopRow=enclosing[level-1] || null;
+  if(!loopRow) return {ok:false,error:`${token} is not available at this command.`,loopRef:level};
+  return {ok:true,fixed:true,count:1,value:null,symbolic:true,loopRef:level,loopRow};
+}
+
+function normalizeBoundTimeLoopReferences(){
+  const structure=ensureTimeLoopPairIds();
+  for(const input of document.querySelectorAll('#timeScanRows [data-time-range-key]')){
+    const pair=input.dataset.timeLoopRefPair;
+    if(!pair) continue;
+    const commandRow=input.closest('.time-scan-row');
+    const loopRow=structure.rows.find(row=>row.dataset.timeLoopPair===pair && row.querySelector('[data-time-variable]')?.value==='loop');
+    const commandInfo=structure.info.get(commandRow);
+    const loopInfo=loopRow ? structure.info.get(loopRow) : null;
+    const stillEnclosing=!!(loopRow && commandInfo?.parentLoops?.includes(loopRow));
+    if(stillEnclosing && loopInfo?.level){
+      input.value=`loop${loopInfo.level}`;
+      delete input.dataset.timeLoopRefBroken;
+    }else{
+      input.dataset.timeLoopRefBroken='1';
+    }
+  }
 }
 
 function applyRangeToSelectedTimeScans(sourceRow,sourceInput){
@@ -4513,6 +4764,7 @@ function applyRangeToSelectedTimeScans(sourceRow,sourceInput){
     if(!input || input===sourceInput) continue;
     input.value=value;
     validateTimeRangeInput(input);
+    updateTimeCommandTimeCell(row);
   }
 }
 
@@ -4522,7 +4774,7 @@ function applyMcuToSelectedTimeScans(sourceRow,value){
   if(selected.length<2) return;
   for(const row of selected){
     const input=row.querySelector('[data-time-mcu]');
-    if(!input) continue;
+    if(!input || input.readOnly) continue;
     input.value=value;
     setTimeInputInvalid(input,false);
   }
@@ -4530,18 +4782,20 @@ function applyMcuToSelectedTimeScans(sourceRow,value){
 
 function updateTimeFixHeaderState(){
   const header=$('timeFixAll');
-  if(!header) return;
   const selected=selectedTimeScanRows();
-  const targets=selected.length ? selected : timeScanRows();
-  const states=targets.map(row=>!!row.querySelector('[data-time-fix]')?.checked);
-  header.disabled=!targets.length;
-  header.checked=states.length>0 && states.every(Boolean);
-  header.indeterminate=states.some(Boolean) && !states.every(Boolean);
-  header.title=selected.length ? `Apply Fix to ${selected.length} selected scan${selected.length===1?'':'s'}` : 'Apply Fix to all scans';
+  if(header){
+    const base=selected.length ? selected : timeScanRows();
+    const targets=base.filter(row=>!row.querySelector('[data-time-fix]')?.disabled);
+    const states=targets.map(row=>!!row.querySelector('[data-time-fix]')?.checked);
+    header.disabled=!targets.length;
+    header.checked=states.length>0 && states.every(Boolean);
+    header.indeterminate=states.some(Boolean) && !states.every(Boolean);
+    header.title=selected.length ? `Apply Fix to selected scan commands` : 'Apply Fix to all scan commands';
+  }
   const remove=$('timeRemoveScan');
   if(remove){
     remove.disabled=selected.length===0;
-    remove.title=selected.length ? `Remove ${selected.length} selected scan${selected.length===1?'':'s'}` : 'Select one or more scan indices to remove';
+    remove.title=selected.length ? `Remove ${selected.length} selected command${selected.length===1?'':'s'}` : 'Select one or more indices to remove';
   }
 }
 
@@ -4571,6 +4825,216 @@ function selectTimeScanIndex(row,event){
   updateTimeFixHeaderState();
 }
 
+function clearTimeScanDragMarkers(){
+  for(const row of timeScanRows()) row.classList.remove('time-drag-before','time-drag-after','time-drag-source');
+  document.querySelectorAll('#timeScanRows .time-loop-empty-dropzone').forEach(zone=>zone.classList.remove('time-drop-active'));
+}
+
+function startTimeScanDrag(row,event){
+  if(!row || !event?.dataTransfer) return;
+  ensureTimeLoopPairIds();
+  if(!row.classList.contains('time-scan-selected')){
+    for(const r of timeScanRows()) r.classList.remove('time-scan-selected');
+    row.classList.add('time-scan-selected');
+    timeScanSelectionAnchor=row;
+    updateTimeFixHeaderState();
+  }
+  let rows=selectedTimeScanRows();
+  if(!rows.length) return;
+
+  const command=row.querySelector('[data-time-variable]')?.value || '';
+  const boundaryDrag=rows.length===1 && (command==='loop' || command==='endloop');
+  if(boundaryDrag){
+    // Dragging a lone loop boundary resizes the loop instead of moving the
+    // whole block. Move loopN upward/downward to change the start boundary,
+    // or endloopN to change the end boundary.
+    rows=[row];
+    timeScanDragState={
+      rows,
+      target:null,
+      mode:null,
+      boundary:true,
+      boundaryType:command==='loop'?'start':'end',
+      pairRow:matchingTimeLoopRow(row)
+    };
+  }else{
+    rows=expandTimeRowsToLoopBlocks(rows);
+    timeScanDragState={rows,target:null,after:false,boundary:false};
+  }
+  rows.forEach(r=>r.classList.add('time-drag-source'));
+  document.querySelector('#geometryTimePane .time-scan-table-wrap')?.classList.add('time-dragging');
+  refreshEmptyTimeLoopDropzones();
+  event.dataTransfer.effectAllowed='move';
+  event.dataTransfer.setData('text/plain',rows.map(r=>r.dataset.timeScanId||'').join(','));
+}
+
+function updateTimeScanDragTarget(event){
+  if(!timeScanDragState) return;
+
+  // A loop/endloop boundary drag is different from an ordinary command drag:
+  // it slides just that boundary so commands can be included/excluded without
+  // first creating a row inside the loop.
+  if(timeScanDragState.boundary){
+    const target=event.target.closest?.('.time-scan-row');
+    if(!target || timeScanDragState.rows.includes(target)) return;
+    event.preventDefault();
+    const indexCell=target.querySelector('[data-time-index]');
+    const rect=(indexCell||target).getBoundingClientRect();
+    const mode=event.clientY>rect.top+rect.height/2 ? 'after' : 'before';
+    clearTimeScanDragMarkers();
+    timeScanDragState.rows.forEach(r=>r.classList.add('time-drag-source'));
+    target.classList.add(mode==='after'?'time-drag-after':'time-drag-before');
+    timeScanDragState.target=target;
+    timeScanDragState.mode=mode;
+    if(event.dataTransfer) event.dataTransfer.dropEffect='move';
+    return;
+  }
+
+  const emptyZone=event.target.closest?.('.time-loop-empty-dropzone');
+  if(emptyZone){
+    event.preventDefault();
+    clearTimeScanDragMarkers();
+    timeScanDragState.rows.forEach(r=>r.classList.add('time-drag-source'));
+    emptyZone.classList.add('time-drop-active');
+    timeScanDragState.target=emptyZone;
+    timeScanDragState.mode='empty-loop';
+    if(event.dataTransfer) event.dataTransfer.dropEffect='move';
+    return;
+  }
+
+  const target=event.target.closest?.('.time-scan-row');
+  if(!target || timeScanDragState.rows.includes(target)) return;
+  event.preventDefault();
+
+  const command=target.querySelector('[data-time-variable]')?.value || '';
+  let mode='before';
+  if(command==='loop'){
+    // Dropping on a loop boundary always means “put this inside the loop”.
+    mode='inside-start';
+  }else if(command==='endloop'){
+    // Dropping on endloop means insert immediately before it (still inside).
+    mode='inside-end';
+  }else{
+    const indexCell=target.querySelector('[data-time-index]');
+    const rect=(indexCell||target).getBoundingClientRect();
+    mode=event.clientY>rect.top+rect.height/2 ? 'after' : 'before';
+  }
+
+  clearTimeScanDragMarkers();
+  timeScanDragState.rows.forEach(r=>r.classList.add('time-drag-source'));
+  target.classList.add((mode==='after' || mode==='inside-start')?'time-drag-after':'time-drag-before');
+  timeScanDragState.target=target;
+  timeScanDragState.mode=mode;
+  if(event.dataTransfer) event.dataTransfer.dropEffect='move';
+}
+
+function timeLoopPairOrderIsValid(rows){
+  const stack=[];
+  for(const row of rows){
+    const command=row.querySelector('[data-time-variable]')?.value || '';
+    if(command==='loop'){
+      const pair=row.dataset.timeLoopPair || '';
+      if(!pair) return false;
+      stack.push(pair);
+    }else if(command==='endloop'){
+      const pair=row.dataset.timeLoopPair || '';
+      if(!pair || !stack.length || stack[stack.length-1]!==pair) return false;
+      stack.pop();
+    }
+  }
+  return stack.length===0;
+}
+
+function finishTimeLoopBoundaryDrop(event){
+  const state=timeScanDragState;
+  if(!state?.boundary) return false;
+  event.preventDefault();
+  const boundaryRow=state.rows?.[0] || null;
+  const target=state.target;
+  const mode=state.mode || 'before';
+  if(!boundaryRow || !target || boundaryRow===target) return true;
+
+  const all=timeScanRows();
+  const remaining=all.filter(row=>row!==boundaryRow);
+  const targetIndex=remaining.indexOf(target);
+  if(targetIndex<0) return true;
+  const insertIndex=targetIndex+(mode==='after'?1:0);
+  const candidate=remaining.slice();
+  candidate.splice(insertIndex,0,boundaryRow);
+
+  if(!timeLoopPairOrderIsValid(candidate)){
+    setTimeEstimateMessage('Loop boundary cannot cross its paired boundary or break nested-loop structure.',true);
+    return true;
+  }
+
+  const host=$('timeScanRows');
+  let reference=null;
+  if(insertIndex<candidate.length-1) reference=candidate[insertIndex+1];
+  host.insertBefore(boundaryRow,reference);
+  selectOnlyTimeScanRow(boundaryRow);
+  ensureTimeLoopPairIds();
+  renumberTimeScanRows();
+  normalizeBoundTimeLoopReferences();
+  refreshEmptyTimeLoopDropzones();
+  saveTimeEstimateState();
+  validateAllTimeScanRows({showMessage:true});
+  return true;
+}
+
+function finishTimeScanDrop(event){
+  if(!timeScanDragState) return;
+  if(timeScanDragState.boundary){
+    finishTimeLoopBoundaryDrop(event);
+    clearTimeScanDragMarkers();
+    document.querySelector('#geometryTimePane .time-scan-table-wrap')?.classList.remove('time-dragging');
+    timeScanDragState=null;
+    refreshEmptyTimeLoopDropzones();
+    return;
+  }
+  event.preventDefault();
+  const {rows,target}=timeScanDragState;
+  const mode=timeScanDragState.mode || (timeScanDragState.after?'after':'before');
+  if(target && !rows.includes(target)){
+    const host=$('timeScanRows');
+    let reference=target;
+
+    if(mode==='empty-loop'){
+      const pair=target.dataset.timeLoopPair || '';
+      reference=timeScanRows().find(row=>row.dataset.timeLoopPair===pair && row.querySelector('[data-time-variable]')?.value==='endloop') || null;
+    }else if(mode==='after' || mode==='inside-start'){
+      reference=target.nextSibling;
+      // The immediate next sibling can itself be one of the dragged rows.
+      // Skip dragged rows so the reference remains attached after they move.
+      while(reference && rows.includes(reference)) reference=reference.nextSibling;
+    }else if(mode==='inside-end' || mode==='before'){
+      reference=target;
+    }
+
+    const fragment=document.createDocumentFragment();
+    rows.forEach(row=>fragment.appendChild(row));
+    host.insertBefore(fragment,reference);
+
+    timeScanSelectionAnchor=rows[0]||null;
+    ensureTimeLoopPairIds();
+    renumberTimeScanRows();
+    normalizeBoundTimeLoopReferences();
+    refreshEmptyTimeLoopDropzones();
+    saveTimeEstimateState();
+    validateAllTimeScanRows({showMessage:true});
+  }
+  clearTimeScanDragMarkers();
+  document.querySelector('#geometryTimePane .time-scan-table-wrap')?.classList.remove('time-dragging');
+  timeScanDragState=null;
+  refreshEmptyTimeLoopDropzones();
+}
+
+function cancelTimeScanDrag(){
+  clearTimeScanDragMarkers();
+  document.querySelector('#geometryTimePane .time-scan-table-wrap')?.classList.remove('time-dragging');
+  timeScanDragState=null;
+  refreshEmptyTimeLoopDropzones();
+}
+
 function applyTimeFixHeader(){
   const header=$('timeFixAll');
   if(!header) return;
@@ -4578,10 +5042,35 @@ function applyTimeFixHeader(){
   const targets=selected.length ? selected : timeScanRows();
   for(const row of targets){
     const input=row.querySelector('[data-time-fix]');
-    if(input) input.checked=header.checked;
+    if(input && !input.disabled) input.checked=header.checked;
   }
   updateTimeFixHeaderState();
   saveTimeEstimateState();
+}
+
+function refreshEmptyTimeLoopDropzones(){
+  const host=$('timeScanRows');
+  if(!host) return;
+  host.querySelectorAll('.time-loop-empty-dropzone').forEach(zone=>zone.remove());
+
+  const structure=ensureTimeLoopPairIds();
+  const rows=structure.rows;
+  for(const loopRow of rows){
+    if(loopRow.querySelector('[data-time-variable]')?.value!=='loop') continue;
+    const endRow=matchingTimeLoopRow(loopRow);
+    if(!endRow) continue;
+    const startIndex=rows.indexOf(loopRow), endIndex=rows.indexOf(endRow);
+    if(startIndex<0 || endIndex!==startIndex+1) continue; // only truly empty loops
+
+    const zone=document.createElement('div');
+    zone.className='time-loop-empty-dropzone';
+    zone.dataset.timeLoopPair=loopRow.dataset.timeLoopPair||'';
+    const level=Math.max(1,structure.info.get(loopRow)?.level||1);
+    zone.dataset.timeLoopDepth=String(level);
+    zone.style.setProperty('--time-empty-loop-depth',String(level-1));
+    zone.title='Drop a command here to place it inside this loop';
+    host.insertBefore(zone,endRow);
+  }
 }
 
 function updateTimeScanScrollState(){
@@ -4594,20 +5083,24 @@ function updateTimeScanScrollState(){
 }
 
 function renumberTimeScanRows(){
+  ensureTimeLoopPairIds();
   timeScanRows().forEach((row,i)=>{
     const cell=row.querySelector('[data-time-index]');
     if(cell) cell.textContent=String(i+1);
   });
+  updateTimeLoopIndentation();
+  normalizeBoundTimeLoopReferences();
+  refreshEmptyTimeLoopDropzones();
   updateTimeScanScrollState();
   updateTimeFixHeaderState();
 }
 
 function formatTimeMcuValue(value){
   const n=parseNumericValue(value);
-  return Number.isFinite(n) ? n.toFixed(2) : String(value??'');
+  return Number.isFinite(n) ? String(Math.floor(Math.max(0,n))) : String(value??'');
 }
 
-function addTimeScanRow(values={}){
+function addTimeScanRow(values={},options={}){
   const host=$('timeScanRows');
   if(!host) return null;
   const row=document.createElement('div');
@@ -4615,40 +5108,91 @@ function addTimeScanRow(values={}){
   row.dataset.timeScanId=String(++timeScanRowCounter);
   row.innerHTML=`
     <div class="time-scan-cell time-scan-index" data-time-index></div>
-    <div class="time-scan-cell"><select data-time-variable aria-label="Scan variable">
-      <option value="s1">S1</option><option value="s2">S2</option><option value="th2th">th2th</option><option value="qe">QE</option><option value="hkle">HKLE</option>
+    <div class="time-scan-cell time-command-cell"><select data-time-variable aria-label="Command">
+      <option value="s1">s1</option><option value="s2">s2</option><option value="rels1">rel s1</option><option value="rels2">rel s2</option><option value="th2th">th2th</option><option value="qe">QE</option><option value="hkle">HKLE</option><option value="temp">temp</option><option value="field">field</option><option value="wait">wait</option><option value="loop">loop</option><option value="endloop">endloop</option>
     </select></div>
     <div class="time-scan-cell"><div class="time-range-inputs" data-time-range-host></div></div>
-    <div class="time-scan-cell"><span class="time-mcu-entry"><input type="text" inputmode="text" data-time-mcu value="${String(values.mcu??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="0.00"></span></div>
-    <div class="time-scan-cell time-fix-cell"><input type="checkbox" data-time-fix aria-label="Fix MCU for this scan"></div>`;
-  host.appendChild(row);
-  const variable=row.querySelector('[data-time-variable]');
-  variable.value=['s1','s2','th2th','qe','hkle'].includes(values.variable)?values.variable:'s1';
+    <div class="time-scan-cell"><span class="time-mcu-entry"><input type="text" inputmode="numeric" data-time-mcu value="${String(values.mcu??values.time??((values.command??values.variable)==='wait' ? (values.ranges?.wait??values.details?.wait??'') : '')).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="0"></span></div>
+    <div class="time-scan-cell time-fix-cell"><input type="checkbox" data-time-fix aria-label="Fix time for this command"></div>`;
+  const before=options?.before;
+  if(before && before.parentElement===host) host.insertBefore(row,before);
+  else host.appendChild(row);
+  const command=row.querySelector('[data-time-variable]');
+  let requested=values.command ?? values.variable ?? 's1';
+  let restoredRanges=values.ranges||values.details||{};
+  // v29 compatibility: the removed br command is equivalent to fixed HKLE at ħω=0.
+  if(requested==='br'){
+    const legacy=String(restoredRanges.target??'').trim().split(/\s+/).filter(Boolean);
+    requested='hkle';
+    if(legacy.length===3) restoredRanges={h:legacy[0],k:legacy[1],l:legacy[2],hw:'0'};
+  }
+  const allowed=['s1','s2','rels1','rels2','th2th','qe','hkle','temp','field','wait','loop','endloop'];
+  command.value=allowed.includes(requested)?requested:'s1';
   const fix=row.querySelector('[data-time-fix]');
   if(fix) fix.checked=!!values.fixed;
-  const initialMcu=row.querySelector('[data-time-mcu]');
-  if(initialMcu && String(initialMcu.value).trim()!=='' && Number.isFinite(parseNumericValue(initialMcu.value))) initialMcu.value=formatTimeMcuValue(initialMcu.value);
-  updateTimeScanRowFields(row,values.ranges||{});
-  variable.addEventListener('change',()=>{ updateTimeScanRowFields(row); clearTimeEstimateMessage(); saveTimeEstimateState(); });
-  const mcu=row.querySelector('[data-time-mcu]');
-  mcu.addEventListener('input',()=>{
-    const parsed=validateTimeMcuInput(mcu);
+  const initialTime=row.querySelector('[data-time-mcu]');
+  if(initialTime && String(initialTime.value).trim()!=='' && Number.isFinite(parseNumericValue(initialTime.value))) initialTime.value=formatTimeMcuValue(initialTime.value);
+  updateTimeScanRowFields(row,restoredRanges);
+  row.dataset.timeCommand=command.value;
+  if(command.value==='loop' && !options?.suppressAutoPair){
+    const endRow=addTimeScanRow({command:'endloop'},{before:row.nextElementSibling,suppressAutoPair:true});
+    const pair=`lp${++timeLoopPairCounter}`;
+    row.dataset.timeLoopPair=pair;
+    if(endRow) endRow.dataset.timeLoopPair=pair;
+  }
+  if(command.value==='endloop') command.disabled=true;
+  command.addEventListener('change',()=>{
+    const previous=row.dataset.timeCommand || 's1';
+    const next=command.value;
+    const previousPair=previous==='loop' ? matchingTimeLoopRow(row) : null;
+    if(previous==='loop' && next!=='loop' && previousPair){
+      previousPair.remove();
+      delete row.dataset.timeLoopPair;
+    }
+    row.dataset.timeCommand=next;
+    updateTimeScanRowFields(row);
+    if(previous!=='loop' && next==='loop'){
+      const endRow=addTimeScanRow({command:'endloop'},{before:row.nextElementSibling,suppressAutoPair:true});
+      const pair=`lp${++timeLoopPairCounter}`;
+      row.dataset.timeLoopPair=pair;
+      if(endRow) endRow.dataset.timeLoopPair=pair;
+      // A newly-created loop immediately becomes the active insertion context.
+      // The very first + Add scan therefore goes inside this loop, even while empty.
+      selectOnlyTimeScanRow(row);
+    }
+    renumberTimeScanRows();
+    clearTimeEstimateMessage();
+    updateTimeFixHeaderState();
+    saveTimeEstimateState();
+    validateAllTimeScanRows({showMessage:true});
+  });
+  const timeInput=row.querySelector('[data-time-mcu]');
+  timeInput.addEventListener('input',()=>{
+    if(timeInput.readOnly) return;
+    const parsed=validateTimeMcuInput(timeInput);
     saveTimeEstimateState();
     if(parsed.ok) clearTimeEstimateMessage();
-    else setTimeEstimateMessage('MCU (sec) must be a non-negative number.',true);
+    else setTimeEstimateMessage('t (s) must be a non-negative whole number.',true);
   });
-  mcu.addEventListener('change',()=>{
-    const parsed=validateTimeMcuInput(mcu);
+  timeInput.addEventListener('change',()=>{
+    if(timeInput.readOnly) return;
+    const parsed=validateTimeMcuInput(timeInput);
     if(parsed.ok){
-      mcu.value=formatTimeMcuValue(parsed.value);
-      applyMcuToSelectedTimeScans(row,mcu.value);
+      timeInput.value=formatTimeMcuValue(parsed.value);
+      applyMcuToSelectedTimeScans(row,timeInput.value);
     }
     saveTimeEstimateState();
     validateAllTimeScanRows({showMessage:true});
   });
   fix?.addEventListener('change',()=>{ updateTimeFixHeaderState(); saveTimeEstimateState(); });
   const indexCell=row.querySelector('[data-time-index]');
-  indexCell?.addEventListener('click',event=>{ event.stopPropagation(); selectTimeScanIndex(row,event); });
+  if(indexCell){
+    indexCell.draggable=true;
+    indexCell.title='Click to select; drag a command to reorder it. Drag loop/endloop alone to slide that loop boundary.';
+    indexCell.addEventListener('click',event=>{ event.stopPropagation(); selectTimeScanIndex(row,event); });
+    indexCell.addEventListener('dragstart',event=>startTimeScanDrag(row,event));
+    indexCell.addEventListener('dragend',cancelTimeScanDrag);
+  }
   renumberTimeScanRows();
   saveTimeEstimateState();
   return row;
@@ -4656,29 +5200,97 @@ function addTimeScanRow(values={}){
 
 function timeScanRowValues(row){
   if(!row) return null;
-  const variable=row.querySelector('[data-time-variable]')?.value || 's1';
+  const command=row.querySelector('[data-time-variable]')?.value || 's1';
   const ranges={};
   row.querySelectorAll('[data-time-range-key]').forEach(input=>{ ranges[input.dataset.timeRangeKey]=input.value; });
   return {
-    variable,
+    command,
     ranges,
     mcu:row.querySelector('[data-time-mcu]')?.value ?? '',
     fixed:!!row.querySelector('[data-time-fix]')?.checked
   };
 }
 
+function timeLoopBlockRows(row){
+  if(!row) return [];
+  const rows=timeScanRows();
+  const command=row.querySelector('[data-time-variable]')?.value || '';
+  let loopRow=row, endRow=null;
+  if(command==='loop') endRow=matchingTimeLoopRow(row);
+  else if(command==='endloop'){ loopRow=matchingTimeLoopRow(row); endRow=row; }
+  else return [row];
+  if(!loopRow || !endRow) return [row];
+  const a=rows.indexOf(loopRow), b=rows.indexOf(endRow);
+  if(a<0 || b<a) return [row];
+  return rows.slice(a,b+1);
+}
+
+function expandTimeRowsToLoopBlocks(rows){
+  const all=timeScanRows();
+  const set=new Set();
+  for(const row of rows){
+    for(const member of timeLoopBlockRows(row)) set.add(member);
+  }
+  return all.filter(row=>set.has(row));
+}
+
+function timeScanInsertionReferenceAfterSelection(){
+  const selected=selectedTimeScanRows();
+  if(!selected.length) return null;
+  // selectedTimeScanRows() follows document order, so the final item is the
+  // lowest selected index even when the selection is non-contiguous.
+  const last=selected[selected.length-1];
+  const command=last.querySelector('[data-time-variable]')?.value || '';
+  // Selecting a loop command means “insert inside this loop”, immediately
+  // before its automatically paired endloop.
+  if(command==='loop'){
+    const endRow=matchingTimeLoopRow(last);
+    if(endRow) return endRow;
+  }
+  // Selecting an endloop is also treated as an insertion point inside that
+  // loop. This makes it possible to grow a newly-created nested loop simply by
+  // selecting either boundary and pressing + Add scan.
+  if(command==='endloop') return last;
+  return last.nextElementSibling;
+}
+
+function selectOnlyTimeScanRow(row){
+  if(!row) return;
+  for(const r of timeScanRows()) r.classList.remove('time-scan-selected');
+  row.classList.add('time-scan-selected');
+  timeScanSelectionAnchor=row;
+  updateTimeFixHeaderState();
+}
+
+function addTimeScanAfterSelection(){
+  const before=timeScanInsertionReferenceAfterSelection();
+  const row=addTimeScanRow({}, {before});
+  // Continue sequence editing from the row that was just inserted. This is
+  // especially important for nested loops: if this row is changed to loop,
+  // the next + Add scan goes between that loop and its paired endloop instead
+  // of using an older outer-loop selection.
+  if(row) selectOnlyTimeScanRow(row);
+  clearTimeEstimateMessage();
+  saveTimeEstimateState();
+}
+
 function copySelectedOrLastTimeScanRows(){
   const rows=timeScanRows();
   if(!rows.length){ setTimeEstimateMessage('There is no scan to copy.',true); return; }
 
-  // File-manager style: when indices are selected, copy every selected row in
-  // the same top-to-bottom order.  With no selection, preserve the legacy
-  // behaviour and copy only the last scan.
   const selected=selectedTimeScanRows();
-  const sources=selected.length ? selected : [rows[rows.length-1]];
+  let sources;
+  if(selected.length){
+    sources=expandTimeRowsToLoopBlocks(selected);
+  }else{
+    const last=rows[rows.length-1];
+    sources=(last.querySelector('[data-time-variable]')?.value==='endloop') ? timeLoopBlockRows(last) : [last];
+  }
   const copies=sources.map(row=>timeScanRowValues(row)).filter(Boolean);
-  for(const values of copies) addTimeScanRow(values);
-
+  const before=selected.length ? sources[sources.length-1]?.nextElementSibling || null : null;
+  for(const values of copies) addTimeScanRow(values,{before,suppressAutoPair:true});
+  ensureTimeLoopPairIds();
+  renumberTimeScanRows();
   clearTimeEstimateMessage();
   saveTimeEstimateState();
 }
@@ -4686,23 +5298,38 @@ function copySelectedOrLastTimeScanRows(){
 function removeSelectedTimeScanRows(){
   const selected=selectedTimeScanRows();
   if(!selected.length) return;
+  ensureTimeLoopPairIds();
+  const toRemove=new Set(selected);
   for(const row of selected){
+    const command=row.querySelector('[data-time-variable]')?.value || '';
+    if(command==='loop' || command==='endloop'){
+      const pair=matchingTimeLoopRow(row);
+      if(pair) toRemove.add(pair);
+    }
+  }
+  for(const row of toRemove){
     if(timeScanSelectionAnchor===row) timeScanSelectionAnchor=null;
     row.remove();
   }
   clearTimeScanSelection();
+  ensureTimeLoopPairIds();
   renumberTimeScanRows();
   clearTimeEstimateMessage();
   saveTimeEstimateState();
 }
 
-function parseTimeRange(raw){
+function parseTimeRange(raw,row=null,{allowLoopReference=true}={}){
   const text=String(raw??'').trim();
-  if(!text) return {ok:false,error:'Enter one fixed value or initial, final, step.'};
-  const parts=text.split(',').map(s=>s.trim());
-  if(parts.length!==1 && parts.length!==3) return {ok:false,error:'Use one value or three comma-separated values: initial, final, step.'};
+  if(!text) return {ok:false,error:'Enter one fixed value or initial final step.'};
+  if(text.includes(',')) return {ok:false,error:'Commas are not allowed. Separate Detail values with spaces.'};
+  const parts=text.split(/\s+/).filter(Boolean);
+  if(parts.length!==1 && parts.length!==3) return {ok:false,error:'Use one value or three space-separated values: initial final step.'};
+  if(parts.length===1 && allowLoopReference && row){
+    const loopRef=parseTimeLoopReferenceToken(parts[0],row);
+    if(loopRef) return loopRef;
+  }
   const nums=parts.map(parseNumericValue);
-  if(nums.some(v=>!Number.isFinite(v))) return {ok:false,error:'Every range value must be numeric.'};
+  if(nums.some(v=>!Number.isFinite(v))) return {ok:false,error:'Every Detail value must be numeric, or a valid loopN reference for a fixed value.'};
   if(parts.length===1) return {ok:true,fixed:true,count:1,value:nums[0]};
   const [initial,final,enteredStep]=nums;
   const step=Math.abs(enteredStep);
@@ -4713,15 +5340,50 @@ function parseTimeRange(raw){
   return {ok:true,fixed:false,count,initial,final,step};
 }
 
+function parseTimeDetail(raw,command,row=null){
+  const kind=timeCommandMeta(command).kind;
+  if(kind==='scan') return parseTimeRange(raw,row,{allowLoopReference:true});
+  if(kind==='loop'){
+    const parsed=parseTimeRange(raw,row,{allowLoopReference:false});
+    if(!parsed.ok) return parsed;
+    if(parsed.fixed) return {ok:false,error:'loop requires three space-separated values: initial final step.'};
+    return parsed;
+  }
+  if(kind==='endloop') return {ok:true,fixed:true,count:1,value:null};
+  const text=String(raw??'').trim();
+  if(row){
+    const loopRef=parseTimeLoopReferenceToken(text,row);
+    if(loopRef) return loopRef;
+  }
+  const value=parseNumericValue(text);
+  if(!text || !Number.isFinite(value)) return {ok:false,error:'Enter one numeric target value or a valid loopN reference.'};
+  return {ok:true,fixed:true,count:1,value};
+}
+
 function validateTimeRangeInput(input){
-  const parsed=parseTimeRange(input?.value);
+  const row=input?.closest?.('.time-scan-row') || null;
+  const command=row?.querySelector('[data-time-variable]')?.value || 's1';
+  if(input?.dataset.timeLoopRefBroken==='1'){
+    const broken={ok:false,error:'The referenced loop is no longer an enclosing loop. Re-enter loop1, loop2, ... for the new nesting.'};
+    setTimeInputInvalid(input,true);
+    return broken;
+  }
+  const parsed=parseTimeDetail(input?.value,command,row);
+  if(input){
+    if(parsed.ok && parsed.symbolic && parsed.loopRow?.dataset.timeLoopPair){
+      input.dataset.timeLoopRefPair=parsed.loopRow.dataset.timeLoopPair;
+    }else if(!parsed.symbolic){
+      delete input.dataset.timeLoopRefPair;
+    }
+  }
   setTimeInputInvalid(input,!parsed.ok);
   return parsed;
 }
 
 function validateTimeMcuInput(input){
-  const value=parseNumericValue(input?.value);
-  const ok=Number.isFinite(value) && value>=0 && String(input?.value??'').trim()!=='';
+  const raw=String(input?.value??'').trim();
+  const value=Number(raw);
+  const ok=raw!=='' && /^\d+$/.test(raw) && Number.isSafeInteger(value) && value>=0;
   setTimeInputInvalid(input,!ok);
   return {ok,value};
 }
@@ -4744,49 +5406,80 @@ function setTimeEstimateMessage(message,error=false){
 
 function readTimeScanRow(row,index){
   setTimeScanRowWarning(row,false);
-  const variable=row.querySelector('[data-time-variable]')?.value || 's1';
+  const command=row.querySelector('[data-time-variable]')?.value || 's1';
+  const meta=timeCommandMeta(command);
   const rangeInputs=[...row.querySelectorAll('[data-time-range-key]')];
   const parsed=rangeInputs.map(input=>({input,key:input.dataset.timeRangeKey,parsed:validateTimeRangeInput(input)}));
-  const mcuInput=row.querySelector('[data-time-mcu]');
-  const mcu=validateTimeMcuInput(mcuInput);
+  const timeInput=row.querySelector('[data-time-mcu]');
   const invalidRange=parsed.find(x=>!x.parsed.ok);
   if(invalidRange){
     setTimeScanRowWarning(row,true);
-    return {ok:false,error:`Scan ${index}: ${invalidRange.parsed.error}`};
+    return {ok:false,error:`Command ${index}: ${invalidRange.parsed.error}`};
   }
-  if(!mcu.ok){
+
+  let timeSeconds=0;
+  const time=validateTimeMcuInput(timeInput);
+  if(!time.ok){
     setTimeScanRowWarning(row,true);
-    return {ok:false,error:`Scan ${index}: MCU (sec) must be a non-negative number.`};
+    return {ok:false,error:`Command ${index}: t (s) must be a non-negative whole number.`};
   }
-  const movingCounts=parsed.map(x=>x.parsed.count).filter(n=>n>1);
+  timeSeconds=time.value;
+
+  const movingCounts=(meta.kind==='scan' || meta.kind==='loop') ? parsed.map(x=>x.parsed.count).filter(n=>n>1) : [];
   const unique=[...new Set(movingCounts)];
   if(unique.length>1){
     for(const x of parsed) if(x.parsed.count>1) setTimeInputInvalid(x.input,true);
     setTimeScanRowWarning(row,true);
-    return {ok:false,error:`Scan ${index}: ranged variables do not contain the same number of scan points.`};
+    return {ok:false,error:`Command ${index}: ranged Detail values do not contain the same number of scan points.`};
   }
-  const points=unique[0]||1;
-  if(variable==='hkle'){
+  const points=meta.kind==='scan' ? (unique[0]||1) : ((meta.kind==='loop' || meta.kind==='endloop') ? 0 : 1);
+  const loopIterations=meta.kind==='loop' ? (parsed[0]?.parsed?.count || 1) : 1;
+  if(command==='hkle' && !parsed.some(x=>x.parsed.symbolic)){
     const parsedByKey=Object.fromEntries(parsed.map(x=>[x.key,x.parsed]));
     const plane=validateHkleScanPlane(parsedByKey,points);
     if(!plane.ok){
       setTimeScanRowWarning(row,true);
       const where=plane.hkl ? ` (${plane.hkl.map(v=>Number(v.toPrecision(6))).join(', ')})` : '';
       const detail=plane.error ? ` ${plane.error}` : '';
-      return {ok:false,error:`Scan ${index}: HKL scan is outside the current U-V scattering plane${where}.${detail}`};
+      return {ok:false,error:`Command ${index}: HKL scan is outside the current U-V scattering plane${where}.${detail}`};
     }
   }
-  return {ok:true,points,mcuSeconds:mcu.value,seconds:points*mcu.value,fixed:!!row.querySelector('[data-time-fix]')?.checked};
+  const allDetailsFixed=meta.kind==='scan' && parsed.length>0 && parsed.every(x=>x.parsed.fixed);
+  const forcedFixed=meta.kind!=='scan' || allDetailsFixed;
+  return {
+    ok:true,
+    command,
+    kind:meta.kind,
+    points,
+    loopIterations,
+    loopLevel:Number(row.dataset.timeLoopLevel||0),
+    mcuSeconds:timeSeconds,
+    seconds:meta.kind==='wait' ? timeSeconds : points*timeSeconds,
+    fixed:forcedFixed || !!row.querySelector('[data-time-fix]')?.checked
+  };
 }
 
 function validateAllTimeScanRows({showMessage=false}={}){
   const rows=[...document.querySelectorAll('#timeScanRows .time-scan-row')];
   const results=[],errors=[];
+  const loopStack=[];
   for(let i=0;i<rows.length;i++){
     const result=readTimeScanRow(rows[i],i+1);
     results.push(result);
-    if(!result.ok) errors.push(result.error);
+    if(!result.ok){ errors.push(result.error); continue; }
+    if(result.kind==='loop') loopStack.push(i);
+    else if(result.kind==='endloop'){
+      if(!loopStack.length){
+        setTimeScanRowWarning(rows[i],true);
+        errors.push(`Command ${i+1}: endloop has no matching loop.`);
+      }else loopStack.pop();
+    }
   }
+  for(const i of loopStack){
+    setTimeScanRowWarning(rows[i],true);
+    errors.push(`Command ${i+1}: loop has no matching endloop.`);
+  }
+  updateTimeLoopIndentation();
   if(showMessage){
     if(errors.length) setTimeEstimateMessage(errors.join(' / '),true);
     else clearTimeEstimateMessage();
@@ -4873,21 +5566,52 @@ function calculateTimeEstimate(){
   const endDisplay=ceilDateToMinute(endExact);
   writeTimeEstimateDate('End',endDisplay);
   saveTimeEstimateState();
-  setTimeEstimateMessage(`Estimated duration: ${formatEstimatedDuration(scanData.totalSeconds)} / ${scanData.totalPoints} point${scanData.totalPoints===1?'':'s'} in ${scanData.rows.length} scan${scanData.rows.length===1?'':'s'}.`);
+  setTimeEstimateMessage(`Estimated duration: ${formatEstimatedDuration(scanData.totalSeconds)} / ${scanData.totalPoints} execution step${scanData.totalPoints===1?'':'s'} in ${scanData.rows.length} command${scanData.rows.length===1?'':'s'}.`);
 }
 
 function readAllTimeScans(){
   const rows=[...document.querySelectorAll('#timeScanRows .time-scan-row')];
-  if(!rows.length) return {ok:false,error:'Add at least one scan.'};
+  if(!rows.length) return {ok:false,error:'Add at least one command.'};
   const validation=validateAllTimeScanRows();
   if(!validation.ok) return {ok:false,error:validation.errors.join(' / ')};
+
   const scans=[];
-  let totalSeconds=0,totalPoints=0;
+  const stack=[];
+  let multiplier=1,totalSeconds=0,totalPoints=0;
+
   for(let i=0;i<rows.length;i++){
     const result=validation.results[i];
-    scans.push({row:rows[i],...result});
-    totalSeconds+=result.seconds;
-    totalPoints+=result.points;
+    if(result.kind==='loop'){
+      const iterations=result.loopIterations||1;
+      stack.push({rowIndex:i+1,iterations,previousMultiplier:multiplier});
+      multiplier*=iterations;
+      if(!Number.isFinite(multiplier) || multiplier>Number.MAX_SAFE_INTEGER){
+        setTimeScanRowWarning(rows[i],true);
+        return {ok:false,error:`Command ${i+1}: loop nesting produces too many repetitions.`};
+      }
+      continue;
+    }
+    if(result.kind==='endloop'){
+      const opened=stack.pop();
+      if(!opened){
+        setTimeScanRowWarning(rows[i],true);
+        return {ok:false,error:`Command ${i+1}: endloop has no matching loop.`};
+      }
+      multiplier=opened.previousMultiplier;
+      continue;
+    }
+
+    const effectiveSeconds=result.seconds*multiplier;
+    const effectivePoints=result.points*multiplier;
+    scans.push({row:rows[i],...result,loopMultiplier:multiplier,effectiveSeconds,effectivePoints});
+    totalSeconds+=effectiveSeconds;
+    totalPoints+=effectivePoints;
+  }
+
+  if(stack.length){
+    const opened=stack[stack.length-1];
+    setTimeScanRowWarning(rows[opened.rowIndex-1],true);
+    return {ok:false,error:`Command ${opened.rowIndex}: loop has no matching endloop.`};
   }
   return {ok:true,rows,scans,totalSeconds,totalPoints};
 }
@@ -4898,7 +5622,9 @@ function validTimeEstimateDateInput(prefix,label){
 
 function formatScaledMcu(value){
   if(!Number.isFinite(value)) return '';
-  return Math.max(0,value).toFixed(2);
+  // Calc MCU must never round upward past the available time.  Display the
+  // rescaled scan time as an integer number of seconds by truncating downward.
+  return String(Math.floor(Math.max(0,value)));
 }
 
 function calculateTimeEstimateMcu(){
@@ -4918,32 +5644,32 @@ function calculateTimeEstimateMcu(){
 
   const fixedScans=scanData.scans.filter(scan=>scan.fixed);
   const adjustableScans=scanData.scans.filter(scan=>!scan.fixed);
-  const fixedSeconds=fixedScans.reduce((sum,scan)=>sum+scan.seconds,0);
-  const adjustableSeconds=adjustableScans.reduce((sum,scan)=>sum+scan.seconds,0);
+  const fixedSeconds=fixedScans.reduce((sum,scan)=>sum+scan.effectiveSeconds,0);
+  const adjustableSeconds=adjustableScans.reduce((sum,scan)=>sum+scan.effectiveSeconds,0);
   const remainingSeconds=targetSeconds-fixedSeconds;
   const eps=1e-9;
 
   if(remainingSeconds < -eps){
-    setTimeEstimateMessage(`Fixed scans already require ${formatEstimatedDuration(fixedSeconds)}, which exceeds the available ${formatEstimatedDuration(targetSeconds)}.`,true);
+    setTimeEstimateMessage(`Fixed commands already require ${formatEstimatedDuration(fixedSeconds)}, which exceeds the available ${formatEstimatedDuration(targetSeconds)}.`,true);
     return;
   }
   if(!adjustableScans.length){
     const difference=Math.abs(targetSeconds-fixedSeconds);
-    if(difference<=0.01) setTimeEstimateMessage('All scans are fixed. The fixed MCU values already match the requested finish time.');
-    else setTimeEstimateMessage('All scans are fixed, so there are no MCU values available to adjust.',true);
+    if(difference<=0.01) setTimeEstimateMessage('All adjustable scan times are fixed. The current times already match the requested finish time.');
+    else setTimeEstimateMessage('There are no unfixed scan times available to adjust.',true);
     return;
   }
   if(!(adjustableSeconds>0)){
     if(remainingSeconds<=eps){
       for(const scan of adjustableScans){
         const input=scan.row.querySelector('[data-time-mcu]');
-        if(input) input.value='0.00';
+        if(input) input.value='0';
       }
       saveTimeEstimateState();
-      setTimeEstimateMessage('Unfixed MCU values set to 0.00 sec; fixed scans use the full available time.');
+      setTimeEstimateMessage('Unfixed scan t (s) values set to 0; fixed commands use the full available time.');
       return;
     }
-    setTimeEstimateMessage('At least one unfixed MCU value must be greater than zero to use the unfixed values as relative weights.',true);
+    setTimeEstimateMessage('At least one unfixed scan t (s) value must be greater than zero to use the entered times as relative weights.',true);
     return;
   }
 
@@ -4959,13 +5685,13 @@ function calculateTimeEstimateMcu(){
   saveTimeEstimateState();
   const updated=readAllTimeScans();
   const actual=updated.ok?updated.totalSeconds:targetSeconds;
-  setTimeEstimateMessage(`Unfixed MCU values scaled by ×${Number(scale.toPrecision(6))}; ${fixedScans.length} fixed scan${fixedScans.length===1?'':'s'} unchanged. Target duration: ${formatEstimatedDuration(targetSeconds)}; calculated duration: ${formatEstimatedDuration(actual)}.`);
+  setTimeEstimateMessage(`Unfixed scan t (s) values scaled by ×${Number(scale.toPrecision(6))}; ${fixedScans.length} fixed command${fixedScans.length===1?'':'s'} unchanged. Target duration: ${formatEstimatedDuration(targetSeconds)}; calculated duration: ${formatEstimatedDuration(actual)}.`);
 }
 
 function initializeTimeEstimateUI(){
   $('geometryTabAngles')?.addEventListener('click',()=>setGeometryCardTab('angles'));
   $('geometryTabTime')?.addEventListener('click',()=>setGeometryCardTab('time'));
-  $('timeAddScan')?.addEventListener('click',()=>{ addTimeScanRow(); saveTimeEstimateState(); });
+  $('timeAddScan')?.addEventListener('click',event=>{ event.stopPropagation(); addTimeScanAfterSelection(); });
   $('timeCopyScan')?.addEventListener('click',event=>{ event.stopPropagation(); copySelectedOrLastTimeScanRows(); });
   $('timeRemoveScan')?.addEventListener('click',event=>{ event.stopPropagation(); removeSelectedTimeScanRows(); });
   $('timeEstimateCalc')?.addEventListener('click',calculateTimeEstimate);
@@ -4974,6 +5700,16 @@ function initializeTimeEstimateUI(){
   window.addEventListener('resize',()=>{if(currentGeometryCardTab()==='time'){updateTimeScanScrollState();}});
   $('timeFixAll')?.addEventListener('click',event=>event.stopPropagation());
   $('timeFixAll')?.addEventListener('change',applyTimeFixHeader);
+  const scanWrap=document.querySelector('#geometryTimePane .time-scan-table-wrap');
+  scanWrap?.addEventListener('dragover',updateTimeScanDragTarget);
+  scanWrap?.addEventListener('drop',finishTimeScanDrop);
+  scanWrap?.addEventListener('dragleave',event=>{
+    if(!timeScanDragState) return;
+    if(event.relatedTarget && scanWrap.contains(event.relatedTarget)) return;
+    clearTimeScanDragMarkers();
+    timeScanDragState.rows.forEach(r=>r.classList.add('time-drag-source'));
+    timeScanDragState.target=null;
+  });
   document.addEventListener('click',event=>{
     if(!selectedTimeScanRows().length) return;
     if(event.target.closest?.('.time-scan-table-wrap')) return;
@@ -5191,7 +5927,7 @@ function calcOne(calc){
     // Angle calculation is supplemental.  Do not hide a valid resolution
     // result just because motor angles cannot be determined.
     angles={m1:null,m2:null,s1:null,s2:null,a1:null,a2:null,
-      warning:`Angle calculation unavailable: ${err?.message || String(err)}`};
+      warning:`Angle calculation unavailable: ${userFacingTasMessage(err?.message || String(err))}`};
   }
   return {calc,...b,result,angles};
 }

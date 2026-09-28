@@ -15,3 +15,77 @@ This ZIP is a PATCH. Overwrite the corresponding top-level files in the existing
 - Powder TAS Geometry now uses the same canonical sign-dependent drawing branch, scale envelope, and monochromator anchoring as Single crystal while keeping U/V hidden.
 - Dark angle 1 checkbox uses a blue check indicator.
 - Powder mode keeps S1 min/max visible but disables editing.
+
+## v25 UI / workflow updates
+- Angle calculation & TAS geometry / Time estimate tabs now match the CIF Preview / Reflection table tab styling and use larger labels.
+- Time-estimate scan indices can be dragged to reorder scans; a multi-selection moves together in its existing order.
+- CIF Generator increments the generated base filename on every successful Generate (`_generate01`, `_generate02`, ...).
+- Background scattering rows are dynamically extensible beyond four entries. The original four colors are preserved and later rows receive additional distinct colors.
+- Dark-angle assets remain dynamically extensible with no fixed four-item cap.
+
+
+## v26 Time estimate insertion behavior
+- With selected scan indices, **+ Add scan** inserts a new scan immediately after the lowest selected index.
+- With selected scan indices, **+ Copy scan** duplicates all selected scans in their current order and inserts the copied block immediately after the lowest selected index.
+- With no selected index, both actions retain the previous end-of-list behavior.
+
+## v27 Time estimate command model
+- Time estimate headers are now **Command**, **Detail**, **t (s)** and **Fix**.
+- Added `rel s1`, `rel s2`, `temp`, `field`, `br`, and `wait` commands.
+- `rel s1` / `rel s2` use the same fixed/range syntax as `s1` / `s2`.
+- `temp`, `field`, and `br` are one-target drive commands. Their entered `t (s)` is treated as fixed overhead and is not rescaled by Calc MCU.
+- `wait` takes seconds in Detail; its `t (s)` mirrors that value automatically and is fixed.
+- User-facing TAS errors translate legacy `sv1` / `sv2` names to `U` / `V`.
+
+
+## v28 Time-estimate command syntax
+- Scan Detail uses space-separated syntax: fixed value or `initial final step` (for example `1 2 0.2`). Legacy comma-separated saved values remain readable.
+- `br` Detail is an HKL triplet such as `1 0 0`; fractional values such as `1/2 1/2 0` are accepted.
+- `wait` uses the `t (s)` cell directly; its Detail cell is intentionally empty.
+- `Calc MCU` rescales adjustable scan times using their relative weights, then truncates each calculated `t (s)` downward to a whole number of seconds.
+
+
+## v29 Time estimate input rules
+- t (s) is displayed and entered as a non-negative whole number.
+- Detail values use spaces only; comma-separated input is rejected.
+- When every Detail field in a command is fixed, t (s) is set automatically to 0 and excluded from Calc MCU scaling.
+- wait is the exception: enter its duration directly in t (s); it remains fixed during Calc MCU.
+- br uses space-separated HKL, for example `1 0 0` or `1/2 1/2 0`.
+
+## v30 Time estimate loops
+- Removed the `br` command from the Time estimate command list; fixed Bragg positions are represented by fixed `HKLE` instead. Legacy saved `br` rows are migrated to fixed HKLE with hbar-omega = 0 when possible.
+- Added `loop` and `endloop` commands. `loop` requires space-separated `initial final step`; `endloop` has no Detail value.
+- Commands inside loops are shown by indentation only. Nested loops are supported.
+- Loop repetitions are included in Estimated duration and Calc MCU weighting, including nested-loop multiplicative repetition counts.
+- `loop` and `endloop` use t (s) = 0 automatically and are excluded from Calc MCU scaling.
+- Unmatched `loop` / `endloop` rows are flagged as invalid.
+
+
+## v31 loop sequence updates
+- The outermost loop is displayed as `loop1` / `endloop1`; nested loops are `loop2`, `loop3`, and so on.
+- Selecting a loop command automatically creates the matching endloop row. Removing either member removes the paired structural row.
+- Detail fields may reference an enclosing loop value with `loop1`, `loop2`, etc. References are scope-checked.
+- Selecting a loop and pressing Add inserts the new command before its paired endloop. Copying or dragging a loop treats the loop through endloop as one structural block.
+
+## v32 nested-loop insertion
+- `+ Add scan` now selects the newly inserted command automatically, so changing that row to a nested `loopN` makes the next Add operation insert inside the new loop.
+- Selecting either `loopN` or its `endloopN` and pressing `+ Add scan` inserts immediately before that loop's `endloopN`.
+- This prevents a newly-created nested `loopN / endloopN` pair from remaining inseparable because an older outer-loop index selection was still active.
+
+## v33 nested-loop drag/drop
+- Dragging selected command rows onto a `loopN` boundary inserts them immediately after `loopN`, inside that loop.
+- Dragging selected command rows onto an `endloopN` boundary inserts them immediately before `endloopN`, also inside that loop.
+- This makes an empty nested loop (`loopN` directly followed by `endloopN`) a valid drop target even though there is no visible row gap between the two boundaries.
+- Loop blocks remain movable as blocks, and loop indentation/numbering/reference validation are recalculated after each drop.
+
+## v34 nested-loop empty insertion fix
+- Creating a loop immediately selects that loop as the active insertion context.
+- Empty loop/endloop pairs now expose a small insertion slot that expands during drag, so existing commands can be dropped into a brand-new nested loop before any command has been added.
+- Dropping into that slot inserts immediately before the matching endloop.
+
+## v35 loop-boundary drag
+- Dragging a lone loopN row now slides only the loop start boundary.
+- Dragging a lone endloopN row slides only the loop end boundary.
+- Sliding a boundary can include/exclude existing commands without needing a placeholder row inside the loop.
+- Invalid moves that cross the paired boundary or break nested-loop structure are rejected.
+- Multi-row selection still uses the existing block-reorder behavior.

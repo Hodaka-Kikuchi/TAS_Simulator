@@ -1377,3 +1377,98 @@ main{
 @media(max-width:760px){
   .sidebar{scrollbar-gutter:auto;}
 }
+
+/* v25: make the Angle/Time switch match the CIF Preview / Reflection table tabs. */
+.geometry-card-tabs{
+  display:flex;
+  flex-direction:row!important;
+  gap:0;
+  padding:0;
+  border-bottom:1px solid #ccc;
+  background:#f5f5f5;
+}
+.geometry-card-tab{
+  flex:1 1 0;
+  border:0;
+  border-right:1px solid #d5d5d5;
+  border-radius:0;
+  background:#f5f5f5;
+  padding:11px 12px;
+  font-size:16px;
+  line-height:1.25;
+  font-weight:650;
+  position:static;
+  bottom:auto;
+}
+.geometry-card-tab:last-child{border-right:0;}
+.geometry-card-tab:hover{background:#fff;}
+.geometry-card-tab.active{
+  background:#fff;
+  border-color:transparent;
+  box-shadow:inset 0 -3px 0 #555;
+  position:static;
+  bottom:auto;
+}
+
+/* v25: Index cells double as drag handles. Selected scans move as one block. */
+.time-scan-index{cursor:grab;touch-action:none;}
+.time-scan-index:active{cursor:grabbing;}
+.time-scan-row.time-drag-source .time-scan-cell{opacity:.58;}
+.time-scan-row.time-drag-before .time-scan-cell{box-shadow:inset 0 3px 0 #3b82f6;}
+.time-scan-row.time-drag-after .time-scan-cell{box-shadow:inset 0 -3px 0 #3b82f6;}
+
+/* Background scattering is no longer limited to four dynamic rows. */
+.background-rows{min-width:0;}
+.background-row{min-width:0;}
+.background-row label,.background-row select{min-width:0;max-width:100%;width:100%;}
+
+/* v27 Time estimate command model. */
+.time-scan-table{
+  grid-template-columns:42px 94px minmax(0,1fr) 74px 44px;
+}
+.time-scan-cell input.time-readonly{
+  background:#f3f4f6;
+  color:#555;
+  cursor:default;
+}
+.time-scan-cell select[data-time-variable]{font-size:12px;}
+
+/* v30 Time estimate: loop nesting is expressed by indentation only. */
+.time-command-cell{
+  transition:padding-left .08s ease;
+}
+.time-command-cell select[data-time-variable]{
+  min-width:0;
+}
+
+/* v34: empty loop insertion slot.  It stays unobtrusive normally and expands
+   while dragging so a command can be dropped into a brand-new nested loop
+   before any row exists between loopN and endloopN. */
+.time-loop-empty-dropzone{
+  grid-column:1 / -1;
+  min-width:0;
+  height:4px;
+  margin-left:calc(42px + 94px + 14px * var(--time-empty-loop-depth, 0));
+  border:0;
+  background:transparent;
+}
+.time-scan-table-wrap.time-dragging .time-loop-empty-dropzone{
+  height:18px;
+  margin-top:1px;
+  margin-bottom:1px;
+  border:1px dashed #aab4c2;
+  border-radius:4px;
+}
+.time-scan-table-wrap.time-dragging .time-loop-empty-dropzone.time-drop-active{
+  border-color:#3b82f6;
+  box-shadow:inset 0 0 0 1px #3b82f6;
+}
+
+/* v36 Time estimate column balance: wider Command, compact t(s). */
+.time-scan-table{
+  grid-template-columns:42px 112px minmax(0,1fr) 58px 44px;
+}
+.time-scan-cell input[data-time-mcu]{
+  width:100%;
+  min-width:0;
+}

@@ -138,13 +138,13 @@
           <div id="geometryPlot" class="qe-plot geometry"></div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div class="time-range-help">Fixed: enter one value. Scan: enter initial value, final value, step value (e.g. 1, 2, 0.2). Fractions such as 1/2 are accepted.</div>
+          <div class="time-range-help">Use spaces only. Scan commands: enter one fixed value or initial final step (e.g. 1 2 0.2). Adding a loop automatically creates its paired endloop; nested loops are labeled loop1, loop2, ... and can be referenced in Detail with the same name. Commands inside loops are indented. If all Detail values are fixed, t (s) is automatically 0. temp / field: enter one target value or loopN. wait: enter the wait time directly in t (s). Fractions are accepted in Detail.</div>
           <div class="time-scan-table-wrap">
             <div class="time-scan-table">
               <div class="time-scan-header">Index</div>
-              <div class="time-scan-header">Variable</div>
-              <div class="time-scan-header">Range &amp; step</div>
-              <div class="time-scan-header">MCU (sec)</div>
+              <div class="time-scan-header">Command</div>
+              <div class="time-scan-header">Detail</div>
+              <div class="time-scan-header">t (s)</div>
               <div class="time-scan-header time-fix-header"><span>Fix</span><input id="timeFixAll" type="checkbox" aria-label="Fix selected scans or all scans"></div>
               <div id="timeScanRows" class="time-scan-rows"></div>
             </div>
@@ -156,7 +156,7 @@
           </div>
 
           <div class="time-mcu-help">
-            <strong>Calc MCU:</strong> Uses the entered MCU values as relative weights and rescales unfixed MCU values proportionally to fit the Scan start–finish time. Fixed MCU values are unchanged.
+            <strong>Calc MCU:</strong> Uses t (s) of ranged scan commands as relative weights and rescales only unfixed scan times to fit the Scan start–finish time. Loop repetitions are included in the weighting. Fixed-Detail commands use t (s) = 0; wait is unchanged. Adjusted t (s) values are whole seconds and are truncated downward.
           </div>
 
           <div class="time-estimate-controls">
