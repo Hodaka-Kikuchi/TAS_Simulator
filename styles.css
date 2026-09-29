@@ -1472,3 +1472,80 @@ main{
   width:100%;
   min-width:0;
 }
+
+
+/* v37 Script tab: Time estimate <-> SPICE macro */
+.script-card{margin-top:0;min-width:0;overflow:hidden}
+.script-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch;min-width:0}
+.script-command-pane,.script-spice-pane{border:1px solid #ddd;border-radius:8px;padding:9px;min-width:0;background:#fff;overflow:hidden}
+.script-pane-heading{font-size:16px;font-weight:650;margin:0 0 8px;min-height:30px;display:flex;align-items:center;gap:8px}
+.script-spice-heading{justify-content:space-between;flex-wrap:wrap}
+.script-actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.script-actions button{width:auto;white-space:nowrap}
+.script-time-mount{min-width:0}
+.script-time-mount>.time-estimate-pane{display:block!important;min-width:0;width:100%}
+.script-time-mount .time-range-help{margin-top:0}
+.script-spice-text{display:block;width:100%;min-width:0;height:620px;resize:vertical;padding:10px;border:1px solid #bbb;border-radius:6px;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;white-space:pre;overflow:auto}
+.script-message{font-size:13px;line-height:1.4;min-height:20px;margin-top:7px}
+.script-message.error-text{color:#a22}
+@media(max-width:1180px){
+  .script-workspace{grid-template-columns:1fr}
+  .script-spice-text{height:440px}
+}
+
+/* v39 Script: labeled bidirectional conversion controls; one-space SPICE loop indentation. */
+.script-workspace{
+  grid-template-columns:minmax(0,1fr) 96px minmax(0,1fr);
+  gap:8px;
+}
+.script-transfer-controls{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  min-width:0;
+}
+.script-transfer-button{
+  width:90px;
+  min-height:38px;
+  padding:6px 8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:13px;
+  line-height:1.1;
+  font-weight:650;
+  white-space:nowrap;
+  border-radius:8px;
+}
+.script-transfer-narrow{display:none}
+.script-spice-heading{flex-wrap:nowrap}
+.script-actions{flex-wrap:nowrap}
+@media(max-width:1180px){
+  .script-workspace{grid-template-columns:1fr;gap:8px}
+  .script-transfer-controls{flex-direction:row;padding:2px 0}
+  .script-transfer-button{width:auto;min-width:118px;min-height:36px;font-size:13px}
+  .script-transfer-wide{display:none}
+  .script-transfer-narrow{display:inline}
+}
+
+
+/* v41: non-blocking instrument S2 upper-limit warnings in Time estimate / Script. */
+.time-scan-row.time-s2-limit-warning .time-scan-index{
+  background:#f2c66d;
+  color:#4b3a10;
+  border-color:#c79b42;
+}
+.time-scan-row.time-scan-warning.time-s2-limit-warning .time-scan-index{
+  background:#e96b4c;
+  color:#fff;
+  border-color:#b94e35;
+}
+.time-estimate-message.warning-text{
+  color:#6b4f00;
+  background:#fff8df;
+  border:1px solid #e2c66d;
+  border-radius:4px;
+  padding:6px 8px;
+}

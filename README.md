@@ -89,3 +89,24 @@ This ZIP is a PATCH. Overwrite the corresponding top-level files in the existing
 - Sliding a boundary can include/exclude existing commands without needing a placeholder row inside the loop.
 - Invalid moves that cross the paired boundary or break nested-loop structure are rejected.
 - Multi-row selection still uses the existing block-reorder behavior.
+
+## v37 Script / SPICE macro
+- Added a top-level **Script** tab immediately to the right of **CIF Generator**.
+- Script is split into two panes: the live Time estimate command editor on the left and an editable SPICE macro on the right.
+- The Time estimate pane is the same DOM/editor used by Q-E Range, so command edits, loops, drag/drop, Fix, Calc finish and Calc MCU share one state.
+- **Generate SPICE** converts the command table to the supported SPICE subset; **Apply to commands** parses that subset back into the Time estimate table; **Copy** copies the macro to the clipboard.
+- Fixed commands generate `drive ...`; relative S1/S2 scans generate `scanrel`; other ranged commands generate `scan ... preset mcu ...`; waits generate `wait N`.
+- Loops generate `loop i=initial,final,step`, nested as `j`, `k`, ...; Time estimate references `loop1`, `loop2`, ... map to `%i`, `%j`, ... in SPICE. `endloop` closes each loop.
+
+
+## v39 Script / SPICE refinements
+- Restored `br` as an independent Time estimate command with H/K/L Detail fields; SPICE exports/imports `br h k l`.
+- Ranged `th2th` exports as `th2th initial final step` without a leading `scan`. The compact SPICE form does not encode t(s); importing it uses 1 s/point as the local Time estimate default.
+- Nested SPICE macro lines are indented by one ASCII space per loop level.
+- Script conversion buttons are labeled. Wide layout uses `→ SPICE` / `← Commands`; stacked layout uses `To SPICE ↓` / `To Commands ↑`.
+- Script Time estimate commands continue to share the same underlying Time estimate pane/state as Q-E Range.
+
+
+## v40 patch notes
+- `br` uses one compact `HKL` Detail field (`1 0 0`, `loop1 loop1 0`) and converts reversibly to/from `br h k l`.
+- Time estimate / Script performs a non-blocking instrument S2 upper-limit check for absolute `s2`, `th2th`, `QE`, `HKLE`, and `br` commands, including enclosing loop expansion. `rel s2` is checked from the most recent preceding `br` position, with the current scattering-sense sign and every relative scan point applied. Exceeding commands are highlighted and reported without blocking time calculation or SPICE conversion.

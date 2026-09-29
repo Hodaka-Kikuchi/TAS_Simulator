@@ -112,6 +112,7 @@
     <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution</button>
     <button id="tabToolbox" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="toolboxPanel" data-tab="toolbox">Toolbox</button>
     <button id="tabCifGenerator" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="cifGeneratorPanel" data-tab="cif-generator">CIF Generator</button>
+    <button id="tabScript" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scriptPanel" data-tab="script">Script</button>
   </nav>
 
   <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
@@ -138,12 +139,12 @@
           <div id="geometryPlot" class="qe-plot geometry"></div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div class="time-range-help">Use spaces only. Scan commands: enter one fixed value or initial final step (e.g. 1 2 0.2). Adding a loop automatically creates its paired endloop; nested loops are labeled loop1, loop2, ... and can be referenced in Detail with the same name. Commands inside loops are indented. If all Detail values are fixed, t (s) is automatically 0. temp / field: enter one target value or loopN. wait: enter the wait time directly in t (s). Fractions are accepted in Detail.</div>
+          <div class="time-range-help">Use spaces only. Scan commands: enter one fixed value or initial final step (e.g. 1 2 0.2). Adding a loop automatically creates its paired endloop; nested loops are labeled loop1, loop2, ... and can be referenced in Details with the same name. Commands inside loops are indented. If all Details entries are fixed, t (s) is automatically 0. temp / field: enter one target value or loopN. wait: enter the wait time directly in t (s). Fractions are accepted in Details.</div>
           <div class="time-scan-table-wrap">
             <div class="time-scan-table">
               <div class="time-scan-header">Index</div>
               <div class="time-scan-header">Command</div>
-              <div class="time-scan-header">Detail</div>
+              <div class="time-scan-header">Details</div>
               <div class="time-scan-header">t (s)</div>
               <div class="time-scan-header time-fix-header"><span>Fix</span><input id="timeFixAll" type="checkbox" aria-label="Fix selected scans or all scans"></div>
               <div id="timeScanRows" class="time-scan-rows"></div>
@@ -156,7 +157,7 @@
           </div>
 
           <div class="time-mcu-help">
-            <strong>Calc MCU:</strong> Uses t (s) of ranged scan commands as relative weights and rescales only unfixed scan times to fit the Scan start–finish time. Loop repetitions are included in the weighting. Fixed-Detail commands use t (s) = 0; wait is unchanged. Adjusted t (s) values are whole seconds and are truncated downward.
+            <strong>Calc MCU:</strong> Uses t (s) of ranged scan commands as relative weights and rescales only unfixed scan times to fit the Scan start–finish time. Loop repetitions are included in the weighting. Fixed-Details commands use t (s) = 0; wait is unchanged. Adjusted t (s) values are whole seconds and are truncated downward.
           </div>
 
           <div class="time-estimate-controls">
@@ -376,6 +377,31 @@
               </table>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="scriptPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabScript">
+    <section class="calc-card script-card">
+      <div class="script-workspace">
+        <div class="script-command-pane">
+          <div class="script-pane-heading">Time estimate commands</div>
+          <div id="scriptTimeMount" class="script-time-mount"></div>
+        </div>
+        <div class="script-transfer-controls" aria-label="Convert commands">
+          <button id="scriptToSpice" class="script-transfer-button" type="button" title="Convert Time estimate commands to SPICE" aria-label="Convert Time estimate commands to SPICE"><span class="script-transfer-wide">→ SPICE</span><span class="script-transfer-narrow">To SPICE ↓</span></button>
+          <button id="scriptToCommands" class="script-transfer-button" type="button" title="Convert SPICE to Time estimate commands" aria-label="Convert SPICE to Time estimate commands"><span class="script-transfer-wide">← Commands</span><span class="script-transfer-narrow">To Commands ↑</span></button>
+        </div>
+        <div class="script-spice-pane">
+          <div class="script-pane-heading script-spice-heading">
+            <span>SPICE macro</span>
+            <div class="script-actions">
+              <button id="scriptCopySpice" type="button">Copy to clipboard</button>
+            </div>
+          </div>
+          <textarea id="scriptSpiceText" class="script-spice-text" spellcheck="false" aria-label="SPICE macro"></textarea>
+          <div id="scriptMessage" class="script-message" aria-live="polite"></div>
         </div>
       </div>
     </section>

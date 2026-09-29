@@ -4465,7 +4465,18 @@ function setTimeScanRowWarning(row,warning){
 }
 
 function clearTimeScanRowWarnings(){
-  document.querySelectorAll('#timeScanRows .time-scan-row').forEach(row=>setTimeScanRowWarning(row,false));
+  document.querySelectorAll('#timeScanRows .time-scan-row').forEach(row=>{
+    setTimeScanRowWarning(row,false);
+    row.classList.remove('time-s2-limit-warning');
+    delete row.dataset.timeS2Warning;
+  });
+}
+
+function setTimeScanS2LimitWarning(row,warning,message=''){
+  if(!row) return;
+  row.classList.toggle('time-s2-limit-warning',!!warning);
+  if(warning && message) row.dataset.timeS2Warning=message;
+  else delete row.dataset.timeS2Warning;
 }
 
 function timeHklValueAt(parsed,index){
@@ -4503,6 +4514,7 @@ function timeCommandMeta(command){
   const c=String(command||'s1');
   if(c==='qe') return {kind:'scan',specs:[{key:'q',label:'Q'},{key:'hw',label:'ħω'}]};
   if(c==='hkle') return {kind:'scan',specs:[{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'},{key:'hw',label:'ħω'}]};
+  if(c==='br') return {kind:'drive',specs:[{key:'hkl',label:'HKL'}]};
   if(c==='s1') return {kind:'scan',specs:[{key:'s1',label:'S1'}]};
   if(c==='s2') return {kind:'scan',specs:[{key:'s2',label:'S2'}]};
   if(c==='rels1') return {kind:'scan',specs:[{key:'s1',label:'rel S1'}]};
@@ -4535,7 +4547,8 @@ function setTimeInputInvalid(input,invalid){
 function timeRangeInputHtml(spec,value='',command='s1'){
   const kind=timeCommandMeta(command).kind;
   let placeholder='target value or loopN';
-  if(kind==='scan') placeholder='fixed, loopN, or initial final step';
+  if(command==='br') placeholder='H K L (e.g. loop1 loop1 0)';
+  else if(kind==='scan') placeholder='fixed, loopN, or initial final step';
   else if(kind==='loop') placeholder='initial final step';
   return `<label class="time-range-field"><span class="time-range-label">${spec.label}</span><input type="text" inputmode="text" data-time-range-key="${spec.key}" value="${String(value??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="${placeholder}"></label>`;
 }
@@ -4734,9 +4747,28 @@ function parseTimeLoopReferenceToken(raw,row){
 function normalizeBoundTimeLoopReferences(){
   const structure=ensureTimeLoopPairIds();
   for(const input of document.querySelectorAll('#timeScanRows [data-time-range-key]')){
+    const commandRow=input.closest('.time-scan-row');
+    if(input.dataset.timeLoopRefPairs){
+      let refs=[];
+      try{ refs=JSON.parse(input.dataset.timeLoopRefPairs)||[]; }catch(_e){ refs=[]; }
+      const tokens=String(input.value||'').trim().split(/\s+/).filter(Boolean);
+      let broken=false;
+      for(const ref of refs){
+        const loopRow=structure.rows.find(row=>row.dataset.timeLoopPair===ref.pair && row.querySelector('[data-time-variable]')?.value==='loop');
+        const commandInfo=structure.info.get(commandRow);
+        const loopInfo=loopRow ? structure.info.get(loopRow) : null;
+        const stillEnclosing=!!(loopRow && commandInfo?.parentLoops?.includes(loopRow));
+        if(stillEnclosing && loopInfo?.level && Number.isInteger(ref.tokenIndex) && ref.tokenIndex>=0 && ref.tokenIndex<tokens.length){
+          tokens[ref.tokenIndex]=`loop${loopInfo.level}`;
+        }else broken=true;
+      }
+      if(tokens.length) input.value=tokens.join(' ');
+      if(broken) input.dataset.timeLoopRefBroken='1';
+      else delete input.dataset.timeLoopRefBroken;
+      continue;
+    }
     const pair=input.dataset.timeLoopRefPair;
     if(!pair) continue;
-    const commandRow=input.closest('.time-scan-row');
     const loopRow=structure.rows.find(row=>row.dataset.timeLoopPair===pair && row.querySelector('[data-time-variable]')?.value==='loop');
     const commandInfo=structure.info.get(commandRow);
     const loopInfo=loopRow ? structure.info.get(loopRow) : null;
@@ -5109,7 +5141,7 @@ function addTimeScanRow(values={},options={}){
   row.innerHTML=`
     <div class="time-scan-cell time-scan-index" data-time-index></div>
     <div class="time-scan-cell time-command-cell"><select data-time-variable aria-label="Command">
-      <option value="s1">s1</option><option value="s2">s2</option><option value="rels1">rel s1</option><option value="rels2">rel s2</option><option value="th2th">th2th</option><option value="qe">QE</option><option value="hkle">HKLE</option><option value="temp">temp</option><option value="field">field</option><option value="wait">wait</option><option value="loop">loop</option><option value="endloop">endloop</option>
+      <option value="s1">s1</option><option value="s2">s2</option><option value="rels1">rel s1</option><option value="rels2">rel s2</option><option value="th2th">th2th</option><option value="qe">QE</option><option value="hkle">HKLE</option><option value="br">br</option><option value="temp">temp</option><option value="field">field</option><option value="wait">wait</option><option value="loop">loop</option><option value="endloop">endloop</option>
     </select></div>
     <div class="time-scan-cell"><div class="time-range-inputs" data-time-range-host></div></div>
     <div class="time-scan-cell"><span class="time-mcu-entry"><input type="text" inputmode="numeric" data-time-mcu value="${String(values.mcu??values.time??((values.command??values.variable)==='wait' ? (values.ranges?.wait??values.details?.wait??'') : '')).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="0"></span></div>
@@ -5120,13 +5152,18 @@ function addTimeScanRow(values={},options={}){
   const command=row.querySelector('[data-time-variable]');
   let requested=values.command ?? values.variable ?? 's1';
   let restoredRanges=values.ranges||values.details||{};
-  // v29 compatibility: the removed br command is equivalent to fixed HKLE at ħω=0.
+  // v40: br uses one compact HKL Detail field. Migrate both the pre-v39
+  // target form and the v39 three-field H/K/L form without changing values.
   if(requested==='br'){
-    const legacy=String(restoredRanges.target??'').trim().split(/\s+/).filter(Boolean);
-    requested='hkle';
-    if(legacy.length===3) restoredRanges={h:legacy[0],k:legacy[1],l:legacy[2],hw:'0'};
+    if(restoredRanges.hkl===undefined){
+      if(restoredRanges.h!==undefined || restoredRanges.k!==undefined || restoredRanges.l!==undefined){
+        restoredRanges={hkl:[restoredRanges.h??'',restoredRanges.k??'',restoredRanges.l??''].join(' ').trim()};
+      }else if(restoredRanges.target!==undefined){
+        restoredRanges={hkl:String(restoredRanges.target??'').trim()};
+      }
+    }
   }
-  const allowed=['s1','s2','rels1','rels2','th2th','qe','hkle','temp','field','wait','loop','endloop'];
+  const allowed=['s1','s2','rels1','rels2','th2th','qe','hkle','br','temp','field','wait','loop','endloop'];
   command.value=allowed.includes(requested)?requested:'s1';
   const fix=row.querySelector('[data-time-fix]');
   if(fix) fix.checked=!!values.fixed;
@@ -5340,7 +5377,31 @@ function parseTimeRange(raw,row=null,{allowLoopReference=true}={}){
   return {ok:true,fixed:false,count,initial,final,step};
 }
 
+function parseBrHklDetail(raw,row=null){
+  const text=String(raw??'').trim();
+  if(!text) return {ok:false,error:'Enter H K L as three space-separated values.'};
+  if(text.includes(',')) return {ok:false,error:'Commas are not allowed. Enter H K L with spaces.'};
+  const parts=text.split(/\s+/).filter(Boolean);
+  if(parts.length!==3) return {ok:false,error:'br requires exactly three space-separated values: H K L.'};
+  const components=[];
+  for(const token of parts){
+    if(row){
+      const loopRef=parseTimeLoopReferenceToken(token,row);
+      if(loopRef){
+        if(!loopRef.ok) return loopRef;
+        components.push({...loopRef,token});
+        continue;
+      }
+    }
+    const value=parseNumericValue(token);
+    if(!Number.isFinite(value)) return {ok:false,error:'Each br HKL value must be numeric or a valid loopN reference.'};
+    components.push({ok:true,fixed:true,count:1,value,token});
+  }
+  return {ok:true,fixed:true,count:1,tuple:components};
+}
+
 function parseTimeDetail(raw,command,row=null){
+  if(command==='br') return parseBrHklDetail(raw,row);
   const kind=timeCommandMeta(command).kind;
   if(kind==='scan') return parseTimeRange(raw,row,{allowLoopReference:true});
   if(kind==='loop'){
@@ -5370,10 +5431,17 @@ function validateTimeRangeInput(input){
   }
   const parsed=parseTimeDetail(input?.value,command,row);
   if(input){
-    if(parsed.ok && parsed.symbolic && parsed.loopRow?.dataset.timeLoopPair){
+    if(command==='br' && parsed.ok && Array.isArray(parsed.tuple)){
+      const refs=parsed.tuple.map((item,tokenIndex)=>item.symbolic && item.loopRow?.dataset.timeLoopPair ? {tokenIndex,pair:item.loopRow.dataset.timeLoopPair} : null).filter(Boolean);
+      if(refs.length) input.dataset.timeLoopRefPairs=JSON.stringify(refs);
+      else delete input.dataset.timeLoopRefPairs;
+      delete input.dataset.timeLoopRefPair;
+    }else if(parsed.ok && parsed.symbolic && parsed.loopRow?.dataset.timeLoopPair){
       input.dataset.timeLoopRefPair=parsed.loopRow.dataset.timeLoopPair;
+      delete input.dataset.timeLoopRefPairs;
     }else if(!parsed.symbolic){
       delete input.dataset.timeLoopRefPair;
+      delete input.dataset.timeLoopRefPairs;
     }
   }
   setTimeInputInvalid(input,!parsed.ok);
@@ -5392,15 +5460,16 @@ function clearTimeEstimateMessage(){
   const box=$('timeEstimateMessage');
   if(!box) return;
   box.textContent='';
-  box.classList.remove('error-text');
+  box.classList.remove('error-text','warning-text');
   if(currentGeometryCardTab()==='time') requestAnimationFrame(updateTimeScanScrollState);
 }
 
-function setTimeEstimateMessage(message,error=false){
+function setTimeEstimateMessage(message,error=false,warning=false){
   const box=$('timeEstimateMessage');
   if(!box) return;
   box.textContent=message;
   box.classList.toggle('error-text',!!error);
+  box.classList.toggle('warning-text',!error && !!warning);
   if(currentGeometryCardTab()==='time') requestAnimationFrame(updateTimeScanScrollState);
 }
 
@@ -5459,9 +5528,195 @@ function readTimeScanRow(row,index){
   };
 }
 
+function timeRangeValues(parsed){
+  if(!parsed?.ok) return [];
+  if(parsed.fixed) return [parsed.value];
+  const values=[];
+  const direction=parsed.final>=parsed.initial ? 1 : -1;
+  for(let i=0;i<parsed.count;i++) values.push(parsed.initial+direction*parsed.step*i);
+  return values;
+}
+
+function timeLoopContextsForRow(row,structure,maxContexts=50000){
+  const parentLoops=structure.info.get(row)?.parentLoops||[];
+  let contexts=[{}];
+  for(const loopRow of parentLoops){
+    const level=structure.info.get(loopRow)?.level||0;
+    const input=loopRow.querySelector('[data-time-range-key="loop"]');
+    const parsed=parseTimeDetail(input?.value,'loop',loopRow);
+    if(!parsed.ok) return {ok:false,contexts:[]};
+    const values=timeRangeValues(parsed);
+    const next=[];
+    for(const context of contexts){
+      for(const value of values){
+        next.push({...context,[level]:value});
+        if(next.length>maxContexts) return {ok:false,contexts:[],tooMany:true};
+      }
+    }
+    contexts=next;
+  }
+  return {ok:true,contexts};
+}
+
+function resolveTimeFixedValue(parsed,context){
+  if(!parsed?.ok) return NaN;
+  if(parsed.symbolic) return Number(context?.[parsed.loopRef]);
+  return Number(parsed.value);
+}
+
+function timeDetailValueAt(parsed,index,context){
+  if(parsed?.fixed) return resolveTimeFixedValue(parsed,context);
+  return timeHklValueAt(parsed,index);
+}
+
+function timeEnergyForTransfer(hw){
+  const transfer=Number(hw);
+  const fixed=num('energy');
+  const mode=$('energyMode')?.value || 'Ef fixed';
+  if(!(fixed>0) || !Number.isFinite(transfer)) return null;
+  const Ei=mode==='Ei fixed' ? fixed : fixed+transfer;
+  const Ef=mode==='Ef fixed' ? fixed : fixed-transfer;
+  if(!(Ei>0) || !(Ef>0)) return null;
+  return {Ei,Ef};
+}
+
+function timeElasticIncidentEnergy(){
+  const E=num('energy');
+  return E>0 ? E : NaN;
+}
+
+function timeS2MagnitudeFromQ(q,hw){
+  const energy=timeEnergyForTransfer(hw);
+  if(!energy || !(Number(q)>=0)) return null;
+  const ki=Math.sqrt(energy.Ei/2.072), kf=Math.sqrt(energy.Ef/2.072);
+  const cosS2=(ki*ki+kf*kf-Number(q)*Number(q))/(2*ki*kf);
+  if(cosS2<-1-1e-10 || cosS2>1+1e-10) return null;
+  return {s2:Math.abs(rad2deg(Math.acos(clamp(cosS2,-1,1)))),Ei:energy.Ei};
+}
+
+function timeS2LimitAtEi(Ei){
+  try{
+    const inst=currentInstrument();
+    const s2max=effectiveS2MaxAtEi(inst,Ei,false);
+    return Number.isFinite(s2max) ? s2max : null;
+  }catch(_e){ return null; }
+}
+
+function timeSignedS2FromMagnitude(s2){
+  const mag=Math.abs(Number(s2));
+  if(!Number.isFinite(mag)) return NaN;
+  return checkedValue('sense')==='+-+' ? -mag : mag;
+}
+
+function timePreviousBrS2(row,index,context,structure){
+  const rows=[...document.querySelectorAll('#timeScanRows .time-scan-row')];
+  const currentIndex=Math.max(0,Number(index)-1);
+  for(let i=currentIndex-1;i>=0;i--){
+    const candidate=rows[i];
+    if(!candidate) continue;
+    const command=candidate.querySelector('[data-time-variable]')?.value || 's1';
+    if(command!=='br') continue;
+    const input=candidate.querySelector('[data-time-range-key="hkl"]');
+    const parsed=parseTimeDetail(input?.value,'br',candidate);
+    if(!parsed.ok) continue;
+    let rl;
+    try{ rl=buildResolutionLattice().rl; }catch(_e){ return null; }
+    const resolveIn=(ctx)=>{
+      const tuple=parsed.tuple||[];
+      const hkl=tuple.map(part=>resolveTimeFixedValue(part,ctx));
+      if(hkl.length!==3 || hkl.some(v=>!Number.isFinite(v))) return null;
+      const q=norm(hklToQ(rl,hkl));
+      const calc=timeS2MagnitudeFromQ(q,0);
+      if(!calc) return null;
+      return {s2:timeSignedS2FromMagnitude(calc.s2),Ei:calc.Ei,hkl};
+    };
+    const direct=resolveIn(context);
+    if(direct) return direct;
+    const candidateContexts=timeLoopContextsForRow(candidate,structure);
+    if(candidateContexts.ok && candidateContexts.contexts.length){
+      for(let j=candidateContexts.contexts.length-1;j>=0;j--){
+        const fallback=resolveIn(candidateContexts.contexts[j]);
+        if(fallback) return fallback;
+      }
+    }
+  }
+  return null;
+}
+
+function timeRowS2LimitWarning(row,result,index,structure){
+  const command=result.command;
+  if(!['s2','rels2','th2th','qe','hkle','br'].includes(command)) return null;
+  const contextResult=timeLoopContextsForRow(row,structure);
+  if(!contextResult.ok) return contextResult.tooMany ? `Command ${index}: S2 limit check skipped because the enclosing loops expand beyond 50,000 combinations.` : null;
+
+  const inputs=[...row.querySelectorAll('[data-time-range-key]')];
+  const parsedByKey={};
+  for(const input of inputs){
+    const key=input.dataset.timeRangeKey;
+    const parsed=parseTimeDetail(input.value,command,row);
+    if(!parsed.ok) return null;
+    parsedByKey[key]=parsed;
+  }
+  const points=Math.max(1,result.points||1);
+  let worst=null;
+  let rl=null;
+  if(command==='hkle' || command==='br'){
+    try{ rl=buildResolutionLattice().rl; }catch(_e){ return null; }
+  }
+
+  const consider=(s2,Ei,detail)=>{
+    if(!Number.isFinite(s2)) return;
+    const incident=Number.isFinite(Ei) ? Ei : timeElasticIncidentEnergy();
+    const limit=timeS2LimitAtEi(incident);
+    if(!Number.isFinite(limit)) return;
+    const excess=Math.abs(s2)-limit;
+    if(excess>1e-8 && (!worst || excess>worst.excess)) worst={s2:Math.abs(s2),limit,Ei:incident,excess,detail};
+  };
+
+  for(const context of contextResult.contexts){
+    if(command==='br'){
+      const tuple=parsedByKey.hkl?.tuple||[];
+      const hkl=tuple.map(part=>resolveTimeFixedValue(part,context));
+      if(hkl.length!==3 || hkl.some(v=>!Number.isFinite(v))) continue;
+      const q=norm(hklToQ(rl,hkl));
+      const calc=timeS2MagnitudeFromQ(q,0);
+      if(calc) consider(calc.s2,calc.Ei,`HKL=(${hkl.map(v=>Number(v.toPrecision(6))).join(', ')})`);
+      continue;
+    }
+    for(let point=0;point<points;point++){
+      if(command==='s2' || command==='th2th'){
+        const key=command==='s2'?'s2':'th2th';
+        const value=timeDetailValueAt(parsedByKey[key],point,context);
+        consider(Math.abs(value),timeElasticIncidentEnergy(),`${key}=${Number(value.toPrecision?.(6)??value)}`);
+      }else if(command==='rels2'){
+        const rel=timeDetailValueAt(parsedByKey.s2,point,context);
+        const base=timePreviousBrS2(row,index,context,structure);
+        if(!base || !Number.isFinite(rel)) continue;
+        const finalS2=base.s2+rel;
+        consider(finalS2,base.Ei,`previous br S2=${base.s2.toFixed(2)}°, rel S2=${Number(rel.toPrecision?.(6)??rel)}`);
+      }else if(command==='qe'){
+        const q=timeDetailValueAt(parsedByKey.q,point,context);
+        const hw=timeDetailValueAt(parsedByKey.hw,point,context);
+        const calc=timeS2MagnitudeFromQ(q,hw);
+        if(calc) consider(calc.s2,calc.Ei,`Q=${Number(q.toPrecision(6))}, ħω=${Number(hw.toPrecision(6))}`);
+      }else if(command==='hkle'){
+        const hkl=['h','k','l'].map(key=>timeDetailValueAt(parsedByKey[key],point,context));
+        const hw=timeDetailValueAt(parsedByKey.hw,point,context);
+        if(hkl.some(v=>!Number.isFinite(v)) || !Number.isFinite(hw)) continue;
+        const q=norm(hklToQ(rl,hkl));
+        const calc=timeS2MagnitudeFromQ(q,hw);
+        if(calc) consider(calc.s2,calc.Ei,`HKL=(${hkl.map(v=>Number(v.toPrecision(6))).join(', ')}), ħω=${Number(hw.toPrecision(6))}`);
+      }
+    }
+  }
+  if(!worst) return null;
+  return `Command ${index}: S2=${worst.s2.toFixed(2)}° exceeds the instrument max ${worst.limit.toFixed(2)}° at Ei=${worst.Ei.toFixed(2)} meV (${worst.detail}).`;
+}
+
 function validateAllTimeScanRows({showMessage=false}={}){
   const rows=[...document.querySelectorAll('#timeScanRows .time-scan-row')];
-  const results=[],errors=[];
+  const results=[],errors=[],warnings=[];
+  for(const row of rows) setTimeScanS2LimitWarning(row,false);
   const loopStack=[];
   for(let i=0;i<rows.length;i++){
     const result=readTimeScanRow(rows[i],i+1);
@@ -5480,11 +5735,24 @@ function validateAllTimeScanRows({showMessage=false}={}){
     errors.push(`Command ${i+1}: loop has no matching endloop.`);
   }
   updateTimeLoopIndentation();
+  if(!errors.length){
+    const structure=ensureTimeLoopPairIds();
+    for(let i=0;i<rows.length;i++){
+      const result=results[i];
+      if(!result?.ok || result.kind==='loop' || result.kind==='endloop') continue;
+      const warning=timeRowS2LimitWarning(rows[i],result,i+1,structure);
+      if(warning){
+        warnings.push(warning);
+        setTimeScanS2LimitWarning(rows[i],true,warning);
+      }
+    }
+  }
   if(showMessage){
     if(errors.length) setTimeEstimateMessage(errors.join(' / '),true);
+    else if(warnings.length) setTimeEstimateMessage(`Warning: ${warnings.join(' / ')}`,false,true);
     else clearTimeEstimateMessage();
   }
-  return {ok:errors.length===0,rows,results,errors};
+  return {ok:errors.length===0,rows,results,errors,warnings};
 }
 
 function pad2(v){ return String(v).padStart(2,'0'); }
@@ -5715,8 +5983,11 @@ function initializeTimeEstimateUI(){
     if(event.target.closest?.('.time-scan-table-wrap')) return;
     clearTimeScanSelection();
   });
-  for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']){
-    $(id)?.addEventListener('change',()=>{ if(currentGeometryCardTab()==='time') validateAllTimeScanRows({showMessage:true}); });
+  for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl','instrument','energy','energyMode','S2maxUser','S2maxEffective']){
+    $(id)?.addEventListener('change',()=>{
+      const scriptActive=$('tabScript')?.classList.contains('active');
+      if(currentGeometryCardTab()==='time' || scriptActive) validateAllTimeScanRows({showMessage:true});
+    });
   }
   for(const prefix of ['Start','End']){
     const ids=timeEstimateDatePartIds(prefix);
@@ -5734,6 +6005,320 @@ function initializeTimeEstimateUI(){
     setGeometryCardTab('angles');
     saveTimeEstimateState();
   }
+}
+
+
+// ==================== SPICE macro script ====================
+let timeEstimateHomeParent=null;
+let timeEstimateHomeNextSibling=null;
+const SPICE_SCRIPT_STORAGE_KEY='tas-simulator-spice-script-v1';
+const SPICE_LOOP_VARS=['i','j','k','l','m','n','p','q','r','s','t','u','v','w','x','y','z'];
+
+function mountTimeEstimateForScript(active){
+  const pane=$('geometryTimePane');
+  if(!pane) return;
+  if(!timeEstimateHomeParent){
+    timeEstimateHomeParent=pane.parentElement;
+    timeEstimateHomeNextSibling=pane.nextSibling;
+  }
+  if(active){
+    const mount=$('scriptTimeMount');
+    if(mount && pane.parentElement!==mount) mount.appendChild(pane);
+    pane.classList.remove('hidden');
+    requestAnimationFrame(()=>{
+      updateTimeScanScrollState();
+      validateAllTimeScanRows({showMessage:true});
+    });
+  }else if(timeEstimateHomeParent && pane.parentElement!==timeEstimateHomeParent){
+    if(timeEstimateHomeNextSibling && timeEstimateHomeNextSibling.parentNode===timeEstimateHomeParent){
+      timeEstimateHomeParent.insertBefore(pane,timeEstimateHomeNextSibling);
+    }else timeEstimateHomeParent.appendChild(pane);
+    pane.classList.toggle('hidden',currentGeometryCardTab()!=='time');
+  }
+}
+
+function scriptMessage(message,error=false){
+  const box=$('scriptMessage');
+  if(!box) return;
+  box.textContent=message||'';
+  box.classList.toggle('error-text',!!error);
+}
+
+function spiceLoopVar(level){
+  const index=Math.max(0,Number(level||1)-1);
+  return SPICE_LOOP_VARS[index] || `v${level}`;
+}
+
+function spiceDetailToken(token){
+  const text=String(token??'').trim();
+  const match=/^loop([1-9]\d*)$/i.exec(text);
+  return match ? `%${spiceLoopVar(Number(match[1]))}` : text;
+}
+
+function spiceDetailTokens(value){
+  return String(value??'').trim().split(/\s+/).filter(Boolean).map(spiceDetailToken);
+}
+
+function spiceNameForDetailKey(key){
+  return key==='hw' ? 'e' : key;
+}
+
+function generateSpiceMacroFromTimeEstimate(){
+  const validation=validateAllTimeScanRows({showMessage:true});
+  if(!validation.ok) throw new Error(validation.errors.join(' / '));
+  const structure=ensureTimeLoopPairIds();
+  const lines=[];
+  const pushLine=(info,text)=>{
+    const depth=Math.max(0,Number(info?.depth)||0);
+    lines.push(`${' '.repeat(depth)}${text}`);
+  };
+  for(const row of structure.rows){
+    const command=row.querySelector('[data-time-variable]')?.value || 's1';
+    const meta=timeCommandMeta(command);
+    const info=structure.info.get(row);
+    if(meta.kind==='loop'){
+      const input=row.querySelector('[data-time-range-key="loop"]');
+      const values=spiceDetailTokens(input?.value);
+      if(values.length!==3) throw new Error(`loop${info?.level||1} requires initial final step.`);
+      pushLine(info,`loop ${spiceLoopVar(info?.level||1)}=${values.join(',')}`);
+      continue;
+    }
+    if(meta.kind==='endloop'){
+      pushLine(info,'endloop');
+      continue;
+    }
+    if(meta.kind==='wait'){
+      const t=row.querySelector('[data-time-mcu]')?.value || '0';
+      pushLine(info,`wait ${t}`);
+      continue;
+    }
+    const inputs=[...row.querySelectorAll('[data-time-range-key]')];
+    const details=inputs.map(input=>({key:input.dataset.timeRangeKey,tokens:spiceDetailTokens(input.value)}));
+    const ranged=details.some(item=>item.tokens.length===3);
+    const t=row.querySelector('[data-time-mcu]')?.value || '0';
+
+    if(meta.kind==='drive'){
+      if(command==='br'){
+        const hkl=details[0]?.tokens||[];
+        if(hkl.length!==3) throw new Error('br requires H K L.');
+        pushLine(info,`br ${hkl.join(' ')}`);
+        continue;
+      }
+      const token=details[0]?.tokens?.[0];
+      if(token===undefined) throw new Error(`${command} requires a target value.`);
+      pushLine(info,`drive ${command} ${token}`);
+      continue;
+    }
+
+    if(!ranged){
+      if(command==='rels1' || command==='rels2'){
+        const axis=command==='rels1'?'s1':'s2';
+        pushLine(info,`drel ${axis} ${details[0].tokens[0]}`);
+      }else if(command==='qe'){
+        const byKey=Object.fromEntries(details.map(x=>[x.key,x.tokens[0]]));
+        pushLine(info,`drive q ${byKey.q} e ${byKey.hw}`);
+      }else if(command==='hkle'){
+        const byKey=Object.fromEntries(details.map(x=>[x.key,x.tokens[0]]));
+        pushLine(info,`drive h ${byKey.h} k ${byKey.k} l ${byKey.l} e ${byKey.hw}`);
+      }else{
+        const name=command==='th2th'?'th2th':command;
+        pushLine(info,`drive ${name} ${details[0].tokens[0]}`);
+      }
+      continue;
+    }
+
+    if(command==='th2th'){
+      // SPICE th2th is its own scan-style command; it is not prefixed by `scan`.
+      pushLine(info,`th2th ${details[0].tokens.join(' ')}`);
+      continue;
+    }
+    const scanCommand=(command==='rels1'||command==='rels2')?'scanrel':'scan';
+    const pieces=[scanCommand];
+    if(command==='rels1'||command==='rels2'){
+      pieces.push(command==='rels1'?'s1':'s2',...details[0].tokens);
+    }else{
+      for(const detail of details) pieces.push(spiceNameForDetailKey(detail.key),...detail.tokens);
+    }
+    pieces.push('preset','mcu',String(t));
+    pushLine(info,pieces.join(' '));
+  }
+  return lines.join('\n');
+}
+
+function spiceTokenToTime(token,loopStack){
+  const text=String(token??'').trim();
+  const match=/^%([A-Za-z][A-Za-z0-9_]*)$/.exec(text);
+  if(!match) return text;
+  const index=loopStack.indexOf(match[1]);
+  if(index<0) throw new Error(`Loop variable ${text} is not active here.`);
+  return `loop${index+1}`;
+}
+
+function parseSpiceVariableGroups(tokens,loopStack){
+  const names=new Set(['s1','s2','th2th','q','e','h','k','l']);
+  const groups=[];
+  let i=0;
+  while(i<tokens.length){
+    const name=String(tokens[i]||'').toLowerCase();
+    if(!names.has(name)) throw new Error(`Unknown scan variable: ${tokens[i]||''}`);
+    i++;
+    const values=[];
+    while(i<tokens.length && !names.has(String(tokens[i]).toLowerCase())) values.push(spiceTokenToTime(tokens[i++],loopStack));
+    if(values.length!==1 && values.length!==3) throw new Error(`${name} must have one value or initial final step.`);
+    groups.push({name,values});
+  }
+  return groups;
+}
+
+function parseSpiceMacroToRows(text){
+  const rows=[];
+  const loopStack=[];
+  const lines=String(text??'').split(/\r?\n/);
+  for(let lineIndex=0;lineIndex<lines.length;lineIndex++){
+    const raw=lines[lineIndex].trim();
+    if(!raw || raw.startsWith('#') || raw.startsWith(';')) continue;
+    const lower=raw.toLowerCase();
+    let match;
+    if((match=/^loop\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*([^,]+),([^,]+),([^,]+)\s*$/i.exec(raw))){
+      const variable=match[1];
+      if(loopStack.includes(variable)) throw new Error(`Line ${lineIndex+1}: loop variable ${variable} is already active.`);
+      loopStack.push(variable);
+      rows.push({command:'loop',ranges:{loop:`${match[2].trim()} ${match[3].trim()} ${match[4].trim()}`},mcu:'0',fixed:true});
+      continue;
+    }
+    if(/^endloop\s*$/i.test(raw)){
+      if(!loopStack.length) throw new Error(`Line ${lineIndex+1}: endloop has no matching loop.`);
+      loopStack.pop();
+      rows.push({command:'endloop',ranges:{},mcu:'0',fixed:true});
+      continue;
+    }
+    if((match=/^wait\s+(\d+)\s*$/i.exec(raw))){
+      rows.push({command:'wait',ranges:{},mcu:match[1],fixed:true});
+      continue;
+    }
+    if((match=/^br\s+(\S+)\s+(\S+)\s+(\S+)\s*$/i.exec(raw))){
+      rows.push({command:'br',ranges:{hkl:[match[1],match[2],match[3]].map(v=>spiceTokenToTime(v,loopStack)).join(' ')},mcu:'0',fixed:true});
+      continue;
+    }
+    if((match=/^th2th\s+(\S+)\s+(\S+)\s+(\S+)\s*$/i.exec(raw))){
+      // The compact th2th syntax does not carry a counting preset. Use 1 s/point on import.
+      rows.push({command:'th2th',ranges:{th2th:[match[1],match[2],match[3]].map(v=>spiceTokenToTime(v,loopStack)).join(' ')},mcu:'1',fixed:false});
+      continue;
+    }
+    const parts=raw.split(/\s+/);
+    const op=parts[0].toLowerCase();
+    if(op==='drive' || op==='drel'){
+      const rest=parts.slice(1);
+      if(op==='drel'){
+        if(rest.length!==2 || !['s1','s2'].includes(rest[0].toLowerCase())) throw new Error(`Line ${lineIndex+1}: unsupported drel command.`);
+        const axis=rest[0].toLowerCase();
+        rows.push({command:axis==='s1'?'rels1':'rels2',ranges:{[axis]:spiceTokenToTime(rest[1],loopStack)},mcu:'0',fixed:true});
+        continue;
+      }
+      if(rest.length===2 && ['s1','s2','th2th','temp','field'].includes(rest[0].toLowerCase())){
+        const name=rest[0].toLowerCase();
+        const key=(name==='temp'||name==='field')?'target':name;
+        rows.push({command:name,ranges:{[key]:spiceTokenToTime(rest[1],loopStack)},mcu:'0',fixed:true});
+        continue;
+      }
+      const groups=parseSpiceVariableGroups(rest,loopStack);
+      const byName=Object.fromEntries(groups.map(g=>[g.name,g.values.join(' ')]));
+      const names=groups.map(g=>g.name);
+      if(names.length===2 && names.includes('q') && names.includes('e')){
+        rows.push({command:'qe',ranges:{q:byName.q,hw:byName.e},mcu:'0',fixed:true});
+        continue;
+      }
+      if(['h','k','l','e'].every(n=>names.includes(n))){
+        rows.push({command:'hkle',ranges:{h:byName.h,k:byName.k,l:byName.l,hw:byName.e},mcu:'0',fixed:true});
+        continue;
+      }
+      throw new Error(`Line ${lineIndex+1}: unsupported drive command.`);
+    }
+    if(op==='scan' || op==='scanrel'){
+      const presetIndex=parts.findIndex((token,index)=>index>0 && token.toLowerCase()==='preset');
+      if(presetIndex<0 || String(parts[presetIndex+1]||'').toLowerCase()!=='mcu' || !/^\d+$/.test(String(parts[presetIndex+2]||'')) || presetIndex+3!==parts.length){
+        throw new Error(`Line ${lineIndex+1}: scan must end with preset mcu <seconds>.`);
+      }
+      const t=parts[presetIndex+2];
+      const groups=parseSpiceVariableGroups(parts.slice(1,presetIndex),loopStack);
+      const byName=Object.fromEntries(groups.map(g=>[g.name,g.values.join(' ')]));
+      const names=groups.map(g=>g.name);
+      if(op==='scanrel'){
+        if(groups.length!==1 || !['s1','s2'].includes(groups[0].name)) throw new Error(`Line ${lineIndex+1}: scanrel supports s1 or s2.`);
+        const axis=groups[0].name;
+        rows.push({command:axis==='s1'?'rels1':'rels2',ranges:{[axis]:byName[axis]},mcu:t,fixed:false});
+        continue;
+      }
+      if(groups.length===1 && ['s1','s2','th2th'].includes(groups[0].name)){
+        const name=groups[0].name;
+        rows.push({command:name,ranges:{[name]:byName[name]},mcu:t,fixed:false});
+        continue;
+      }
+      if(names.length===2 && names.includes('q') && names.includes('e')){
+        rows.push({command:'qe',ranges:{q:byName.q,hw:byName.e},mcu:t,fixed:false});
+        continue;
+      }
+      if(['h','k','l','e'].every(n=>names.includes(n))){
+        rows.push({command:'hkle',ranges:{h:byName.h,k:byName.k,l:byName.l,hw:byName.e},mcu:t,fixed:false});
+        continue;
+      }
+      throw new Error(`Line ${lineIndex+1}: unsupported scan command.`);
+    }
+    throw new Error(`Line ${lineIndex+1}: unsupported SPICE command.`);
+  }
+  if(loopStack.length) throw new Error('SPICE macro ends before all loops are closed.');
+  if(!rows.length) throw new Error('No supported SPICE commands were found.');
+  return rows;
+}
+
+function replaceTimeEstimateRows(rows){
+  const host=$('timeScanRows');
+  if(!host) return;
+  host.replaceChildren();
+  timeScanRowCounter=0;
+  timeLoopPairCounter=0;
+  for(const values of rows) addTimeScanRow(values,{suppressAutoPair:true});
+  ensureTimeLoopPairIds();
+  renumberTimeScanRows();
+  clearTimeScanSelection();
+  saveTimeEstimateState();
+  validateAllTimeScanRows({showMessage:true});
+}
+
+async function copySpiceScript(){
+  const text=$('scriptSpiceText')?.value||'';
+  if(!text.trim()){ scriptMessage('There is no SPICE macro to copy.',true); return; }
+  try{
+    await navigator.clipboard.writeText(text);
+    scriptMessage('SPICE macro copied to the clipboard.');
+  }catch(_err){
+    const area=$('scriptSpiceText');
+    area?.focus(); area?.select();
+    const ok=document.execCommand?.('copy');
+    scriptMessage(ok?'SPICE macro copied to the clipboard.':'Clipboard copy was blocked by the browser.',!ok);
+  }
+}
+
+function initializeScriptUI(){
+  const area=$('scriptSpiceText');
+  try{ if(area) area.value=localStorage.getItem(SPICE_SCRIPT_STORAGE_KEY)||''; }catch(_e){}
+  area?.addEventListener('input',()=>{ try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,area.value);}catch(_e){} scriptMessage(''); });
+  $('scriptToSpice')?.addEventListener('click',()=>{
+    try{
+      const text=generateSpiceMacroFromTimeEstimate();
+      area.value=text;
+      try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
+      scriptMessage('Converted Time estimate commands to SPICE.');
+    }catch(err){ scriptMessage(err?.message||String(err),true); }
+  });
+  $('scriptToCommands')?.addEventListener('click',()=>{
+    try{
+      const rows=parseSpiceMacroToRows(area?.value||'');
+      replaceTimeEstimateRows(rows);
+      scriptMessage(`Converted ${rows.length} SPICE command rows to Time estimate commands.`);
+    }catch(err){ scriptMessage(err?.message||String(err),true); }
+  });
+  $('scriptCopySpice')?.addEventListener('click',copySpiceScript);
 }
 
 // ==================== Resolution calculator ====================
@@ -6524,7 +7109,7 @@ function powderGeometryTarget(uiSenseOverride=null,rawSenseForDrawing=false){
 
 function resizeVisiblePlots(){
   if(typeof Plotly === "undefined" || !Plotly.Plots) return;
-  const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel"),$("cifGeneratorPanel")].find(p=>p && !p.classList.contains("hidden"));
+  const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel"),$("cifGeneratorPanel"),$("scriptPanel")].find(p=>p && !p.classList.contains("hidden"));
   if(!panel) return;
   panel.querySelectorAll(".js-plotly-plot").forEach(el=>{
     try{ Plotly.Plots.resize(el); }catch(_err){}
@@ -6554,7 +7139,8 @@ function initializeResponsivePlotResize(){
 }
 
 function setActiveTab(name){
-  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox', isCifGenerator=name==='cif-generator';
+  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox', isCifGenerator=name==='cif-generator', isScript=name==='script';
+  mountTimeEstimateForScript(isScript);
   const sampleMode=$('sampleMode');
   if(isResolution){
     if(sampleMode.value!=="single"){
@@ -6571,7 +7157,8 @@ function setActiveTab(name){
   $('resolutionPanel').classList.toggle('hidden',!isResolution);
   $('toolboxPanel').classList.toggle('hidden',!isToolbox);
   $('cifGeneratorPanel').classList.toggle('hidden',!isCifGenerator);
-  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox],['tabCifGenerator',isCifGenerator]]){
+  $('scriptPanel')?.classList.toggle('hidden',!isScript);
+  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox],['tabCifGenerator',isCifGenerator],['tabScript',isScript]]){
     $(id).classList.toggle('active',on);
     $(id).setAttribute('aria-selected',String(on));
   }
@@ -6652,7 +7239,7 @@ function restoreRightPanelState(){
 function savedActiveTab(){
   try{
     const name=localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-    return ['qe','resolution','toolbox','cif-generator'].includes(name) ? name : 'qe';
+    return ['qe','resolution','toolbox','cif-generator','script'].includes(name) ? name : 'qe';
   }catch(_e){ return 'qe'; }
 }
 
@@ -6814,6 +7401,7 @@ function mergeLegacyRangeData(){
 async function initialize(){
   clearError(); fillCrystal('monoCrystal','dMono');fillCrystal('anaCrystal','dAna');updateModeVisibility();updateEnergyLabel();updateCalcMode();updateSupermirrorUI();updateAutoW();
   initializeTimeEstimateUI();
+  initializeScriptUI();
 
   // Register the main tabs before any optional async data source is loaded.
   // A missing optional directory or CIF-generator asset must never leave the
@@ -6822,6 +7410,7 @@ async function initialize(){
   $('tabResolution')?.addEventListener('click',()=>setActiveTab('resolution'));
   $('tabToolbox')?.addEventListener('click',()=>setActiveTab('toolbox'));
   $('tabCifGenerator')?.addEventListener('click',()=>setActiveTab('cif-generator'));
+  $('tabScript')?.addEventListener('click',()=>setActiveTab('script'));
 
   setStatus('neutron data / instrument / BG_material / sample_environments loading...');
   let nNeutron=0;
