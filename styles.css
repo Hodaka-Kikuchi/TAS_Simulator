@@ -427,7 +427,7 @@ textarea:disabled {
    fixed-width h/k/l/hbar-omega entry boxes surrounded by empty space. */
 #resolutionCalculation #singleInputs{
   grid-template-columns:repeat(5,minmax(0,1fr));
-  gap:8px;
+  gap:4px;
   align-items:end;
 }
 #resolutionCalculation #singleInputs input[type=number]{
