@@ -6354,11 +6354,11 @@ function initializeScriptUI(){
 
 // ==================== v42 Script command model / ASET ====================
 const V42_TIME_OPERATIONS=['drive','driverel','scan','scanrel'];
-const V42_MOTOR_TARGETS=['ei','ef','e','s1','s2','hkle','qe','th2th'];
+const V42_MOTOR_TARGETS=['ei','ef','e','s1','s2','hkle','br','qe','th2th'];
 const V42_ASET_STORAGE_KEY='tas-simulator-spice-aset-v4';
 const V42_ASET_DEFAULTS={
-  temperature:'drive vti value, drive sample value',
-  field:'drive field value, drive ramp 1',
+  temperature:'drive vti <value>, drive sample <value>',
+  field:'drive field <value>, drive ramp 1',
   field0:'drive zero 1'
 };
 let v42SpiceLineMap=[];
@@ -6376,16 +6376,21 @@ function v42EscapeAttr(value){
 }
 function v42InternalCommand(operation,target){
   const op=String(operation||'drive').toLowerCase();
-  if(op==='wait' || op==='loop' || op==='endloop') return op;
-  const requested=String(target||'').toLowerCase();
-  const t=v42AllTargets().includes(requested) ? requested : 's1';
-  return `${op}:${t}`;
+  if(op==='count' || op==='wait' || op==='loop' || op==='endloop') return op;
+  const raw=String(target||'').trim();
+  const t=v49CanonicalMotorTarget(raw);
+  const allowed=v42AllTargets();
+  return `${op}:${allowed.includes(t)?t:'s1'}`;
 }
 function v42CommandParts(command){
-  const raw=String(command||'drive:s1').toLowerCase();
-  if(raw==='wait' || raw==='loop' || raw==='endloop') return {op:raw,target:''};
-  const m=/^(drive|driverel|scan|scanrel):([a-z][a-z0-9_]*)$/.exec(raw);
-  if(m && v42AllTargets().includes(m[2])) return {op:m[1],target:m[2]};
+  const raw=String(command||'drive:s1').trim();
+  const lower=raw.toLowerCase();
+  if(lower==='count' || lower==='wait' || lower==='loop' || lower==='endloop') return {op:lower,target:''};
+  const colon=raw.indexOf(':');
+  if(colon>0){
+    const op=raw.slice(0,colon).toLowerCase(), target=v49CanonicalMotorTarget(raw.slice(colon+1));
+    if(['drive','driverel','scan','scanrel'].includes(op) && v42AllTargets().includes(target)) return {op,target};
+  }
   return {op:'drive',target:'s1'};
 }
 function v42DetailsLookRanged(ranges){
@@ -6393,12 +6398,13 @@ function v42DetailsLookRanged(ranges){
 }
 function v42NormalizeStoredRow(values={}){
   let ranges={...(values.ranges||values.details||{})};
-  const requested=String(values.command??values.variable??'s1').toLowerCase();
-  if(/^(drive|driverel|scan|scanrel):/.test(requested)){
-    const parts=v42CommandParts(requested);
+  const requestedRaw=String(values.command??values.variable??'s1').trim();
+  const requested=requestedRaw.toLowerCase();
+  if(/^(drive|driverel|scan|scanrel):/i.test(requestedRaw)){
+    const parts=v42CommandParts(requestedRaw);
     return {operation:values.operation||parts.op,target:values.target||parts.target,ranges,migrationWarning:values.migrationWarning||''};
   }
-  if(requested==='wait' || requested==='loop' || requested==='endloop') return {operation:requested,target:'',ranges};
+  if(requested==='count' || requested==='wait' || requested==='loop' || requested==='endloop') return {operation:requested,target:'',ranges};
   const ranged=v42DetailsLookRanged(ranges);
   if(requested==='s1' || requested==='s2') return {operation:ranged?'scan':'drive',target:requested,ranges};
   if(requested==='rels1' || requested==='rels2') return {operation:ranged?'scanrel':'driverel',target:requested.endsWith('1')?'s1':'s2',ranges};
@@ -6420,14 +6426,40 @@ function v42SetInternalSelect(select,value){
   select.value=value;
 }
 function v42OperationOptions(selected){
-  const motion=V42_TIME_OPERATIONS.map(op=>`<option value="${op}"${selected===op?' selected':''}>${op}</option>`).join('');
-  const controls=['wait','loop','endloop'].map(op=>`<option value="${op}"${selected===op?' selected':''}${op==='endloop' && selected!=='endloop'?' hidden disabled':''}>${op}</option>`).join('');
-  return `<optgroup label="Motion">${motion}</optgroup><optgroup label="Control">${controls}</optgroup>`;
+  const operations=['drive','driverel','scan','scanrel','count','wait','loop'];
+  const options=operations.map(op=>`<option value="${op}"${selected===op?' selected':''}>${op}</option>`).join('');
+  const end=`<option value="endloop"${selected==='endloop'?' selected':' hidden disabled'}>endloop</option>`;
+  return options+end;
+}
+function v42NormalizeTemplateSyntax(template){
+  // v50: ASET templates use only <value> and <range>. Scan/scanrel timing is
+  // supplied automatically from the Time estimate row's t (s). Migrate the
+  // former count preset mcu <time> helper out of saved templates.
+  return String(template??'')
+    .replace(/count\s+preset\s+mcu\s*(?:<time>|\btime\b)/gi,'')
+    .replace(/(?<!<)\b(value|range)\b(?!>)/gi,'<$1>');
 }
 function v42TemplateCommands(template){
-  return String(template??'').split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
+  return v42NormalizeTemplateSyntax(template).split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
 }
-function v42TemplateUsesValue(template){ return /\bvalue\b/i.test(String(template??'')); }
+function v42TemplatePlaceholders(template){
+  const commands=v42TemplateCommands(template), out=[];
+  let occurrence=0;
+  for(const command of commands){
+    const re=/<(value|range)>/gi; let m;
+    while((m=re.exec(command))){
+      const type=m[1].toLowerCase();
+      const before=command.slice(0,m.index).trim();
+      const words=before.match(/[A-Za-z][A-Za-z0-9_]*/g)||[];
+      let label=words.length?words[words.length-1]:type;
+      if(['drive','driverel','scan','scanrel','preset','mcu','count'].includes(label.toLowerCase())) label=type;
+      out.push({type,label,key:`aset_${type}_${++occurrence}`});
+    }
+  }
+  return out;
+}
+function v42TemplateUsesValue(template){ return v42TemplatePlaceholders(template).some(x=>x.type==='value'); }
+
 function v42StoredAsetEntries(){
   try{
     const saved=JSON.parse(localStorage.getItem(V42_ASET_STORAGE_KEY)||'null');
@@ -6443,30 +6475,36 @@ function v42StoredAsetEntries(){
     const old=JSON.parse(localStorage.getItem('tas-simulator-spice-aset-v2')||'null');
     if(Array.isArray(old?.entries)) return old.entries.map(item=>({
       key:item?.key,
-      template:Array.isArray(item?.devices)?item.devices.map(d=>`drive ${d} value`).join(', '):''
+      template:Array.isArray(item?.devices)?item.devices.map(d=>`drive ${d} <value>`).join(', '):''
     }));
   }catch(_e){}
   try{
     const old=JSON.parse(localStorage.getItem('tas-simulator-spice-aset-v1')||'null');
     if(old && typeof old==='object') return Object.entries(old).map(([key,devices])=>({
-      key,template:Array.isArray(devices)?devices.map(d=>`drive ${d} value`).join(', '):''
+      key,template:Array.isArray(devices)?devices.map(d=>`drive ${d} <value>`).join(', '):''
     }));
   }catch(_e){}
   return [];
 }
 function v42AsetRowKey(row){
-  return String(row?.querySelector?.('[data-aset-target]')?.value??row?.dataset?.asetKey??'').trim().toLowerCase();
+  return String(row?.querySelector?.('[data-aset-target]')?.value??row?.dataset?.asetKey??'').trim();
 }
+function v49CanonicalMotorTarget(value){
+  const raw=String(value??'').trim();
+  const lower=raw.toLowerCase();
+  return V42_MOTOR_TARGETS.includes(lower)?lower:raw;
+}
+
 function v42AsetKeys(){
   const keys=new Set();
   for(const row of document.querySelectorAll('#scriptAsetList [data-aset-row]')){
     const key=v42AsetRowKey(row);
-    if(/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key)) keys.add(key);
+    if(/^[A-Za-z][A-Za-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key.toLowerCase())) keys.add(key);
   }
   if(!keys.size){
     for(const item of v42StoredAsetEntries()){
-      const key=String(item?.key||'').trim().toLowerCase();
-      if(/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key)) keys.add(key);
+      const key=String(item?.key||'').trim();
+      if(/^[A-Za-z][A-Za-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key.toLowerCase())) keys.add(key);
     }
   }
   if(!keys.size) for(const key of Object.keys(V42_ASET_DEFAULTS)) keys.add(key);
@@ -6476,27 +6514,32 @@ function v42AllTargets(){ return [...V42_MOTOR_TARGETS,...v42AsetKeys()]; }
 function v42TargetsForOperation(operation){
   const op=String(operation||'drive').toLowerCase();
   const specials=new Set(['qe','th2th']);
-  return v42AllTargets().filter(t=>!specials.has(t) || op==='scan');
+  return v42AllTargets().filter(t=>{
+    if(specials.has(t)) return op==='scan';
+    if(t==='br') return op==='drive';
+    return true;
+  });
 }
 function v42TargetOptions(selected,operation='drive'){
-  const labels={ei:'Ei',ef:'Ef',e:'E',s1:'S1',s2:'S2',hkle:'HKLE',qe:'QE',th2th:'th2th'};
+  const labels={ei:'Ei',ef:'Ef',e:'E',s1:'S1',s2:'S2',hkle:'HKLE',br:'br',qe:'QE',th2th:'th2th'};
   const targets=v42TargetsForOperation(operation);
   return `<option value="">—</option>`+targets.map(t=>`<option value="${v42EscapeAttr(t)}"${selected===t?' selected':''}>${v42EscapeHtml(labels[t]||t)}</option>`).join('');
 }
 function v42AsetTemplate(key){
-  const target=String(key||'').trim().toLowerCase();
+  const target=String(key||'').trim();
   const row=[...document.querySelectorAll('#scriptAsetList [data-aset-row]')].find(r=>v42AsetRowKey(r)===target);
   const input=row?.querySelector('[data-aset-template]');
-  if(input) return String(input.value||'').trim();
-  const stored=v42StoredAsetEntries().find(item=>String(item?.key||'').trim().toLowerCase()===target);
-  if(stored?.template!==undefined) return String(stored.template||'').trim();
-  return String(V42_ASET_DEFAULTS[target]||'').trim();
+  if(input) return v42NormalizeTemplateSyntax(String(input.value||'').trim());
+  const stored=v42StoredAsetEntries().find(item=>String(item?.key||'').trim()===target);
+  if(stored?.template!==undefined) return v42NormalizeTemplateSyntax(String(stored.template||'').trim());
+  const defaultKey=Object.prototype.hasOwnProperty.call(V42_ASET_DEFAULTS,target)?target:null;
+  return v42NormalizeTemplateSyntax(String(defaultKey?V42_ASET_DEFAULTS[defaultKey]:'').trim());
 }
 function v42AsetEntries(){
   return [...document.querySelectorAll('#scriptAsetList [data-aset-row]')].map(row=>({
     key:v42AsetRowKey(row),
-    template:String(row.querySelector('[data-aset-template]')?.value||'').trim()
-  })).filter(item=>/^[a-z][a-z0-9_]*$/.test(item.key) && !V42_MOTOR_TARGETS.includes(item.key));
+    template:v42NormalizeTemplateSyntax(String(row.querySelector('[data-aset-template]')?.value||'').trim())
+  })).filter(item=>/^[A-Za-z][A-Za-z0-9_]*$/.test(item.key) && !V42_MOTOR_TARGETS.includes(item.key.toLowerCase()));
 }
 function v42RenumberAsetRows(){
   [...document.querySelectorAll('#scriptAsetList [data-aset-row]')].forEach((row,i)=>{
@@ -6520,8 +6563,8 @@ function v42CreateAsetRow(key='',template='',{removable=true}={}){
   const row=document.createElement('div');
   row.className='script-aset-item'; row.dataset.asetRow='1';
   row.innerHTML=`<span class="script-aset-index" data-aset-index></span>`+
-    `<input type="text" data-aset-target value="${v42EscapeAttr(String(key||'').toLowerCase())}" placeholder="target" spellcheck="false" aria-label="ASET target">`+
-    `<textarea data-aset-template rows="2" placeholder="drive device value\ndrive device2 value" spellcheck="false" aria-label="ASET SPICE template">${v42EscapeHtml(String(template||''))}</textarea>`+
+    `<input type="text" data-aset-target value="${v42EscapeAttr(String(key||''))}" placeholder="target" spellcheck="false" aria-label="ASET target">`+
+    `<textarea data-aset-template rows="2" placeholder="drive device <value>\nscan e <range>" spellcheck="false" aria-label="ASET SPICE template">${v42EscapeHtml(String(template||''))}</textarea>`+
     `${removable?'<button type="button" class="script-aset-remove" title="Remove ASET" aria-label="Remove ASET">×</button>':'<span></span>'}`;
   host.appendChild(row); v42RenumberAsetRows(); return row;
 }
@@ -6535,12 +6578,12 @@ function v42LoadAset(){
   host.replaceChildren();
   if(entries.length){
     entries.forEach((item,index)=>{
-      const key=String(item?.key||'').trim().toLowerCase();
-      if(!key || V42_MOTOR_TARGETS.includes(key)) return;
-      v42CreateAsetRow(key,String(item?.template||''),{removable:index>=Object.keys(V42_ASET_DEFAULTS).length});
+      const key=String(item?.key||'').trim();
+      if(!key || V42_MOTOR_TARGETS.includes(key.toLowerCase())) return;
+      v42CreateAsetRow(key,v42NormalizeTemplateSyntax(String(item?.template||'')),{removable:true});
     });
   }else{
-    for(const [key,template] of Object.entries(V42_ASET_DEFAULTS)) v42CreateAsetRow(key,template,{removable:false});
+    for(const [key,template] of Object.entries(V42_ASET_DEFAULTS)) v42CreateAsetRow(key,template,{removable:true});
   }
   v42RenumberAsetRows();
 }
@@ -6553,7 +6596,7 @@ function v42ValidateAsetRows(){
   const seen=new Set(); let ok=true, message='';
   for(const row of document.querySelectorAll('#scriptAsetList [data-aset-row]')){
     const key=v42AsetRowKey(row), target=row.querySelector('[data-aset-target]'), template=row.querySelector('[data-aset-template]');
-    const validKey=/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key) && !seen.has(key);
+    const validKey=/^[A-Za-z][A-Za-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key.toLowerCase()) && !seen.has(key);
     target?.classList.toggle('invalid',!validKey);
     if(validKey) seen.add(key); else if(!message) message=key?`ASET Target "${key}" is invalid or duplicated.`:'Enter an ASET Target name.';
     const validTemplate=v42TemplateCommands(template?.value).length>0;
@@ -6567,6 +6610,7 @@ function v42ValidateAsetRows(){
 // Composite command metadata. Control rows remain standalone; motion rows are operation:target.
 timeCommandMeta = function(command){
   const {op,target}=v42CommandParts(command);
+  if(op==='count') return {kind:'count',op,target:'',specs:[]};
   if(op==='wait') return {kind:'wait',op,target:'',specs:[]};
   if(op==='loop') return {kind:'loop',op,target:'',specs:[{key:'loop',label:'Loop'}]};
   if(op==='endloop') return {kind:'endloop',op,target:'',specs:[]};
@@ -6574,9 +6618,11 @@ timeCommandMeta = function(command){
   if(target==='qe') return {kind,op,target,specs:[{key:'q',label:'Q'},{key:'hw',label:'E'}]};
   if(target==='th2th') return {kind,op,target,specs:[{key:'th2th',label:'th2th'}]};
   if(target==='hkle') return {kind,op,target,specs:[{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'},{key:'hw',label:'E'}]};
+  if(target==='br') return {kind:'drive',op:'drive',target,specs:[{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'}]};
   if(v42AsetKeys().includes(target)){
-    const usesValue=v42TemplateUsesValue(v42AsetTemplate(target));
-    return {kind,op,target,aset:true,specs:usesValue?[{key:'target',label:target}]:[]};
+    const placeholders=v42TemplatePlaceholders(v42AsetTemplate(target));
+    const specs=placeholders.map(p=>({key:p.key,label:p.label,placeholderType:p.type}));
+    return {kind,op,target,aset:true,specs,placeholders};
   }
   const key=(target==='e')?'hw':target;
   const label={ei:'Ei',ef:'Ef',e:'E',s1:'S1',s2:'S2'}[target]||target;
@@ -6591,7 +6637,7 @@ parseTimeDetail = function(raw,command,row=null){
     if(parsed.fixed) return {ok:false,error:'loop requires three space-separated values: initial final step.'};
     return parsed;
   }
-  if(meta.kind==='endloop' || meta.kind==='wait') return {ok:true,fixed:true,count:1,value:null};
+  if(meta.kind==='endloop' || meta.kind==='wait' || meta.kind==='count') return {ok:true,fixed:true,count:1,value:null};
   if(meta.kind==='scan') return parseTimeRange(raw,row,{allowLoopReference:true});
   const text=String(raw??'').trim();
   if(row){
@@ -6632,7 +6678,7 @@ addTimeScanRow = function(values={},options={}){
   const row=document.createElement('div');
   row.className='time-scan-row';
   row.dataset.timeScanId=String(++timeScanRowCounter);
-  const initialMcu=String(values.mcu??values.time??(normalized.operation==='wait'?(values.ranges?.wait??values.details?.wait??''):'')).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  const initialMcu=String(values.mcu??values.time??((normalized.operation==='wait'||normalized.operation==='count')?(values.ranges?.wait??values.details?.wait??values.mcu??values.time??'') : '')).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   row.innerHTML=`
     <div class="time-scan-cell time-scan-index" data-time-index></div>
     <div class="time-scan-cell time-command-cell">
@@ -6653,7 +6699,7 @@ addTimeScanRow = function(values={},options={}){
   if(normalized.migrationWarning) row.dataset.timeMigrationWarning=normalized.migrationWarning;
 
   const syncControlState=()=>{
-    const structural=['wait','loop','endloop'].includes(opSelect.value);
+    const structural=['count','wait','loop','endloop'].includes(opSelect.value);
     const previousTarget=targetSelect.value;
     const allowedTargets=v42TargetsForOperation(opSelect.value);
     targetSelect.innerHTML=v42TargetOptions(previousTarget,opSelect.value);
@@ -6763,10 +6809,6 @@ readTimeScanRow = function(row,index){
     setTimeScanRowWarning(row,true);
     return {ok:false,error:`Command ${index}: relative HKLE is not supported; use absolute drive/scan HKLE.`};
   }
-  if(meta.aset && meta.op!=='drive'){
-    setTimeScanRowWarning(row,true);
-    return {ok:false,error:`Command ${index}: ASET target ${meta.target} is a SPICE template and currently supports drive only.`};
-  }
 
   const movingCounts=meta.kind==='scan' ? parsed.map(x=>x.parsed.count).filter(n=>n>1) : [];
   const unique=[...new Set(movingCounts)];
@@ -6795,7 +6837,7 @@ readTimeScanRow = function(row,index){
   return {
     ok:true,command,operation:meta.op,target:meta.target,kind:meta.kind,points,loopIterations,
     loopLevel:Number(row.dataset.timeLoopLevel||0),mcuSeconds:time.value,
-    seconds:meta.kind==='wait'?time.value:(meta.kind==='scan'?points*time.value:0),
+    seconds:(meta.kind==='wait'||meta.kind==='count')?time.value:(meta.kind==='scan'?points*time.value:0),
     fixed:meta.kind!=='scan' || !!row.querySelector('[data-time-fix]')?.checked
   };
 };
@@ -6807,14 +6849,15 @@ timePreviousBrS2 = function(row,index,context,structure){
   for(let i=currentIndex-1;i>=0;i--){
     const candidate=rows[i];
     const meta=timeCommandMeta(candidate?.querySelector('[data-time-variable]')?.value||'');
-    if(meta.op!=='drive' || meta.target!=='hkle') continue;
+    if(meta.op!=='drive' || !['hkle','br'].includes(meta.target)) continue;
     const byKey={};
     for(const input of candidate.querySelectorAll('[data-time-range-key]')) byKey[input.dataset.timeRangeKey]=parseTimeDetail(input.value,candidate.querySelector('[data-time-variable]').value,candidate);
-    if(!['h','k','l','hw'].every(key=>byKey[key]?.ok)) continue;
+    if(!['h','k','l'].every(key=>byKey[key]?.ok)) continue;
+    if(meta.target==='hkle' && !byKey.hw?.ok) continue;
     let rl; try{ rl=buildResolutionLattice().rl; }catch(_e){ return null; }
     const resolveIn=(ctx)=>{
       const hkl=['h','k','l'].map(key=>resolveTimeFixedValue(byKey[key],ctx));
-      const hw=resolveTimeFixedValue(byKey.hw,ctx);
+      const hw=meta.target==='br'?0:resolveTimeFixedValue(byKey.hw,ctx);
       if(hkl.some(v=>!Number.isFinite(v)) || !Number.isFinite(hw)) return null;
       const q=norm(hklToQ(rl,hkl));
       const calc=timeS2MagnitudeFromQ(q,hw);
@@ -6829,7 +6872,7 @@ timePreviousBrS2 = function(row,index,context,structure){
 
 timeRowS2LimitWarning = function(row,result,index,structure){
   const meta=timeCommandMeta(result.command);
-  if(!['s2','hkle'].includes(meta.target)) return null;
+  if(!['s2','hkle','br'].includes(meta.target)) return null;
   const contextResult=timeLoopContextsForRow(row,structure);
   if(!contextResult.ok) return contextResult.tooMany?`Command ${index}: S2 limit check skipped because enclosing loops expand beyond 50,000 combinations.`:null;
   const parsedByKey={};
@@ -6838,7 +6881,7 @@ timeRowS2LimitWarning = function(row,result,index,structure){
     if(!parsed.ok) return null;
     parsedByKey[input.dataset.timeRangeKey]=parsed;
   }
-  let rl=null; if(meta.target==='hkle'){ try{rl=buildResolutionLattice().rl;}catch(_e){return null;} }
+  let rl=null; if(meta.target==='hkle'||meta.target==='br'){ try{rl=buildResolutionLattice().rl;}catch(_e){return null;} }
   let worst=null;
   const consider=(s2,Ei,detail)=>{
     if(!Number.isFinite(s2)) return;
@@ -6858,7 +6901,7 @@ timeRowS2LimitWarning = function(row,result,index,structure){
         }else consider(Math.abs(value),timeElasticIncidentEnergy(),`S2=${Number(value.toPrecision?.(6)??value)}`);
       }else{
         const hkl=['h','k','l'].map(key=>timeDetailValueAt(parsedByKey[key],point,context));
-        const hw=timeDetailValueAt(parsedByKey.hw,point,context);
+        const hw=meta.target==='br'?0:timeDetailValueAt(parsedByKey.hw,point,context);
         if(hkl.some(v=>!Number.isFinite(v))||!Number.isFinite(hw)) continue;
         const q=norm(hklToQ(rl,hkl));
         const calc=timeS2MagnitudeFromQ(q,hw);
@@ -6887,6 +6930,7 @@ function v42SpiceLinesForRow(row,info,result){
     return [`loop ${spiceLoopVar(info?.level||1)}=${values.join(',')}`];
   }
   if(meta.kind==='endloop') return ['endloop'];
+  if(meta.kind==='count') return [`count preset mcu ${row.querySelector('[data-time-mcu]')?.value||'0'}`];
   if(meta.kind==='wait') return [`wait ${row.querySelector('[data-time-mcu]')?.value||'0'}`];
   const details=v42DetailItems(row);
   const byKey=Object.fromEntries(details.map(item=>[item.key,item.tokens]));
@@ -6894,12 +6938,31 @@ function v42SpiceLinesForRow(row,info,result){
   const target=meta.target, op=meta.op;
 
   if(meta.aset){
-    if(op!=='drive') throw new Error(`ASET target ${target} supports drive only.`);
-    const token=details[0]?.tokens?.[0]||'';
-    return v42TemplateLinesForTarget(target,token);
+    const template=v42AsetTemplate(target);
+    const commands=v42TemplateCommands(template);
+    if(!commands.length) throw new Error(`${target} ASET has no SPICE template.`);
+    const inputs=[...row.querySelectorAll('[data-time-range-key]')];
+    const values=inputs.map(input=>String(input.value||'').trim());
+    let valueIndex=0;
+    return commands.map(command=>{
+      let expanded=command.replace(/<(value|range)>/gi,(_m,type)=>{
+        const kind=String(type).toLowerCase();
+        const raw=values[valueIndex++]??'';
+        if(!raw) throw new Error(`${target} ASET requires a ${kind} entry.`);
+        return spiceDetailTokens(raw).join(' ');
+      });
+      // Every ASET scan/scanrel consumes the row t (s) automatically. This
+      // keeps the template focused on motion syntax while Time estimate owns
+      // counting time, e.g. "scan sgu <range>" -> "... preset mcu 300".
+      if(/^scan(?:rel)?\b/i.test(expanded) && !/\bpreset\s+mcu\b/i.test(expanded)){
+        expanded=`${expanded} preset mcu ${t}`;
+      }
+      return expanded;
+    });
   }
   if(op==='drive'){
     if(target==='hkle') return [`drive h ${byKey.h[0]} k ${byKey.k[0]} l ${byKey.l[0]} e ${byKey.hw[0]}`];
+    if(target==='br') return [`br ${byKey.h[0]} ${byKey.k[0]} ${byKey.l[0]}`];
     const token=details[0]?.tokens?.[0];
     if(target==='ei'||target==='ef') return [`${target} ${token}`];
     return [`drive ${target} ${token}`];
@@ -6923,39 +6986,52 @@ function v42SpiceLinesForRow(row,info,result){
   throw new Error(`Unsupported command ${op}.`);
 }
 function v42TemplateRegex(command){
-  const parts=String(command||'').split(/\bvalue\b/i);
+  const text=String(command||'');
+  const re=/<(value|range)>/gi;
   const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
-  const source='^'+parts.map(esc).join('(\\S+)')+'$';
-  return {regex:new RegExp(source,'i'),placeholders:Math.max(0,parts.length-1)};
+  let source='^',last=0,m; const types=[];
+  while((m=re.exec(text))){ source+=esc(text.slice(last,m.index))+'(.+?)'; types.push(m[1].toLowerCase()); last=m.index+m[0].length; }
+  source+=esc(text.slice(last))+'$';
+  return {regex:new RegExp(source,'i'),types};
 }
+
 function v42MatchAsetAtLines(lines,startIndex,loopStack){
   const nextSignificant=(from)=>{ for(let j=from;j<lines.length;j++){ const raw=lines[j].trim(); if(raw && !raw.startsWith('#') && !raw.startsWith(';')) return {index:j,raw}; } return null; };
   for(const key of v42AsetKeys()){
     const templates=v42TemplateCommands(v42AsetTemplate(key));
     if(!templates.length) continue;
-    let cursor=startIndex-1,last=startIndex-1,value=null,ok=true;
+    let cursor=startIndex-1,last=startIndex-1,ok=true; const captures=[]; let timeValue='0';
     for(const template of templates){
       const next=nextSignificant(cursor+1); if(!next){ok=false;break;}
-      const {regex,placeholders}=v42TemplateRegex(template),m=regex.exec(next.raw);
-      if(!m){ok=false;break;}
-      if(placeholders){
-        for(let g=1;g<m.length;g++){
-          const parsed=spiceTokenToTime(m[g],loopStack);
-          if(value===null) value=parsed; else if(parsed!==value){ok=false;break;}
-        }
+      let candidate=next.raw;
+      if(/^scan(?:rel)?\b/i.test(template)){
+        const timed=/^(.*?)\s+preset\s+mcu\s+(\d+)\s*$/i.exec(candidate);
+        if(!timed){ok=false;break;}
+        candidate=timed[1].trim();
+        const scanTime=timed[2];
+        if(timeValue!=='0' && timeValue!==scanTime){ok=false;break;}
+        timeValue=scanTime;
       }
-      if(!ok) break;
+      const {regex,types}=v42TemplateRegex(template),m=regex.exec(candidate);
+      if(!m){ok=false;break;}
+      for(let g=1;g<m.length;g++){
+        const type=types[g-1];
+        const rawValue=String(m[g]).trim();
+        captures.push({type,value:rawValue.split(/\s+/).map(token=>spiceTokenToTime(token,loopStack)).join(' ')});
+      }
       cursor=next.index; last=next.index;
     }
     if(ok){
-      const ranges=value===null?{}:{target:value};
-      return {key,ranges,endIndex:last};
+      const ranges={}; let occurrence=0;
+      for(const item of captures) ranges[`aset_${item.type}_${++occurrence}`]=item.value;
+      return {key,ranges,mcu:timeValue,endIndex:last};
     }
   }
   return null;
 }
+
 function v42RenderSpiceBackdrop(){
-  const area=$('scriptSpiceText'),backdrop=$('scriptSpiceBackdrop');
+  const area=$('scriptSpiceText'),backdrop=$('scriptSpiceBackdrop'),numbers=$('scriptSpiceLineNumbers');
   if(!area||!backdrop) return;
   const lines=String(area.value??'').split('\n');
   backdrop.innerHTML=lines.map((line,i)=>{
@@ -6963,7 +7039,18 @@ function v42RenderSpiceBackdrop(){
     const cls=v42SpiceErrorLines.has(n)?' spice-line-error':(v42SpiceWarningLines.has(n)?' spice-line-warning':'');
     return `<span class="spice-backdrop-line${cls}">${v42EscapeHtml(line)||' '}</span>`;
   }).join('');
-  backdrop.scrollTop=area.scrollTop; backdrop.scrollLeft=area.scrollLeft;
+  if(numbers) numbers.innerHTML=lines.map((_line,i)=>{
+    const n=i+1;
+    const cls=v42SpiceErrorLines.has(n)?' spice-line-error':(v42SpiceWarningLines.has(n)?' spice-line-warning':'');
+    return `<span class="spice-line-number${cls}">${n}</span>`;
+  }).join('');
+  backdrop.scrollTop=area.scrollTop; backdrop.scrollLeft=area.scrollLeft; if(numbers) numbers.scrollTop=area.scrollTop;
+}
+function v49HighlightSpiceErrorFromMessage(message){
+  v42SpiceErrorLines=new Set(); v42SpiceWarningLines=new Set();
+  const match=/\bLine\s+(\d+)\s*:/i.exec(String(message||''));
+  if(match) v42SpiceErrorLines.add(Number(match[1]));
+  v42RenderSpiceBackdrop();
 }
 function v42ApplyValidationToLineHighlights(validation){
   v42SpiceErrorLines=new Set(); v42SpiceWarningLines=new Set();
@@ -7044,7 +7131,11 @@ parseSpiceMacroToRows = function(text){
     if(!raw || raw.startsWith('#') || raw.startsWith(';')) continue;
     const asetMatch=v42MatchAsetAtLines(lines,lineIndex,loopStack);
     if(asetMatch){
-      rows.push({command:`drive:${asetMatch.key}`,ranges:asetMatch.ranges,mcu:'0',fixed:true});
+      const template=v42AsetTemplate(asetMatch.key);
+      const commands=v42TemplateCommands(template);
+      const hasRange=v42TemplatePlaceholders(template).some(p=>p.type==='range');
+      const operation=commands.some(c=>/^scanrel\b/i.test(c))?'scanrel':(commands.some(c=>/^scan\b/i.test(c))?'scan':(commands.some(c=>/^driverel\b/i.test(c))?'driverel':(hasRange?'scan':'drive')));
+      rows.push({command:`${operation}:${asetMatch.key}`,ranges:asetMatch.ranges,mcu:asetMatch.mcu||'0',fixed:!['scan','scanrel'].includes(operation)});
       lineIndex=asetMatch.endIndex;
       continue;
     }
@@ -7055,6 +7146,8 @@ parseSpiceMacroToRows = function(text){
     }
     if(/^endloop\s*$/i.test(raw)){ if(!loopStack.length) throw new Error(`Line ${lineIndex+1}: endloop has no matching loop.`); loopStack.pop(); rows.push({command:'endloop',ranges:{},mcu:'0',fixed:true}); continue; }
     if((match=/^wait\s+(\d+)\s*$/i.exec(raw))){ rows.push({command:'wait',ranges:{},mcu:match[1],fixed:true}); continue; }
+    if((match=/^count(?:\s+preset\s+mcu)?\s+(\d+)\s*$/i.exec(raw))){ rows.push({command:'count',ranges:{},mcu:match[1],fixed:true}); continue; }
+    if((match=/^br\s+(\S+)\s+(\S+)\s+(\S+)\s*$/i.exec(raw))){ rows.push({command:'drive:br',ranges:{h:spiceTokenToTime(match[1],loopStack),k:spiceTokenToTime(match[2],loopStack),l:spiceTokenToTime(match[3],loopStack)},mcu:'0',fixed:true}); continue; }
     if((match=/^preset\s+mcu\s+(\d+)\s*$/i.exec(raw))){ pendingMcu=match[1]; continue; }
     if((match=/^(ei|ef)\s+(\S+)\s*$/i.exec(raw))){
       const target=match[1].toLowerCase(); rows.push({command:`drive:${target}`,ranges:{[target]:spiceTokenToTime(match[2],loopStack)},mcu:'0',fixed:true}); continue;
@@ -7105,14 +7198,35 @@ parseSpiceMacroToRows = function(text){
   return rows;
 };
 
+
+// v50: ASET placeholder-specific validation. <value> is scalar and <range> is initial/final/step; scan timing comes from t (s).
+const v48BaseValidateTimeRangeInput=validateTimeRangeInput;
+validateTimeRangeInput = function(input){
+  const key=String(input?.dataset?.timeRangeKey||'');
+  if(!key.startsWith('aset_')) return v48BaseValidateTimeRangeInput(input);
+  const row=input?.closest?.('.time-scan-row')||null;
+  if(key.startsWith('aset_range_')){
+    const parsed=parseTimeRange(input?.value,row,{allowLoopReference:true});
+    const result=parsed.ok && !parsed.fixed ? parsed : {ok:false,error:parsed.ok?'Enter initial final step for <range>.':parsed.error};
+    setTimeInputInvalid(input,!result.ok); return result;
+  }
+  const text=String(input?.value??'').trim();
+  if(row){ const ref=parseTimeLoopReferenceToken(text,row); if(ref){setTimeInputInvalid(input,false); return ref;} }
+  const value=parseNumericValue(text); const ok=!!text && Number.isFinite(value);
+  const result=ok?{ok:true,fixed:true,count:1,value}:{ok:false,error:'Enter one numeric value or a valid loopN reference for <value>.'};
+  setTimeInputInvalid(input,!ok); return result;
+};
+
 initializeScriptUI = function(){
-  const area=$('scriptSpiceText'),backdrop=$('scriptSpiceBackdrop'),rowsHost=$('timeScanRows');
+  const area=$('scriptSpiceText'),backdrop=$('scriptSpiceBackdrop'),numbers=$('scriptSpiceLineNumbers'),rowsHost=$('timeScanRows');
   v42LoadAset();
   v42RefreshTargetSelects();
   const asetHost=$('scriptAsetList');
   const refreshAset=()=>{
     const check=v42ValidateAsetRows();
-    v42SaveAset(); v42RefreshTargetSelects(); validateAllTimeScanRows({showMessage:true});
+    v42SaveAset(); v42RefreshTargetSelects();
+    for(const row of timeScanRows()){ const meta=timeCommandMeta(row.querySelector('[data-time-variable]')?.value||''); if(meta.aset) updateTimeScanRowFields(row); }
+    validateAllTimeScanRows({showMessage:true});
     if(!check.ok) scriptMessage(check.message,true);
     if(v42SpiceAutoLinked){
       const text=generateSpiceMacroFromTimeEstimate(); if(area) area.value=text; v42RenderSpiceBackdrop();
@@ -7131,8 +7245,14 @@ initializeScriptUI = function(){
     row?.remove(); v42RenumberAsetRows(); refreshAset(); scriptMessage(`Removed ASET ${key||''}. Commands that used it must choose another Target.`);
   });
   $('scriptAsetAdd')?.addEventListener('click',v42PromptAddAset);
+  $('scriptAsetToggle')?.addEventListener('click',()=>{
+    const workspace=document.querySelector('#scriptPanel .script-workspace'); if(!workspace) return;
+    const collapsed=workspace.classList.toggle('aset-collapsed');
+    const button=$('scriptAsetToggle'); if(button) button.textContent=collapsed?'▶ Show ASET':'◀ Hide ASET';
+    requestAnimationFrame(resizeVisiblePlots);
+  });
   try{ if(area) area.value=localStorage.getItem(SPICE_SCRIPT_STORAGE_KEY)||''; }catch(_e){}
-  area?.addEventListener('scroll',()=>{ if(backdrop){backdrop.scrollTop=area.scrollTop;backdrop.scrollLeft=area.scrollLeft;} });
+  area?.addEventListener('scroll',()=>{ if(backdrop){backdrop.scrollTop=area.scrollTop;backdrop.scrollLeft=area.scrollLeft;} if(numbers) numbers.scrollTop=area.scrollTop; });
   area?.addEventListener('input',()=>{
     v42SpiceAutoLinked=false; v42SpiceLineMap=[]; v42SpiceErrorLines=new Set(); v42SpiceWarningLines=new Set(); v42RenderSpiceBackdrop();
     try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,area.value);}catch(_e){} scriptMessage('');
@@ -7154,7 +7274,7 @@ initializeScriptUI = function(){
       v42SpiceAutoLinked=true;
       const text=generateSpiceMacroFromTimeEstimate(); area.value=text; v42RenderSpiceBackdrop();
       try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
-      if(v42LastSpiceValidation?.ok) scriptMessage('Converted Time estimate commands to SPICE. ASET variables were expanded to their device list.');
+      if(v42LastSpiceValidation?.ok) scriptMessage('Converted Time estimate commands to SPICE. ASET placeholders were expanded into their SPICE templates.');
       else scriptMessage(`SPICE generated with ${v42LastSpiceValidation?.errors?.length||0} highlighted command error(s).`,true);
     }catch(err){ scriptMessage(err?.message||String(err),true); }
   });
@@ -7164,7 +7284,7 @@ initializeScriptUI = function(){
       const text=generateSpiceMacroFromTimeEstimate(); if(area) area.value=text; v42RenderSpiceBackdrop();
       try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
       scriptMessage(`Converted ${rows.length} SPICE command row${rows.length===1?'':'s'} to Time estimate commands.`);
-    }catch(err){ scriptMessage(err?.message||String(err),true); }
+    }catch(err){ v49HighlightSpiceErrorFromMessage(err?.message||String(err)); scriptMessage(err?.message||String(err),true); }
   });
   $('scriptCopySpice')?.addEventListener('click',copySpiceScript);
   v42RenderSpiceBackdrop();

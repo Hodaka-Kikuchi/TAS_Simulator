@@ -143,3 +143,9 @@ Default templates demonstrate the intended model: `temperature` expands to `driv
 - ASET row edits are persisted as the complete list.
 - ASET Target and SPICE template text are displayed at a matching readable size.
 - Large ASET lists scroll inside the existing ASET pane.
+
+## v48 Script / ASET placeholder model
+ASET templates use `<value>`, `<range>`, and `<time>`. Repeating `<value>` or `<range>` creates one Time estimate Detail field per occurrence. `<range>` is a three-token `initial final step` field; `<time>` uses the row's `t (s)` value. A bare `count` template line is treated as `count preset mcu <time>`. The built-in Time estimate command list also includes `count`, and `br` is available as a standard Target.
+
+## v50
+ASET templates now use only `<value>` and `<range>`. Scan/scanrel ASET lines automatically receive `preset mcu` from the command row's t (s); standalone `count` handles counting time. The ASET hide/show behavior is restored to the v48 remove-and-redistribute layout while retaining v49 SPICE line numbers and error highlighting.

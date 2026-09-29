@@ -388,12 +388,12 @@
       <div class="script-workspace">
         <div class="script-aset-pane">
           <div class="script-pane-heading script-aset-heading"><span>ASET</span><button id="scriptAsetAdd" type="button">+ Add ASET</button></div>
-          <div class="script-aset-help">Each ASET is a SPICE command template. Use <code>value</code> where the Time estimate Detail value should be inserted. Separate multiple SPICE commands with commas or line breaks; press Enter to edit a multiline template.</div>
+          <div class="script-aset-help">Each ASET is a SPICE command template. Use <code>&lt;value&gt;</code> for one-value Details and <code>&lt;range&gt;</code> for initial/final/step Details. Repeat placeholders to create multiple Detail boxes. For ASET lines beginning with <code>scan</code> or <code>scanrel</code>, <code>preset mcu</code> is added automatically from that command row's t (s). Separate commands with commas or line breaks.</div>
           <div class="script-aset-table-header"><span>Index</span><span>Target</span><span>SPICE template</span><span></span></div>
           <div id="scriptAsetList" class="script-aset-list"></div>
         </div>
         <div class="script-command-pane">
-          <div class="script-pane-heading script-command-heading"><span>Time estimate commands</span><button id="scriptToSpice" type="button" title="Convert Time estimate commands to SPICE">→ SPICE</button></div>
+          <div class="script-pane-heading script-command-heading"><span>Time estimate commands</span><div class="script-command-actions"><button id="scriptAsetToggle" type="button" title="Hide or show the ASET editor">◀ Hide ASET</button><button id="scriptToSpice" type="button" title="Convert Time estimate commands to SPICE">→ SPICE</button></div></div>
           <div id="scriptTimeMount" class="script-time-mount"></div>
         </div>
         <div class="script-spice-pane">
@@ -405,6 +405,7 @@
             </div>
           </div>
           <div class="script-spice-editor">
+            <pre id="scriptSpiceLineNumbers" class="script-spice-line-numbers" aria-hidden="true"></pre>
             <pre id="scriptSpiceBackdrop" class="script-spice-backdrop" aria-hidden="true"></pre>
             <textarea id="scriptSpiceText" class="script-spice-text" spellcheck="false" aria-label="SPICE macro"></textarea>
           </div>

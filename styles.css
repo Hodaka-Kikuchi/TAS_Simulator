@@ -1767,3 +1767,125 @@ main{
     overflow-y:auto;
   }
 }
+
+
+/* v48: unified commands, collapsible ASET, and a wider SPICE editor. */
+.script-workspace{
+  grid-template-columns:minmax(240px,.9fr) minmax(440px,1.55fr) minmax(360px,1.35fr)!important;
+}
+.script-command-actions{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+.script-command-actions button{width:auto;white-space:nowrap}
+.script-workspace.aset-collapsed{
+  grid-template-columns:minmax(480px,1fr) minmax(520px,1.22fr)!important;
+}
+.script-workspace.aset-collapsed .script-aset-pane{display:none}
+.script-aset-remove{display:inline-flex!important;align-items:center;justify-content:center}
+.script-aset-list{max-height:620px}
+.time-command-cell select[data-time-operation]{font-size:13px}
+@media(max-width:1180px){
+  .script-workspace,.script-workspace.aset-collapsed{grid-template-columns:1fr!important}
+  .script-workspace.aset-collapsed .script-aset-pane{display:none}
+  .script-aset-list{max-height:420px}
+}
+
+/* v49: case-sensitive ASET names, left-collapsing ASET drawer, SPICE line gutter. */
+.script-workspace{
+  transition:grid-template-columns .22s ease;
+}
+.script-aset-pane{
+  transition:transform .22s ease, opacity .18s ease, padding .22s ease, border-width .22s ease;
+  transform:translateX(0);
+  opacity:1;
+}
+.script-workspace.aset-collapsed{
+  grid-template-columns:0 minmax(480px,1fr) minmax(600px,1.42fr)!important;
+  gap:8px;
+}
+.script-workspace.aset-collapsed .script-aset-pane{
+  display:flex!important;
+  transform:translateX(-105%);
+  opacity:0;
+  pointer-events:none;
+  padding-left:0;
+  padding-right:0;
+  border-left-width:0;
+  border-right-width:0;
+  overflow:hidden;
+}
+.script-spice-editor{
+  padding-left:44px;
+}
+.script-spice-line-numbers{
+  position:absolute;
+  inset:0 auto 0 0;
+  width:44px;
+  height:100%;
+  margin:0;
+  padding:10px 6px 10px 0;
+  border:1px solid #bbb;
+  border-right:1px solid #ddd;
+  border-radius:6px 0 0 6px;
+  background:#f7f7f7;
+  overflow:hidden;
+  pointer-events:none;
+  z-index:3;
+  font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  text-align:right;
+  color:#777;
+  user-select:none;
+}
+.script-spice-line-numbers .spice-line-number{
+  display:block;
+  min-height:1.5em;
+  padding-right:2px;
+}
+.script-spice-line-numbers .spice-line-number.spice-line-error{
+  background:rgba(213,73,48,.28);
+  color:#8b2417;
+  font-weight:700;
+}
+.script-spice-line-numbers .spice-line-number.spice-line-warning{
+  background:rgba(225,170,20,.25);
+  color:#735800;
+  font-weight:700;
+}
+.script-spice-editor .script-spice-backdrop,
+.script-spice-editor .script-spice-text{
+  left:44px;
+  width:calc(100% - 44px);
+  border-radius:0 6px 6px 0;
+}
+@media(max-width:1180px){
+  .script-workspace.aset-collapsed{grid-template-columns:1fr!important}
+  .script-workspace.aset-collapsed .script-aset-pane{display:none!important}
+}
+
+/* v50: restore the v48 ASET hide/show behavior. Hiding ASET removes the pane
+   from the layout (rather than sliding it left) and redistributes the width to
+   Time estimate commands and SPICE macro. The v49 line-number gutter remains. */
+.script-workspace{
+  transition:none;
+  grid-template-columns:minmax(240px,.9fr) minmax(440px,1.55fr) minmax(360px,1.35fr)!important;
+}
+.script-aset-pane{
+  transition:none;
+  transform:none;
+  opacity:1;
+}
+.script-workspace.aset-collapsed{
+  grid-template-columns:minmax(480px,1fr) minmax(520px,1.22fr)!important;
+  gap:8px;
+}
+.script-workspace.aset-collapsed .script-aset-pane{
+  display:none!important;
+  transform:none;
+  opacity:1;
+  pointer-events:auto;
+  padding:9px;
+  border-width:1px;
+  overflow:hidden;
+}
+@media(max-width:1180px){
+  .script-workspace,.script-workspace.aset-collapsed{grid-template-columns:1fr!important}
+  .script-workspace.aset-collapsed .script-aset-pane{display:none!important}
+}
