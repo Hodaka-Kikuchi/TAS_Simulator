@@ -426,7 +426,7 @@ textarea:disabled {
 /* Use the available Calculation-point width instead of leaving short
    fixed-width h/k/l/hbar-omega entry boxes surrounded by empty space. */
 #resolutionCalculation #singleInputs{
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:repeat(5,minmax(0,1fr));
   gap:8px;
   align-items:end;
 }
@@ -436,7 +436,7 @@ textarea:disabled {
   max-width:none;
 }
 #resolutionCalculation #singleInputs #calc{
-  grid-column:1 / -1;
+  grid-column:auto;
   width:100%;
   padding:7px 10px;
 }
@@ -471,7 +471,7 @@ textarea:disabled {
   #resolutionInstrumentDetails{grid-template-columns:1fr}
 }
 @media(max-width:600px){
-  #resolutionCalculation #singleInputs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #resolutionCalculation #singleInputs{grid-template-columns:repeat(5,minmax(0,1fr))}
 }
 
 /* v16: explicit U/V swap control. The entered order defines handedness, so this
