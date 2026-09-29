@@ -6356,6 +6356,7 @@ function initializeScriptUI(){
 const V42_TIME_OPERATIONS=['drive','driverel','scan','scanrel'];
 const V42_MOTOR_TARGETS=['ei','ef','e','s1','s2','hkle','br','qe','th2th'];
 const V42_ASET_STORAGE_KEY='tas-simulator-spice-aset-v4';
+const V51_ASET_COLLAPSED_STORAGE_KEY='tas-simulator-script-aset-collapsed-v1';
 const V42_ASET_DEFAULTS={
   temperature:'drive vti <value>, drive sample <value>',
   field:'drive field <value>, drive ramp 1',
@@ -7199,15 +7200,17 @@ parseSpiceMacroToRows = function(text){
 };
 
 
-// v50: ASET placeholder-specific validation. <value> is scalar and <range> is initial/final/step; scan timing comes from t (s).
+// v53: ASET placeholder-specific validation. <value> remains scalar-only, while
+// <range> accepts either one fixed value / loopN reference or initial final step.
+// This lets one ASET template mix fixed and scanned axes without requiring a
+// separate template. Scan timing still comes from the row t (s).
 const v48BaseValidateTimeRangeInput=validateTimeRangeInput;
 validateTimeRangeInput = function(input){
   const key=String(input?.dataset?.timeRangeKey||'');
   if(!key.startsWith('aset_')) return v48BaseValidateTimeRangeInput(input);
   const row=input?.closest?.('.time-scan-row')||null;
   if(key.startsWith('aset_range_')){
-    const parsed=parseTimeRange(input?.value,row,{allowLoopReference:true});
-    const result=parsed.ok && !parsed.fixed ? parsed : {ok:false,error:parsed.ok?'Enter initial final step for <range>.':parsed.error};
+    const result=parseTimeRange(input?.value,row,{allowLoopReference:true});
     setTimeInputInvalid(input,!result.ok); return result;
   }
   const text=String(input?.value??'').trim();
@@ -7245,10 +7248,24 @@ initializeScriptUI = function(){
     row?.remove(); v42RenumberAsetRows(); refreshAset(); scriptMessage(`Removed ASET ${key||''}. Commands that used it must choose another Target.`);
   });
   $('scriptAsetAdd')?.addEventListener('click',v42PromptAddAset);
+  const applyAsetCollapsedState=collapsed=>{
+    const workspace=document.querySelector('#scriptPanel .script-workspace');
+    if(!workspace) return;
+    workspace.classList.toggle('aset-collapsed',!!collapsed);
+    const button=$('scriptAsetToggle');
+    if(button){
+      button.textContent=collapsed?'▶ Show ASET':'◀ Hide ASET';
+      button.setAttribute('aria-expanded',String(!collapsed));
+    }
+  };
+  let initialAsetCollapsed=false;
+  try{ initialAsetCollapsed=localStorage.getItem(V51_ASET_COLLAPSED_STORAGE_KEY)==='1'; }catch(_e){}
+  applyAsetCollapsedState(initialAsetCollapsed);
   $('scriptAsetToggle')?.addEventListener('click',()=>{
     const workspace=document.querySelector('#scriptPanel .script-workspace'); if(!workspace) return;
-    const collapsed=workspace.classList.toggle('aset-collapsed');
-    const button=$('scriptAsetToggle'); if(button) button.textContent=collapsed?'▶ Show ASET':'◀ Hide ASET';
+    const collapsed=!workspace.classList.contains('aset-collapsed');
+    applyAsetCollapsedState(collapsed);
+    try{ localStorage.setItem(V51_ASET_COLLAPSED_STORAGE_KEY,collapsed?'1':'0'); }catch(_e){}
     requestAnimationFrame(resizeVisiblePlots);
   });
   try{ if(area) area.value=localStorage.getItem(SPICE_SCRIPT_STORAGE_KEY)||''; }catch(_e){}

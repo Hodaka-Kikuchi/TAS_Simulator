@@ -149,3 +149,17 @@ ASET templates use `<value>`, `<range>`, and `<time>`. Repeating `<value>` or `<
 
 ## v50
 ASET templates now use only `<value>` and `<range>`. Scan/scanrel ASET lines automatically receive `preset mcu` from the command row's t (s); standalone `count` handles counting time. The ASET hide/show behavior is restored to the v48 remove-and-redistribute layout while retaining v49 SPICE line numbers and error highlighting.
+
+
+## v51 Script ASET visibility persistence
+- Hide ASET / Show ASET now remembers its state across page reloads.
+
+
+## v52
+- SPICE macro editor is fixed-height; overflowing macro text scrolls within the editor instead of allowing manual resize.
+
+## v53 ASET range placeholders
+- `<range>` now accepts either one fixed value (or an enclosing `loopN` reference) or `initial final step`.
+- `<value>` remains scalar-only, so entering a three-value range there is still an error.
+- In templates with multiple `<range>` placeholders, only placeholders that actually contain a three-value scan participate in the scan-point-count consistency check; fixed `<range>` entries remain fixed during the scan.
+
