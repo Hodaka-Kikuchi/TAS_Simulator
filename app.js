@@ -6354,8 +6354,8 @@ function initializeScriptUI(){
 
 // ==================== v42 Script command model / ASET ====================
 const V42_TIME_OPERATIONS=['drive','driverel','scan','scanrel'];
-const V42_MOTOR_TARGETS=['ei','ef','e','s1','s2','hkle'];
-const V42_ASET_STORAGE_KEY='tas-simulator-spice-aset-v3';
+const V42_MOTOR_TARGETS=['ei','ef','e','s1','s2','hkle','qe','th2th'];
+const V42_ASET_STORAGE_KEY='tas-simulator-spice-aset-v4';
 const V42_ASET_DEFAULTS={
   temperature:'drive vti value, drive sample value',
   field:'drive field value, drive ramp 1',
@@ -6433,6 +6433,11 @@ function v42StoredAsetEntries(){
     const saved=JSON.parse(localStorage.getItem(V42_ASET_STORAGE_KEY)||'null');
     if(Array.isArray(saved?.entries)) return saved.entries;
   }catch(_e){}
+  // Migrate the editable-template v3 list as a complete list.
+  try{
+    const old=JSON.parse(localStorage.getItem('tas-simulator-spice-aset-v3')||'null');
+    if(Array.isArray(old?.entries) && old.entries.length) return old.entries;
+  }catch(_e){}
   // Migrate v2 device-list ASETs into command templates.
   try{
     const old=JSON.parse(localStorage.getItem('tas-simulator-spice-aset-v2')||'null');
@@ -6453,21 +6458,29 @@ function v42AsetRowKey(row){
   return String(row?.querySelector?.('[data-aset-target]')?.value??row?.dataset?.asetKey??'').trim().toLowerCase();
 }
 function v42AsetKeys(){
-  const keys=new Set(Object.keys(V42_ASET_DEFAULTS));
-  for(const item of v42StoredAsetEntries()){
-    const key=String(item?.key||'').trim().toLowerCase();
-    if(/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key)) keys.add(key);
-  }
+  const keys=new Set();
   for(const row of document.querySelectorAll('#scriptAsetList [data-aset-row]')){
     const key=v42AsetRowKey(row);
     if(/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key)) keys.add(key);
   }
+  if(!keys.size){
+    for(const item of v42StoredAsetEntries()){
+      const key=String(item?.key||'').trim().toLowerCase();
+      if(/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key)) keys.add(key);
+    }
+  }
+  if(!keys.size) for(const key of Object.keys(V42_ASET_DEFAULTS)) keys.add(key);
   return [...keys];
 }
 function v42AllTargets(){ return [...V42_MOTOR_TARGETS,...v42AsetKeys()]; }
-function v42TargetOptions(selected){
-  const labels={ei:'Ei',ef:'Ef',e:'E',s1:'S1',s2:'S2',hkle:'HKLE'};
-  const targets=v42AllTargets();
+function v42TargetsForOperation(operation){
+  const op=String(operation||'drive').toLowerCase();
+  const specials=new Set(['qe','th2th']);
+  return v42AllTargets().filter(t=>!specials.has(t) || op==='scan');
+}
+function v42TargetOptions(selected,operation='drive'){
+  const labels={ei:'Ei',ef:'Ef',e:'E',s1:'S1',s2:'S2',hkle:'HKLE',qe:'QE',th2th:'th2th'};
+  const targets=v42TargetsForOperation(operation);
   return `<option value="">—</option>`+targets.map(t=>`<option value="${v42EscapeAttr(t)}"${selected===t?' selected':''}>${v42EscapeHtml(labels[t]||t)}</option>`).join('');
 }
 function v42AsetTemplate(key){
@@ -6492,10 +6505,13 @@ function v42RenumberAsetRows(){
 }
 function v42RefreshTargetSelects(){
   document.querySelectorAll('#timeScanRows [data-time-target]').forEach(select=>{
+    const row=select.closest('.time-scan-row');
+    const operation=row?.querySelector('[data-time-operation]')?.value||'drive';
     const previous=select.value;
-    select.innerHTML=v42TargetOptions(previous);
-    if(v42AllTargets().includes(previous)) select.value=previous;
-    else if(!select.disabled){ select.value='s1'; select.dispatchEvent(new Event('change',{bubbles:true})); }
+    const allowed=v42TargetsForOperation(operation);
+    select.innerHTML=v42TargetOptions(previous,operation);
+    if(allowed.includes(previous)) select.value=previous;
+    else if(!select.disabled){ select.value=allowed.includes('s1')?'s1':(allowed[0]||''); }
     else select.value='';
   });
 }
@@ -6504,8 +6520,8 @@ function v42CreateAsetRow(key='',template='',{removable=true}={}){
   const row=document.createElement('div');
   row.className='script-aset-item'; row.dataset.asetRow='1';
   row.innerHTML=`<span class="script-aset-index" data-aset-index></span>`+
-    `<input type="text" data-aset-target value="${v42EscapeAttr(String(key||'').toLowerCase())}" placeholder="target" spellcheck="false" aria-label="ASET target"${removable?'':' readonly'}>`+
-    `<input type="text" data-aset-template value="${v42EscapeAttr(String(template||''))}" placeholder="drive device value, drive device2 value" spellcheck="false" aria-label="ASET SPICE template">`+
+    `<input type="text" data-aset-target value="${v42EscapeAttr(String(key||'').toLowerCase())}" placeholder="target" spellcheck="false" aria-label="ASET target">`+
+    `<textarea data-aset-template rows="2" placeholder="drive device value\ndrive device2 value" spellcheck="false" aria-label="ASET SPICE template">${v42EscapeHtml(String(template||''))}</textarea>`+
     `${removable?'<button type="button" class="script-aset-remove" title="Remove ASET" aria-label="Remove ASET">×</button>':'<span></span>'}`;
   host.appendChild(row); v42RenumberAsetRows(); return row;
 }
@@ -6517,12 +6533,14 @@ function v42LoadAset(){
   const host=$('scriptAsetList'); if(!host) return;
   const entries=v42StoredAsetEntries();
   host.replaceChildren();
-  const byKey=new Map(entries.map(item=>[String(item?.key||'').trim().toLowerCase(),String(item?.template||'')]));
-  for(const [key,template] of Object.entries(V42_ASET_DEFAULTS)) v42CreateAsetRow(key,byKey.has(key)?byKey.get(key):template,{removable:false});
-  for(const item of entries){
-    const key=String(item?.key||'').trim().toLowerCase();
-    if(!key || key in V42_ASET_DEFAULTS || V42_MOTOR_TARGETS.includes(key)) continue;
-    v42CreateAsetRow(key,String(item?.template||''),{removable:true});
+  if(entries.length){
+    entries.forEach((item,index)=>{
+      const key=String(item?.key||'').trim().toLowerCase();
+      if(!key || V42_MOTOR_TARGETS.includes(key)) return;
+      v42CreateAsetRow(key,String(item?.template||''),{removable:index>=Object.keys(V42_ASET_DEFAULTS).length});
+    });
+  }else{
+    for(const [key,template] of Object.entries(V42_ASET_DEFAULTS)) v42CreateAsetRow(key,template,{removable:false});
   }
   v42RenumberAsetRows();
 }
@@ -6553,6 +6571,8 @@ timeCommandMeta = function(command){
   if(op==='loop') return {kind:'loop',op,target:'',specs:[{key:'loop',label:'Loop'}]};
   if(op==='endloop') return {kind:'endloop',op,target:'',specs:[]};
   const kind=(op==='scan' || op==='scanrel') ? 'scan' : 'drive';
+  if(target==='qe') return {kind,op,target,specs:[{key:'q',label:'Q'},{key:'hw',label:'E'}]};
+  if(target==='th2th') return {kind,op,target,specs:[{key:'th2th',label:'th2th'}]};
   if(target==='hkle') return {kind,op,target,specs:[{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'},{key:'hw',label:'E'}]};
   if(v42AsetKeys().includes(target)){
     const usesValue=v42TemplateUsesValue(v42AsetTemplate(target));
@@ -6619,7 +6639,7 @@ addTimeScanRow = function(values={},options={}){
       <select data-time-operation aria-label="Command">${v42OperationOptions(normalized.operation)}</select>
       <select data-time-variable class="time-internal-command" aria-hidden="true" tabindex="-1"></select>
     </div>
-    <div class="time-scan-cell time-target-cell"><select data-time-target aria-label="Target">${v42TargetOptions(normalized.target)}</select></div>
+    <div class="time-scan-cell time-target-cell"><select data-time-target aria-label="Target">${v42TargetOptions(normalized.target,normalized.operation)}</select></div>
     <div class="time-scan-cell"><div class="time-range-inputs" data-time-range-host></div></div>
     <div class="time-scan-cell"><span class="time-mcu-entry"><input type="text" inputmode="numeric" data-time-mcu value="${initialMcu}" placeholder="0"></span></div>
     <div class="time-scan-cell time-fix-cell"><input type="checkbox" data-time-fix aria-label="Fix time for this command"></div>`;
@@ -6634,9 +6654,13 @@ addTimeScanRow = function(values={},options={}){
 
   const syncControlState=()=>{
     const structural=['wait','loop','endloop'].includes(opSelect.value);
+    const previousTarget=targetSelect.value;
+    const allowedTargets=v42TargetsForOperation(opSelect.value);
+    targetSelect.innerHTML=v42TargetOptions(previousTarget,opSelect.value);
     targetSelect.disabled=structural;
     if(structural) targetSelect.value='';
-    else if(!targetSelect.value) targetSelect.value='s1';
+    else if(allowedTargets.includes(previousTarget)) targetSelect.value=previousTarget;
+    else targetSelect.value=allowedTargets.includes('s1')?'s1':(allowedTargets[0]||'');
     const value=v42InternalCommand(opSelect.value,targetSelect.value);
     v42SetInternalSelect(internal,value);
     return value;
@@ -6731,6 +6755,10 @@ readTimeScanRow = function(row,index){
   const time=validateTimeMcuInput(timeInput);
   if(!time.ok){ setTimeScanRowWarning(row,true); return {ok:false,error:`Command ${index}: t (s) must be a non-negative whole number.`}; }
 
+  if((meta.target==='qe'||meta.target==='th2th') && meta.op!=='scan'){
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Command ${index}: ${meta.target==='qe'?'QE':'th2th'} is available with scan only.`};
+  }
   if((meta.op==='driverel'||meta.op==='scanrel') && meta.target==='hkle'){
     setTimeScanRowWarning(row,true);
     return {ok:false,error:`Command ${index}: relative HKLE is not supported; use absolute drive/scan HKLE.`};
@@ -6881,9 +6909,12 @@ function v42SpiceLinesForRow(row,info,result){
     return [`driverel ${target} ${token}`];
   }
   if(op==='scan'){
+    if(target==='th2th') return [`th2th ${details[0].tokens.join(' ')}`];
     const pieces=['scan'];
     if(target==='hkle'){
       for(const [key,name] of [['h','h'],['k','k'],['l','l'],['hw','e']]) pieces.push(name,...byKey[key]);
+    }else if(target==='qe'){
+      pieces.push('q',...byKey.q,'e',...byKey.hw);
     }else pieces.push(target,...details[0].tokens);
     pieces.push('preset','mcu',String(t));
     return [pieces.join(' ')];
@@ -6974,7 +7005,7 @@ generateSpiceMacroFromTimeEstimate = function(){
 };
 
 parseSpiceVariableGroups = function(tokens,loopStack){
-  const names=new Set(['ei','ef','e','s1','s2','h','k','l']);
+  const names=new Set(['ei','ef','e','q','s1','s2','h','k','l']);
   const groups=[]; let i=0;
   while(i<tokens.length){
     const name=String(tokens[i]||'').toLowerCase();
@@ -6992,6 +7023,9 @@ function v42RowsFromGroups(op,groups,t='0'){
   const names=groups.map(g=>g.name);
   if(['h','k','l','e'].every(name=>names.includes(name))){
     return {command:`${op}:hkle`,ranges:{h:byName.h,k:byName.k,l:byName.l,hw:byName.e},mcu:t,fixed:op!=='scan'};
+  }
+  if(op==='scan' && groups.length===2 && names.includes('q') && names.includes('e')){
+    return {command:'scan:qe',ranges:{q:byName.q,hw:byName.e},mcu:t,fixed:false};
   }
   if(groups.length===1 && ['ei','ef','e','s1','s2'].includes(groups[0].name)){
     const target=groups[0].name;
@@ -7046,6 +7080,11 @@ parseSpiceMacroToRows = function(text){
       if(presetIndex<0 || String(parts[presetIndex+1]||'').toLowerCase()!=='mcu' || !/^\d+$/.test(String(parts[presetIndex+2]||'')) || presetIndex+3!==parts.length) throw new Error(`Line ${lineIndex+1}: scan must end with preset mcu <seconds>.`);
       const groups=parseSpiceVariableGroups(parts.slice(1,presetIndex),loopStack);
       rows.push(v42RowsFromGroups('scan',groups,parts[presetIndex+2])); continue;
+    }
+    if(op==='th2th'){
+      if(parts.length!==4) throw new Error(`Line ${lineIndex+1}: th2th requires initial final step.`);
+      const value=parts.slice(1).map(x=>spiceTokenToTime(x,loopStack)).join(' ');
+      rows.push({command:'scan:th2th',ranges:{th2th:value},mcu:'1',fixed:false}); continue;
     }
     if(op==='scanrel'){
       let rest=parts.slice(1),mcu=pendingMcu||'1'; pendingMcu=null;

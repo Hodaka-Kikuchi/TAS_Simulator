@@ -132,3 +132,14 @@ This ZIP is a PATCH. Overwrite the corresponding top-level files in the existing
 Script ASET is now an indexed inline table rather than a prompt-driven device alias list. Each row has a Target and a SPICE template. Use the literal word `value` wherever the Time estimate Details value should be substituted. Separate multiple SPICE commands with commas, semicolons, or line breaks. A template with no `value` is a fixed action and therefore shows no Details entry when selected.
 
 Default templates demonstrate the intended model: `temperature` expands to `drive vti value, drive sample value`; `field` expands to `drive field value, drive ramp 1`; and `field0` expands to `drive zero 1`. Custom ASET rows are added directly at the bottom of the list and become available as Time estimate Targets after their Target/template fields are valid.
+
+
+## v46 Script refinements
+- Time estimate `scan` now supports `QE` and `th2th` targets.
+- ASET SPICE templates are wider multiline fields. Press Enter to place commands on separate lines; newline-separated templates are expanded exactly like comma-separated templates.
+
+## v47
+- ASET Target names are editable for every row, including the initial rows.
+- ASET row edits are persisted as the complete list.
+- ASET Target and SPICE template text are displayed at a matching readable size.
+- Large ASET lists scroll inside the existing ASET pane.
