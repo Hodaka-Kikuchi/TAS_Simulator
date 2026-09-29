@@ -163,3 +163,12 @@ ASET templates now use only `<value>` and `<range>`. Scan/scanrel ASET lines aut
 - `<value>` remains scalar-only, so entering a three-value range there is still an error.
 - In templates with multiple `<range>` placeholders, only placeholders that actually contain a three-value scan participate in the scan-point-count consistency check; fixed `<range>` entries remain fixed during the scan.
 
+
+
+## v54 Toolbox titles
+- Renamed **Neutron unit conversion** to **Unit conversion**.
+- Renamed **Absorption and scattering** to **Neutron Attenuation** for clearer scope.
+
+
+## v55 UI label
+- Renamed the attenuation tool section to **Neutron Attenuation**.
