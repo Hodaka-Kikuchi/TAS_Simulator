@@ -4859,7 +4859,7 @@ function selectTimeScanIndex(row,event){
 
 function clearTimeScanDragMarkers(){
   for(const row of timeScanRows()) row.classList.remove('time-drag-before','time-drag-after','time-drag-source');
-  document.querySelectorAll('#timeScanRows .time-loop-empty-dropzone').forEach(zone=>zone.classList.remove('time-drop-active'));
+  document.querySelectorAll('#timeScanRows .time-loop-empty-dropzone, #timeScanRows .time-edge-dropzone').forEach(zone=>zone.classList.remove('time-drop-active'));
 }
 
 function startTimeScanDrag(row,event){
@@ -4902,6 +4902,18 @@ function startTimeScanDrag(row,event){
 
 function updateTimeScanDragTarget(event){
   if(!timeScanDragState) return;
+
+  const edgeZone=event.target.closest?.('.time-edge-dropzone');
+  if(edgeZone){
+    event.preventDefault();
+    clearTimeScanDragMarkers();
+    timeScanDragState.rows.forEach(r=>r.classList.add('time-drag-source'));
+    edgeZone.classList.add('time-drop-active');
+    timeScanDragState.target=edgeZone;
+    timeScanDragState.mode=edgeZone.dataset.timeEdge==='start'?'edge-start':'edge-end';
+    if(event.dataTransfer) event.dataTransfer.dropEffect='move';
+    return;
+  }
 
   // A loop/endloop boundary drag is different from an ordinary command drag:
   // it slides just that boundary so commands can be included/excluded without
@@ -4988,9 +5000,14 @@ function finishTimeLoopBoundaryDrop(event){
 
   const all=timeScanRows();
   const remaining=all.filter(row=>row!==boundaryRow);
-  const targetIndex=remaining.indexOf(target);
-  if(targetIndex<0) return true;
-  const insertIndex=targetIndex+(mode==='after'?1:0);
+  let insertIndex;
+  if(mode==='edge-start') insertIndex=0;
+  else if(mode==='edge-end') insertIndex=remaining.length;
+  else{
+    const targetIndex=remaining.indexOf(target);
+    if(targetIndex<0) return true;
+    insertIndex=targetIndex+(mode==='after'?1:0);
+  }
   const candidate=remaining.slice();
   candidate.splice(insertIndex,0,boundaryRow);
 
@@ -5030,7 +5047,11 @@ function finishTimeScanDrop(event){
     const host=$('timeScanRows');
     let reference=target;
 
-    if(mode==='empty-loop'){
+    if(mode==='edge-start'){
+      reference=timeScanRows().find(row=>!rows.includes(row)) || null;
+    }else if(mode==='edge-end'){
+      reference=null;
+    }else if(mode==='empty-loop'){
       const pair=target.dataset.timeLoopPair || '';
       reference=timeScanRows().find(row=>row.dataset.timeLoopPair===pair && row.querySelector('[data-time-variable]')?.value==='endloop') || null;
     }else if(mode==='after' || mode==='inside-start'){
@@ -5083,7 +5104,12 @@ function applyTimeFixHeader(){
 function refreshEmptyTimeLoopDropzones(){
   const host=$('timeScanRows');
   if(!host) return;
-  host.querySelectorAll('.time-loop-empty-dropzone').forEach(zone=>zone.remove());
+  host.querySelectorAll('.time-loop-empty-dropzone,.time-edge-dropzone').forEach(zone=>zone.remove());
+
+  const startZone=document.createElement('div');
+  startZone.className='time-edge-dropzone'; startZone.dataset.timeEdge='start';
+  startZone.title='Drop here to move selected command(s) before Index 1';
+  host.insertBefore(startZone,host.firstChild);
 
   const structure=ensureTimeLoopPairIds();
   const rows=structure.rows;
@@ -5103,6 +5129,10 @@ function refreshEmptyTimeLoopDropzones(){
     zone.title='Drop a command here to place it inside this loop';
     host.insertBefore(zone,endRow);
   }
+  const endZone=document.createElement('div');
+  endZone.className='time-edge-dropzone'; endZone.dataset.timeEdge='end';
+  endZone.title='Drop here to move selected command(s) after the last Index';
+  host.appendChild(endZone);
 }
 
 function updateTimeScanScrollState(){
@@ -6320,6 +6350,786 @@ function initializeScriptUI(){
   });
   $('scriptCopySpice')?.addEventListener('click',copySpiceScript);
 }
+
+
+// ==================== v42 Script command model / ASET ====================
+const V42_TIME_OPERATIONS=['drive','driverel','scan','scanrel'];
+const V42_MOTOR_TARGETS=['ei','ef','e','s1','s2','hkle'];
+const V42_ASET_STORAGE_KEY='tas-simulator-spice-aset-v3';
+const V42_ASET_DEFAULTS={
+  temperature:'drive vti value, drive sample value',
+  field:'drive field value, drive ramp 1',
+  field0:'drive zero 1'
+};
+let v42SpiceLineMap=[];
+let v42SpiceErrorLines=new Set();
+let v42SpiceWarningLines=new Set();
+let v42LastSpiceValidation=null;
+let v42SpiceAutoLinked=false;
+let v42SpiceMutationObserver=null;
+
+function v42EscapeHtml(value){
+  return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function v42EscapeAttr(value){
+  return v42EscapeHtml(value).replace(/"/g,'&quot;');
+}
+function v42InternalCommand(operation,target){
+  const op=String(operation||'drive').toLowerCase();
+  if(op==='wait' || op==='loop' || op==='endloop') return op;
+  const requested=String(target||'').toLowerCase();
+  const t=v42AllTargets().includes(requested) ? requested : 's1';
+  return `${op}:${t}`;
+}
+function v42CommandParts(command){
+  const raw=String(command||'drive:s1').toLowerCase();
+  if(raw==='wait' || raw==='loop' || raw==='endloop') return {op:raw,target:''};
+  const m=/^(drive|driverel|scan|scanrel):([a-z][a-z0-9_]*)$/.exec(raw);
+  if(m && v42AllTargets().includes(m[2])) return {op:m[1],target:m[2]};
+  return {op:'drive',target:'s1'};
+}
+function v42DetailsLookRanged(ranges){
+  return Object.values(ranges||{}).some(value=>String(value??'').trim().split(/\s+/).filter(Boolean).length===3);
+}
+function v42NormalizeStoredRow(values={}){
+  let ranges={...(values.ranges||values.details||{})};
+  const requested=String(values.command??values.variable??'s1').toLowerCase();
+  if(/^(drive|driverel|scan|scanrel):/.test(requested)){
+    const parts=v42CommandParts(requested);
+    return {operation:values.operation||parts.op,target:values.target||parts.target,ranges,migrationWarning:values.migrationWarning||''};
+  }
+  if(requested==='wait' || requested==='loop' || requested==='endloop') return {operation:requested,target:'',ranges};
+  const ranged=v42DetailsLookRanged(ranges);
+  if(requested==='s1' || requested==='s2') return {operation:ranged?'scan':'drive',target:requested,ranges};
+  if(requested==='rels1' || requested==='rels2') return {operation:ranged?'scanrel':'driverel',target:requested.endsWith('1')?'s1':'s2',ranges};
+  if(requested==='hkle') return {operation:ranged?'scan':'drive',target:'hkle',ranges};
+  if(requested==='temp') return {operation:'drive',target:'temperature',ranges:{target:ranges.target??ranges.temperature??''}};
+  if(requested==='field') return {operation:'drive',target:'field',ranges:{target:ranges.target??ranges.field??''}};
+  if(requested==='br'){
+    const hkl=String(ranges.hkl??ranges.target??'').trim().split(/\s+/);
+    if(hkl.length===3) ranges={h:hkl[0],k:hkl[1],l:hkl[2],hw:'0'};
+    return {operation:'drive',target:'hkle',ranges};
+  }
+  if(requested==='th2th') return {operation:ranged?'scan':'drive',target:'s2',ranges:{s2:ranges.th2th??ranges.s2??''},migrationWarning:'Legacy th2th was migrated to S2. Verify the intended motor before running.'};
+  if(requested==='qe') return {operation:ranged?'scan':'drive',target:'e',ranges:{hw:ranges.hw??ranges.e??''},migrationWarning:'Legacy QE cannot be represented by the new target list because Q is not a selectable target. Recreate this command as HKLE before use.'};
+  return {operation:'drive',target:'s1',ranges};
+}
+function v42SetInternalSelect(select,value){
+  if(!select) return;
+  select.innerHTML=`<option value="${v42EscapeAttr(value)}">${v42EscapeHtml(value)}</option><option value="loop">loop</option><option value="endloop">endloop</option><option value="wait">wait</option>`;
+  select.value=value;
+}
+function v42OperationOptions(selected){
+  const motion=V42_TIME_OPERATIONS.map(op=>`<option value="${op}"${selected===op?' selected':''}>${op}</option>`).join('');
+  const controls=['wait','loop','endloop'].map(op=>`<option value="${op}"${selected===op?' selected':''}${op==='endloop' && selected!=='endloop'?' hidden disabled':''}>${op}</option>`).join('');
+  return `<optgroup label="Motion">${motion}</optgroup><optgroup label="Control">${controls}</optgroup>`;
+}
+function v42TemplateCommands(template){
+  return String(template??'').split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
+}
+function v42TemplateUsesValue(template){ return /\bvalue\b/i.test(String(template??'')); }
+function v42StoredAsetEntries(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(V42_ASET_STORAGE_KEY)||'null');
+    if(Array.isArray(saved?.entries)) return saved.entries;
+  }catch(_e){}
+  // Migrate v2 device-list ASETs into command templates.
+  try{
+    const old=JSON.parse(localStorage.getItem('tas-simulator-spice-aset-v2')||'null');
+    if(Array.isArray(old?.entries)) return old.entries.map(item=>({
+      key:item?.key,
+      template:Array.isArray(item?.devices)?item.devices.map(d=>`drive ${d} value`).join(', '):''
+    }));
+  }catch(_e){}
+  try{
+    const old=JSON.parse(localStorage.getItem('tas-simulator-spice-aset-v1')||'null');
+    if(old && typeof old==='object') return Object.entries(old).map(([key,devices])=>({
+      key,template:Array.isArray(devices)?devices.map(d=>`drive ${d} value`).join(', '):''
+    }));
+  }catch(_e){}
+  return [];
+}
+function v42AsetRowKey(row){
+  return String(row?.querySelector?.('[data-aset-target]')?.value??row?.dataset?.asetKey??'').trim().toLowerCase();
+}
+function v42AsetKeys(){
+  const keys=new Set(Object.keys(V42_ASET_DEFAULTS));
+  for(const item of v42StoredAsetEntries()){
+    const key=String(item?.key||'').trim().toLowerCase();
+    if(/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key)) keys.add(key);
+  }
+  for(const row of document.querySelectorAll('#scriptAsetList [data-aset-row]')){
+    const key=v42AsetRowKey(row);
+    if(/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key)) keys.add(key);
+  }
+  return [...keys];
+}
+function v42AllTargets(){ return [...V42_MOTOR_TARGETS,...v42AsetKeys()]; }
+function v42TargetOptions(selected){
+  const labels={ei:'Ei',ef:'Ef',e:'E',s1:'S1',s2:'S2',hkle:'HKLE'};
+  const targets=v42AllTargets();
+  return `<option value="">—</option>`+targets.map(t=>`<option value="${v42EscapeAttr(t)}"${selected===t?' selected':''}>${v42EscapeHtml(labels[t]||t)}</option>`).join('');
+}
+function v42AsetTemplate(key){
+  const target=String(key||'').trim().toLowerCase();
+  const row=[...document.querySelectorAll('#scriptAsetList [data-aset-row]')].find(r=>v42AsetRowKey(r)===target);
+  const input=row?.querySelector('[data-aset-template]');
+  if(input) return String(input.value||'').trim();
+  const stored=v42StoredAsetEntries().find(item=>String(item?.key||'').trim().toLowerCase()===target);
+  if(stored?.template!==undefined) return String(stored.template||'').trim();
+  return String(V42_ASET_DEFAULTS[target]||'').trim();
+}
+function v42AsetEntries(){
+  return [...document.querySelectorAll('#scriptAsetList [data-aset-row]')].map(row=>({
+    key:v42AsetRowKey(row),
+    template:String(row.querySelector('[data-aset-template]')?.value||'').trim()
+  })).filter(item=>/^[a-z][a-z0-9_]*$/.test(item.key) && !V42_MOTOR_TARGETS.includes(item.key));
+}
+function v42RenumberAsetRows(){
+  [...document.querySelectorAll('#scriptAsetList [data-aset-row]')].forEach((row,i)=>{
+    const cell=row.querySelector('[data-aset-index]'); if(cell) cell.textContent=String(i+1);
+  });
+}
+function v42RefreshTargetSelects(){
+  document.querySelectorAll('#timeScanRows [data-time-target]').forEach(select=>{
+    const previous=select.value;
+    select.innerHTML=v42TargetOptions(previous);
+    if(v42AllTargets().includes(previous)) select.value=previous;
+    else if(!select.disabled){ select.value='s1'; select.dispatchEvent(new Event('change',{bubbles:true})); }
+    else select.value='';
+  });
+}
+function v42CreateAsetRow(key='',template='',{removable=true}={}){
+  const host=$('scriptAsetList'); if(!host) return null;
+  const row=document.createElement('div');
+  row.className='script-aset-item'; row.dataset.asetRow='1';
+  row.innerHTML=`<span class="script-aset-index" data-aset-index></span>`+
+    `<input type="text" data-aset-target value="${v42EscapeAttr(String(key||'').toLowerCase())}" placeholder="target" spellcheck="false" aria-label="ASET target"${removable?'':' readonly'}>`+
+    `<input type="text" data-aset-template value="${v42EscapeAttr(String(template||''))}" placeholder="drive device value, drive device2 value" spellcheck="false" aria-label="ASET SPICE template">`+
+    `${removable?'<button type="button" class="script-aset-remove" title="Remove ASET" aria-label="Remove ASET">×</button>':'<span></span>'}`;
+  host.appendChild(row); v42RenumberAsetRows(); return row;
+}
+function v42SaveAset(){
+  const payload={entries:v42AsetEntries()};
+  try{ localStorage.setItem(V42_ASET_STORAGE_KEY,JSON.stringify(payload)); }catch(_e){}
+}
+function v42LoadAset(){
+  const host=$('scriptAsetList'); if(!host) return;
+  const entries=v42StoredAsetEntries();
+  host.replaceChildren();
+  const byKey=new Map(entries.map(item=>[String(item?.key||'').trim().toLowerCase(),String(item?.template||'')]));
+  for(const [key,template] of Object.entries(V42_ASET_DEFAULTS)) v42CreateAsetRow(key,byKey.has(key)?byKey.get(key):template,{removable:false});
+  for(const item of entries){
+    const key=String(item?.key||'').trim().toLowerCase();
+    if(!key || key in V42_ASET_DEFAULTS || V42_MOTOR_TARGETS.includes(key)) continue;
+    v42CreateAsetRow(key,String(item?.template||''),{removable:true});
+  }
+  v42RenumberAsetRows();
+}
+function v42PromptAddAset(){
+  const row=v42CreateAsetRow('','',{removable:true});
+  row?.querySelector('[data-aset-target]')?.focus();
+  scriptMessage('Added an empty ASET row. Enter Target and SPICE template directly in the list.');
+}
+function v42ValidateAsetRows(){
+  const seen=new Set(); let ok=true, message='';
+  for(const row of document.querySelectorAll('#scriptAsetList [data-aset-row]')){
+    const key=v42AsetRowKey(row), target=row.querySelector('[data-aset-target]'), template=row.querySelector('[data-aset-template]');
+    const validKey=/^[a-z][a-z0-9_]*$/.test(key) && !V42_MOTOR_TARGETS.includes(key) && !seen.has(key);
+    target?.classList.toggle('invalid',!validKey);
+    if(validKey) seen.add(key); else if(!message) message=key?`ASET Target "${key}" is invalid or duplicated.`:'Enter an ASET Target name.';
+    const validTemplate=v42TemplateCommands(template?.value).length>0;
+    template?.classList.toggle('invalid',!validTemplate);
+    if(!validTemplate && !message) message=`ASET ${key||'?'} needs at least one SPICE template command.`;
+    ok=ok&&validKey&&validTemplate;
+  }
+  return {ok,message};
+}
+
+// Composite command metadata. Control rows remain standalone; motion rows are operation:target.
+timeCommandMeta = function(command){
+  const {op,target}=v42CommandParts(command);
+  if(op==='wait') return {kind:'wait',op,target:'',specs:[]};
+  if(op==='loop') return {kind:'loop',op,target:'',specs:[{key:'loop',label:'Loop'}]};
+  if(op==='endloop') return {kind:'endloop',op,target:'',specs:[]};
+  const kind=(op==='scan' || op==='scanrel') ? 'scan' : 'drive';
+  if(target==='hkle') return {kind,op,target,specs:[{key:'h',label:'H'},{key:'k',label:'K'},{key:'l',label:'L'},{key:'hw',label:'E'}]};
+  if(v42AsetKeys().includes(target)){
+    const usesValue=v42TemplateUsesValue(v42AsetTemplate(target));
+    return {kind,op,target,aset:true,specs:usesValue?[{key:'target',label:target}]:[]};
+  }
+  const key=(target==='e')?'hw':target;
+  const label={ei:'Ei',ef:'Ef',e:'E',s1:'S1',s2:'S2'}[target]||target;
+  return {kind,op,target,specs:[{key,label:(op==='driverel'||op==='scanrel')?`rel ${label}`:label}]};
+};
+
+parseTimeDetail = function(raw,command,row=null){
+  const meta=timeCommandMeta(command);
+  if(meta.kind==='loop'){
+    const parsed=parseTimeRange(raw,row,{allowLoopReference:false});
+    if(!parsed.ok) return parsed;
+    if(parsed.fixed) return {ok:false,error:'loop requires three space-separated values: initial final step.'};
+    return parsed;
+  }
+  if(meta.kind==='endloop' || meta.kind==='wait') return {ok:true,fixed:true,count:1,value:null};
+  if(meta.kind==='scan') return parseTimeRange(raw,row,{allowLoopReference:true});
+  const text=String(raw??'').trim();
+  if(row){
+    const loopRef=parseTimeLoopReferenceToken(text,row);
+    if(loopRef) return loopRef;
+  }
+  const value=parseNumericValue(text);
+  if(!text || !Number.isFinite(value)) return {ok:false,error:'Enter one numeric target value or a valid loopN reference.'};
+  return {ok:true,fixed:true,count:1,value};
+};
+
+updateTimeLoopCommandLabels = function(){
+  const structure=ensureTimeLoopPairIds();
+  for(const row of structure.rows){
+    const internal=row.querySelector('[data-time-variable]');
+    const opSelect=row.querySelector('[data-time-operation]');
+    if(!internal || !opSelect) continue;
+    const rowInfo=structure.info.get(row);
+    const loopOption=[...opSelect.options].find(option=>option.value==='loop');
+    const endOption=[...opSelect.options].find(option=>option.value==='endloop');
+    const proposedLevel=(internal.value==='loop' && rowInfo?.level) ? rowInfo.level : Math.max(1,(rowInfo?.depth||0)+1);
+    if(loopOption) loopOption.textContent=`loop${proposedLevel}`;
+    if(endOption){
+      endOption.textContent=(internal.value==='endloop' && rowInfo?.level) ? `endloop${rowInfo.level}` : 'endloop';
+      endOption.disabled=internal.value!=='endloop';
+      endOption.hidden=internal.value!=='endloop';
+    }
+    opSelect.disabled=internal.value==='endloop';
+    opSelect.title=internal.value==='endloop' ? 'This endloop is paired automatically with its loop command.' : '';
+  }
+  return structure;
+};
+
+addTimeScanRow = function(values={},options={}){
+  const host=$('timeScanRows');
+  if(!host) return null;
+  const normalized=v42NormalizeStoredRow(values);
+  const row=document.createElement('div');
+  row.className='time-scan-row';
+  row.dataset.timeScanId=String(++timeScanRowCounter);
+  const initialMcu=String(values.mcu??values.time??(normalized.operation==='wait'?(values.ranges?.wait??values.details?.wait??''):'')).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  row.innerHTML=`
+    <div class="time-scan-cell time-scan-index" data-time-index></div>
+    <div class="time-scan-cell time-command-cell">
+      <select data-time-operation aria-label="Command">${v42OperationOptions(normalized.operation)}</select>
+      <select data-time-variable class="time-internal-command" aria-hidden="true" tabindex="-1"></select>
+    </div>
+    <div class="time-scan-cell time-target-cell"><select data-time-target aria-label="Target">${v42TargetOptions(normalized.target)}</select></div>
+    <div class="time-scan-cell"><div class="time-range-inputs" data-time-range-host></div></div>
+    <div class="time-scan-cell"><span class="time-mcu-entry"><input type="text" inputmode="numeric" data-time-mcu value="${initialMcu}" placeholder="0"></span></div>
+    <div class="time-scan-cell time-fix-cell"><input type="checkbox" data-time-fix aria-label="Fix time for this command"></div>`;
+  const before=options?.before;
+  if(before && before.parentElement===host) host.insertBefore(row,before); else host.appendChild(row);
+  const opSelect=row.querySelector('[data-time-operation]');
+  const targetSelect=row.querySelector('[data-time-target]');
+  const internal=row.querySelector('[data-time-variable]');
+  const fix=row.querySelector('[data-time-fix]');
+  if(fix) fix.checked=!!values.fixed;
+  if(normalized.migrationWarning) row.dataset.timeMigrationWarning=normalized.migrationWarning;
+
+  const syncControlState=()=>{
+    const structural=['wait','loop','endloop'].includes(opSelect.value);
+    targetSelect.disabled=structural;
+    if(structural) targetSelect.value='';
+    else if(!targetSelect.value) targetSelect.value='s1';
+    const value=v42InternalCommand(opSelect.value,targetSelect.value);
+    v42SetInternalSelect(internal,value);
+    return value;
+  };
+  const initialInternal=syncControlState();
+  row.dataset.timeCommand=initialInternal;
+  const initialTime=row.querySelector('[data-time-mcu]');
+  if(initialTime && String(initialTime.value).trim()!=='' && Number.isFinite(parseNumericValue(initialTime.value))) initialTime.value=formatTimeMcuValue(initialTime.value);
+  updateTimeScanRowFields(row,normalized.ranges);
+
+  if(initialInternal==='loop' && !options?.suppressAutoPair){
+    const endRow=addTimeScanRow({command:'endloop'},{before:row.nextElementSibling,suppressAutoPair:true});
+    const pair=`lp${++timeLoopPairCounter}`;
+    row.dataset.timeLoopPair=pair;
+    if(endRow) endRow.dataset.timeLoopPair=pair;
+  }
+
+  const handleSelectionChange=()=>{
+    const previous=row.dataset.timeCommand || 'drive:s1';
+    const previousPair=previous==='loop' ? matchingTimeLoopRow(row) : null;
+    const next=syncControlState();
+    if(previous==='loop' && next!=='loop' && previousPair){ previousPair.remove(); delete row.dataset.timeLoopPair; }
+    row.dataset.timeCommand=next;
+    delete row.dataset.timeMigrationWarning;
+    updateTimeScanRowFields(row);
+    if(previous!=='loop' && next==='loop'){
+      const endRow=addTimeScanRow({command:'endloop'},{before:row.nextElementSibling,suppressAutoPair:true});
+      const pair=`lp${++timeLoopPairCounter}`;
+      row.dataset.timeLoopPair=pair;
+      if(endRow) endRow.dataset.timeLoopPair=pair;
+      selectOnlyTimeScanRow(row);
+    }
+    renumberTimeScanRows();
+    clearTimeEstimateMessage();
+    updateTimeFixHeaderState();
+    saveTimeEstimateState();
+    validateAllTimeScanRows({showMessage:true});
+  };
+  opSelect.addEventListener('change',handleSelectionChange);
+  targetSelect.addEventListener('change',handleSelectionChange);
+
+  const timeInput=row.querySelector('[data-time-mcu]');
+  timeInput.addEventListener('input',()=>{
+    if(timeInput.readOnly) return;
+    const parsed=validateTimeMcuInput(timeInput);
+    saveTimeEstimateState();
+    if(parsed.ok) clearTimeEstimateMessage(); else setTimeEstimateMessage('t (s) must be a non-negative whole number.',true);
+  });
+  timeInput.addEventListener('change',()=>{
+    if(timeInput.readOnly) return;
+    const parsed=validateTimeMcuInput(timeInput);
+    if(parsed.ok){ timeInput.value=formatTimeMcuValue(parsed.value); applyMcuToSelectedTimeScans(row,timeInput.value); }
+    saveTimeEstimateState();
+    validateAllTimeScanRows({showMessage:true});
+  });
+  fix?.addEventListener('change',()=>{ updateTimeFixHeaderState(); saveTimeEstimateState(); });
+  const indexCell=row.querySelector('[data-time-index]');
+  if(indexCell){
+    indexCell.draggable=true;
+    indexCell.title='Click to select; drag a command to reorder it. Drag loop/endloop alone to slide that loop boundary.';
+    indexCell.addEventListener('click',event=>{ event.stopPropagation(); selectTimeScanIndex(row,event); });
+    indexCell.addEventListener('dragstart',event=>startTimeScanDrag(row,event));
+    indexCell.addEventListener('dragend',cancelTimeScanDrag);
+  }
+  renumberTimeScanRows();
+  saveTimeEstimateState();
+  return row;
+};
+
+timeScanRowValues = function(row){
+  if(!row) return null;
+  const command=row.querySelector('[data-time-variable]')?.value || 'drive:s1';
+  const {op,target}=v42CommandParts(command);
+  const ranges={};
+  row.querySelectorAll('[data-time-range-key]').forEach(input=>{ ranges[input.dataset.timeRangeKey]=input.value; });
+  return {command,operation:op,target,ranges,mcu:row.querySelector('[data-time-mcu]')?.value??'',fixed:!!row.querySelector('[data-time-fix]')?.checked};
+};
+
+readTimeScanRow = function(row,index){
+  setTimeScanRowWarning(row,false);
+  if(row.dataset.timeMigrationWarning){
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Command ${index}: ${row.dataset.timeMigrationWarning}`};
+  }
+  const command=row.querySelector('[data-time-variable]')?.value || 'drive:s1';
+  const meta=timeCommandMeta(command);
+  const rangeInputs=[...row.querySelectorAll('[data-time-range-key]')];
+  const parsed=rangeInputs.map(input=>({input,key:input.dataset.timeRangeKey,parsed:validateTimeRangeInput(input)}));
+  const invalidRange=parsed.find(x=>!x.parsed.ok);
+  if(invalidRange){ setTimeScanRowWarning(row,true); return {ok:false,error:`Command ${index}: ${invalidRange.parsed.error}`}; }
+  const timeInput=row.querySelector('[data-time-mcu]');
+  const time=validateTimeMcuInput(timeInput);
+  if(!time.ok){ setTimeScanRowWarning(row,true); return {ok:false,error:`Command ${index}: t (s) must be a non-negative whole number.`}; }
+
+  if((meta.op==='driverel'||meta.op==='scanrel') && meta.target==='hkle'){
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Command ${index}: relative HKLE is not supported; use absolute drive/scan HKLE.`};
+  }
+  if(meta.aset && meta.op!=='drive'){
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Command ${index}: ASET target ${meta.target} is a SPICE template and currently supports drive only.`};
+  }
+
+  const movingCounts=meta.kind==='scan' ? parsed.map(x=>x.parsed.count).filter(n=>n>1) : [];
+  const unique=[...new Set(movingCounts)];
+  if(unique.length>1){
+    for(const x of parsed) if(x.parsed.count>1) setTimeInputInvalid(x.input,true);
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Command ${index}: ranged Detail values do not contain the same number of scan points.`};
+  }
+  if(meta.kind==='scan' && unique.length===0){
+    for(const x of parsed) setTimeInputInvalid(x.input,true);
+    setTimeScanRowWarning(row,true);
+    return {ok:false,error:`Command ${index}: ${meta.op} requires initial final step in at least one Detail field.`};
+  }
+  const points=meta.kind==='scan' ? unique[0] : ((meta.kind==='loop'||meta.kind==='endloop')?0:1);
+  const loopIterations=meta.kind==='loop' ? (parsed[0]?.parsed?.count||1) : 1;
+  if(meta.target==='hkle' && (meta.op==='drive'||meta.op==='scan') && !parsed.some(x=>x.parsed.symbolic)){
+    const parsedByKey=Object.fromEntries(parsed.map(x=>[x.key,x.parsed]));
+    const plane=validateHkleScanPlane(parsedByKey,Math.max(1,points));
+    if(!plane.ok){
+      setTimeScanRowWarning(row,true);
+      const where=plane.hkl?` (${plane.hkl.map(v=>Number(v.toPrecision(6))).join(', ')})`:'';
+      const detail=plane.error?` ${plane.error}`:'';
+      return {ok:false,error:`Command ${index}: HKLE is outside the current U-V scattering plane${where}.${detail}`};
+    }
+  }
+  return {
+    ok:true,command,operation:meta.op,target:meta.target,kind:meta.kind,points,loopIterations,
+    loopLevel:Number(row.dataset.timeLoopLevel||0),mcuSeconds:time.value,
+    seconds:meta.kind==='wait'?time.value:(meta.kind==='scan'?points*time.value:0),
+    fixed:meta.kind!=='scan' || !!row.querySelector('[data-time-fix]')?.checked
+  };
+};
+
+// S2 limit checking follows the new Target column. A preceding fixed HKLE drive is the reference for relative S2.
+timePreviousBrS2 = function(row,index,context,structure){
+  const rows=timeScanRows();
+  const currentIndex=Math.max(0,Number(index)-1);
+  for(let i=currentIndex-1;i>=0;i--){
+    const candidate=rows[i];
+    const meta=timeCommandMeta(candidate?.querySelector('[data-time-variable]')?.value||'');
+    if(meta.op!=='drive' || meta.target!=='hkle') continue;
+    const byKey={};
+    for(const input of candidate.querySelectorAll('[data-time-range-key]')) byKey[input.dataset.timeRangeKey]=parseTimeDetail(input.value,candidate.querySelector('[data-time-variable]').value,candidate);
+    if(!['h','k','l','hw'].every(key=>byKey[key]?.ok)) continue;
+    let rl; try{ rl=buildResolutionLattice().rl; }catch(_e){ return null; }
+    const resolveIn=(ctx)=>{
+      const hkl=['h','k','l'].map(key=>resolveTimeFixedValue(byKey[key],ctx));
+      const hw=resolveTimeFixedValue(byKey.hw,ctx);
+      if(hkl.some(v=>!Number.isFinite(v)) || !Number.isFinite(hw)) return null;
+      const q=norm(hklToQ(rl,hkl));
+      const calc=timeS2MagnitudeFromQ(q,hw);
+      return calc?{s2:timeSignedS2FromMagnitude(calc.s2),Ei:calc.Ei,hkl,hw}:null;
+    };
+    const direct=resolveIn(context); if(direct) return direct;
+    const contexts=timeLoopContextsForRow(candidate,structure);
+    if(contexts.ok) for(let j=contexts.contexts.length-1;j>=0;j--){ const fallback=resolveIn(contexts.contexts[j]); if(fallback) return fallback; }
+  }
+  return null;
+};
+
+timeRowS2LimitWarning = function(row,result,index,structure){
+  const meta=timeCommandMeta(result.command);
+  if(!['s2','hkle'].includes(meta.target)) return null;
+  const contextResult=timeLoopContextsForRow(row,structure);
+  if(!contextResult.ok) return contextResult.tooMany?`Command ${index}: S2 limit check skipped because enclosing loops expand beyond 50,000 combinations.`:null;
+  const parsedByKey={};
+  for(const input of row.querySelectorAll('[data-time-range-key]')){
+    const parsed=parseTimeDetail(input.value,result.command,row);
+    if(!parsed.ok) return null;
+    parsedByKey[input.dataset.timeRangeKey]=parsed;
+  }
+  let rl=null; if(meta.target==='hkle'){ try{rl=buildResolutionLattice().rl;}catch(_e){return null;} }
+  let worst=null;
+  const consider=(s2,Ei,detail)=>{
+    if(!Number.isFinite(s2)) return;
+    const incident=Number.isFinite(Ei)?Ei:timeElasticIncidentEnergy();
+    const limit=timeS2LimitAtEi(incident); if(!Number.isFinite(limit)) return;
+    const excess=Math.abs(s2)-limit;
+    if(excess>1e-8 && (!worst||excess>worst.excess)) worst={s2:Math.abs(s2),limit,Ei:incident,excess,detail};
+  };
+  const points=Math.max(1,result.points||1);
+  for(const context of contextResult.contexts){
+    for(let point=0;point<points;point++){
+      if(meta.target==='s2'){
+        const value=timeDetailValueAt(parsedByKey.s2,point,context);
+        if(meta.op==='driverel'||meta.op==='scanrel'){
+          const base=timePreviousBrS2(row,index,context,structure);
+          if(base&&Number.isFinite(value)) consider(base.s2+value,base.Ei,`previous HKLE S2=${base.s2.toFixed(2)}°, rel S2=${Number(value.toPrecision?.(6)??value)}`);
+        }else consider(Math.abs(value),timeElasticIncidentEnergy(),`S2=${Number(value.toPrecision?.(6)??value)}`);
+      }else{
+        const hkl=['h','k','l'].map(key=>timeDetailValueAt(parsedByKey[key],point,context));
+        const hw=timeDetailValueAt(parsedByKey.hw,point,context);
+        if(hkl.some(v=>!Number.isFinite(v))||!Number.isFinite(hw)) continue;
+        const q=norm(hklToQ(rl,hkl));
+        const calc=timeS2MagnitudeFromQ(q,hw);
+        if(calc) consider(calc.s2,calc.Ei,`HKLE=(${hkl.map(v=>Number(v.toPrecision(6))).join(', ')}, ${Number(hw.toPrecision(6))})`);
+      }
+    }
+  }
+  return worst?`Command ${index}: S2=${worst.s2.toFixed(2)}° exceeds the instrument max ${worst.limit.toFixed(2)}° at Ei=${worst.Ei.toFixed(2)} meV (${worst.detail}).`:null;
+};
+
+function v42DetailItems(row){
+  return [...row.querySelectorAll('[data-time-range-key]')].map(input=>({key:input.dataset.timeRangeKey,tokens:spiceDetailTokens(input.value)}));
+}
+function v42TemplateLinesForTarget(target,valueToken=''){
+  const template=v42AsetTemplate(target);
+  const commands=v42TemplateCommands(template);
+  if(!commands.length) throw new Error(`${target} ASET has no SPICE template.`);
+  const usesValue=v42TemplateUsesValue(template);
+  if(usesValue && valueToken==='') throw new Error(`${target} ASET requires a Detail value because its template contains value.`);
+  return commands.map(command=>usesValue?command.replace(/\bvalue\b/gi,valueToken):command);
+}
+function v42SpiceLinesForRow(row,info,result){
+  const meta=timeCommandMeta(result.command);
+  if(meta.kind==='loop'){
+    const values=spiceDetailTokens(row.querySelector('[data-time-range-key="loop"]')?.value);
+    return [`loop ${spiceLoopVar(info?.level||1)}=${values.join(',')}`];
+  }
+  if(meta.kind==='endloop') return ['endloop'];
+  if(meta.kind==='wait') return [`wait ${row.querySelector('[data-time-mcu]')?.value||'0'}`];
+  const details=v42DetailItems(row);
+  const byKey=Object.fromEntries(details.map(item=>[item.key,item.tokens]));
+  const t=row.querySelector('[data-time-mcu]')?.value||'0';
+  const target=meta.target, op=meta.op;
+
+  if(meta.aset){
+    if(op!=='drive') throw new Error(`ASET target ${target} supports drive only.`);
+    const token=details[0]?.tokens?.[0]||'';
+    return v42TemplateLinesForTarget(target,token);
+  }
+  if(op==='drive'){
+    if(target==='hkle') return [`drive h ${byKey.h[0]} k ${byKey.k[0]} l ${byKey.l[0]} e ${byKey.hw[0]}`];
+    const token=details[0]?.tokens?.[0];
+    if(target==='ei'||target==='ef') return [`${target} ${token}`];
+    return [`drive ${target} ${token}`];
+  }
+  if(op==='driverel'){
+    const token=details[0]?.tokens?.[0];
+    return [`driverel ${target} ${token}`];
+  }
+  if(op==='scan'){
+    const pieces=['scan'];
+    if(target==='hkle'){
+      for(const [key,name] of [['h','h'],['k','k'],['l','l'],['hw','e']]) pieces.push(name,...byKey[key]);
+    }else pieces.push(target,...details[0].tokens);
+    pieces.push('preset','mcu',String(t));
+    return [pieces.join(' ')];
+  }
+  if(op==='scanrel') return [`preset mcu ${t}`,`scanrel ${target} ${details[0].tokens.join(' ')}`];
+  throw new Error(`Unsupported command ${op}.`);
+}
+function v42TemplateRegex(command){
+  const parts=String(command||'').split(/\bvalue\b/i);
+  const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+  const source='^'+parts.map(esc).join('(\\S+)')+'$';
+  return {regex:new RegExp(source,'i'),placeholders:Math.max(0,parts.length-1)};
+}
+function v42MatchAsetAtLines(lines,startIndex,loopStack){
+  const nextSignificant=(from)=>{ for(let j=from;j<lines.length;j++){ const raw=lines[j].trim(); if(raw && !raw.startsWith('#') && !raw.startsWith(';')) return {index:j,raw}; } return null; };
+  for(const key of v42AsetKeys()){
+    const templates=v42TemplateCommands(v42AsetTemplate(key));
+    if(!templates.length) continue;
+    let cursor=startIndex-1,last=startIndex-1,value=null,ok=true;
+    for(const template of templates){
+      const next=nextSignificant(cursor+1); if(!next){ok=false;break;}
+      const {regex,placeholders}=v42TemplateRegex(template),m=regex.exec(next.raw);
+      if(!m){ok=false;break;}
+      if(placeholders){
+        for(let g=1;g<m.length;g++){
+          const parsed=spiceTokenToTime(m[g],loopStack);
+          if(value===null) value=parsed; else if(parsed!==value){ok=false;break;}
+        }
+      }
+      if(!ok) break;
+      cursor=next.index; last=next.index;
+    }
+    if(ok){
+      const ranges=value===null?{}:{target:value};
+      return {key,ranges,endIndex:last};
+    }
+  }
+  return null;
+}
+function v42RenderSpiceBackdrop(){
+  const area=$('scriptSpiceText'),backdrop=$('scriptSpiceBackdrop');
+  if(!area||!backdrop) return;
+  const lines=String(area.value??'').split('\n');
+  backdrop.innerHTML=lines.map((line,i)=>{
+    const n=i+1;
+    const cls=v42SpiceErrorLines.has(n)?' spice-line-error':(v42SpiceWarningLines.has(n)?' spice-line-warning':'');
+    return `<span class="spice-backdrop-line${cls}">${v42EscapeHtml(line)||' '}</span>`;
+  }).join('');
+  backdrop.scrollTop=area.scrollTop; backdrop.scrollLeft=area.scrollLeft;
+}
+function v42ApplyValidationToLineHighlights(validation){
+  v42SpiceErrorLines=new Set(); v42SpiceWarningLines=new Set();
+  if(!validation || v42SpiceLineMap.length!==validation.rows.length){ v42RenderSpiceBackdrop(); return; }
+  validation.results.forEach((result,i)=>{
+    const map=v42SpiceLineMap[i]; if(!map) return;
+    const set=result?.ok?v42SpiceWarningLines:v42SpiceErrorLines;
+    if(result?.ok && !validation.warnings?.some(w=>String(w).startsWith(`Command ${i+1}:`))) return;
+    for(let line=map.start;line<=map.end;line++) set.add(line);
+  });
+  v42RenderSpiceBackdrop();
+}
+
+generateSpiceMacroFromTimeEstimate = function(){
+  const validation=validateAllTimeScanRows({showMessage:true});
+  const structure=ensureTimeLoopPairIds();
+  const lines=[]; v42SpiceLineMap=[]; v42SpiceErrorLines=new Set(); v42SpiceWarningLines=new Set();
+  for(let i=0;i<structure.rows.length;i++){
+    const row=structure.rows[i],result=validation.results[i],info=structure.info.get(row);
+    const start=lines.length+1;
+    if(!result?.ok){
+      lines.push(`# ERROR Command ${i+1}: ${String(result?.error||'Invalid command').replace(/^Command\s+\d+:\s*/,'')}`);
+    }else{
+      try{ lines.push(...v42SpiceLinesForRow(row,info,result)); }
+      catch(err){
+        result.ok=false; result.error=`Command ${i+1}: ${err?.message||String(err)}`;
+        if(!validation.errors.includes(result.error)) validation.errors.push(result.error);
+        lines.push(`# ERROR Command ${i+1}: ${err?.message||String(err)}`);
+      }
+    }
+    const end=lines.length;
+    v42SpiceLineMap[i]={start,end};
+    if(!result?.ok) for(let line=start;line<=end;line++) v42SpiceErrorLines.add(line);
+    else if(validation.warnings?.some(w=>String(w).startsWith(`Command ${i+1}:`))) for(let line=start;line<=end;line++) v42SpiceWarningLines.add(line);
+  }
+  validation.ok=validation.errors.length===0;
+  v42LastSpiceValidation=validation;
+  return lines.join('\n');
+};
+
+parseSpiceVariableGroups = function(tokens,loopStack){
+  const names=new Set(['ei','ef','e','s1','s2','h','k','l']);
+  const groups=[]; let i=0;
+  while(i<tokens.length){
+    const name=String(tokens[i]||'').toLowerCase();
+    if(!names.has(name)) throw new Error(`Unknown scan variable: ${tokens[i]||''}`);
+    i++;
+    const values=[];
+    while(i<tokens.length && !names.has(String(tokens[i]).toLowerCase())) values.push(spiceTokenToTime(tokens[i++],loopStack));
+    if(values.length!==1 && values.length!==3) throw new Error(`${name} must have one value or initial final step.`);
+    groups.push({name,values});
+  }
+  return groups;
+};
+function v42RowsFromGroups(op,groups,t='0'){
+  const byName=Object.fromEntries(groups.map(g=>[g.name,g.values.join(' ')]));
+  const names=groups.map(g=>g.name);
+  if(['h','k','l','e'].every(name=>names.includes(name))){
+    return {command:`${op}:hkle`,ranges:{h:byName.h,k:byName.k,l:byName.l,hw:byName.e},mcu:t,fixed:op!=='scan'};
+  }
+  if(groups.length===1 && ['ei','ef','e','s1','s2'].includes(groups[0].name)){
+    const target=groups[0].name;
+    return {command:`${op}:${target}`,ranges:{[target==='e'?'hw':target]:groups[0].values.join(' ')},mcu:t,fixed:op!=='scan'};
+  }
+  throw new Error(`Unsupported ${op} target combination.`);
+}
+
+parseSpiceMacroToRows = function(text){
+  const rows=[],loopStack=[];
+  const lines=String(text??'').split(/\r?\n/);
+  let pendingMcu=null;
+  const significant=(start)=>{ for(let j=start;j<lines.length;j++){ const raw=lines[j].trim(); if(raw && !raw.startsWith('#') && !raw.startsWith(';')) return {index:j,raw}; } return null; };
+  for(let lineIndex=0;lineIndex<lines.length;lineIndex++){
+    const raw=lines[lineIndex].trim();
+    if(!raw || raw.startsWith('#') || raw.startsWith(';')) continue;
+    const asetMatch=v42MatchAsetAtLines(lines,lineIndex,loopStack);
+    if(asetMatch){
+      rows.push({command:`drive:${asetMatch.key}`,ranges:asetMatch.ranges,mcu:'0',fixed:true});
+      lineIndex=asetMatch.endIndex;
+      continue;
+    }
+    let match;
+    if((match=/^loop\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*([^,]+),([^,]+),([^,]+)\s*$/i.exec(raw))){
+      if(loopStack.includes(match[1])) throw new Error(`Line ${lineIndex+1}: loop variable ${match[1]} is already active.`);
+      loopStack.push(match[1]); rows.push({command:'loop',ranges:{loop:`${match[2].trim()} ${match[3].trim()} ${match[4].trim()}`},mcu:'0',fixed:true}); continue;
+    }
+    if(/^endloop\s*$/i.test(raw)){ if(!loopStack.length) throw new Error(`Line ${lineIndex+1}: endloop has no matching loop.`); loopStack.pop(); rows.push({command:'endloop',ranges:{},mcu:'0',fixed:true}); continue; }
+    if((match=/^wait\s+(\d+)\s*$/i.exec(raw))){ rows.push({command:'wait',ranges:{},mcu:match[1],fixed:true}); continue; }
+    if((match=/^preset\s+mcu\s+(\d+)\s*$/i.exec(raw))){ pendingMcu=match[1]; continue; }
+    if((match=/^(ei|ef)\s+(\S+)\s*$/i.exec(raw))){
+      const target=match[1].toLowerCase(); rows.push({command:`drive:${target}`,ranges:{[target]:spiceTokenToTime(match[2],loopStack)},mcu:'0',fixed:true}); continue;
+    }
+    const parts=raw.split(/\s+/),op=parts[0].toLowerCase();
+    if(op==='drive' || op==='driverel' || op==='drel'){
+      const canonical=op==='drive'?'drive':'driverel';
+      const rest=parts.slice(1);
+      if(rest.length===2){
+        const device=rest[0].toLowerCase(),value=spiceTokenToTime(rest[1],loopStack);
+        if(['ei','ef','e','s1','s2'].includes(device)){
+          rows.push({command:`${canonical}:${device}`,ranges:{[device==='e'?'hw':device]:value},mcu:'0',fixed:true}); continue;
+        }
+      }
+      if(canonical==='drive'){
+        const groups=parseSpiceVariableGroups(rest,loopStack);
+        rows.push(v42RowsFromGroups('drive',groups,'0')); continue;
+      }
+      throw new Error(`Line ${lineIndex+1}: unsupported driverel command.`);
+    }
+    if(op==='scan'){
+      const presetIndex=parts.findIndex((token,index)=>index>0&&token.toLowerCase()==='preset');
+      if(presetIndex<0 || String(parts[presetIndex+1]||'').toLowerCase()!=='mcu' || !/^\d+$/.test(String(parts[presetIndex+2]||'')) || presetIndex+3!==parts.length) throw new Error(`Line ${lineIndex+1}: scan must end with preset mcu <seconds>.`);
+      const groups=parseSpiceVariableGroups(parts.slice(1,presetIndex),loopStack);
+      rows.push(v42RowsFromGroups('scan',groups,parts[presetIndex+2])); continue;
+    }
+    if(op==='scanrel'){
+      let rest=parts.slice(1),mcu=pendingMcu||'1'; pendingMcu=null;
+      const presetIndex=rest.findIndex(token=>token.toLowerCase()==='preset');
+      if(presetIndex>=0){
+        if(String(rest[presetIndex+1]||'').toLowerCase()!=='mcu'||!/^\d+$/.test(String(rest[presetIndex+2]||''))) throw new Error(`Line ${lineIndex+1}: invalid scanrel preset.`);
+        mcu=rest[presetIndex+2]; rest=rest.slice(0,presetIndex);
+      }
+      if(rest.length!==4) throw new Error(`Line ${lineIndex+1}: scanrel requires target initial final step.`);
+      const target=rest[0].toLowerCase(),value=rest.slice(1).map(x=>spiceTokenToTime(x,loopStack)).join(' ');
+      if(!V42_MOTOR_TARGETS.includes(target) || target==='hkle') throw new Error(`Line ${lineIndex+1}: unsupported scanrel target ${target}.`);
+      rows.push({command:`scanrel:${target}`,ranges:{[target==='e'?'hw':target]:value},mcu,fixed:false}); continue;
+    }
+    throw new Error(`Line ${lineIndex+1}: unsupported SPICE command.`);
+  }
+  if(loopStack.length) throw new Error('SPICE macro ends before all loops are closed.');
+  if(!rows.length) throw new Error('No supported SPICE commands were found.');
+  return rows;
+};
+
+initializeScriptUI = function(){
+  const area=$('scriptSpiceText'),backdrop=$('scriptSpiceBackdrop'),rowsHost=$('timeScanRows');
+  v42LoadAset();
+  v42RefreshTargetSelects();
+  const asetHost=$('scriptAsetList');
+  const refreshAset=()=>{
+    const check=v42ValidateAsetRows();
+    v42SaveAset(); v42RefreshTargetSelects(); validateAllTimeScanRows({showMessage:true});
+    if(!check.ok) scriptMessage(check.message,true);
+    if(v42SpiceAutoLinked){
+      const text=generateSpiceMacroFromTimeEstimate(); if(area) area.value=text; v42RenderSpiceBackdrop();
+      try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
+    }
+  };
+  asetHost?.addEventListener('input',event=>{
+    if(event.target.closest?.('[data-aset-target],[data-aset-template]')) refreshAset();
+  });
+  asetHost?.addEventListener('change',event=>{
+    if(event.target.closest?.('[data-aset-target],[data-aset-template]')) refreshAset();
+  });
+  asetHost?.addEventListener('click',event=>{
+    const remove=event.target.closest?.('.script-aset-remove'); if(!remove) return;
+    const row=remove.closest('[data-aset-row]'); const key=v42AsetRowKey(row);
+    row?.remove(); v42RenumberAsetRows(); refreshAset(); scriptMessage(`Removed ASET ${key||''}. Commands that used it must choose another Target.`);
+  });
+  $('scriptAsetAdd')?.addEventListener('click',v42PromptAddAset);
+  try{ if(area) area.value=localStorage.getItem(SPICE_SCRIPT_STORAGE_KEY)||''; }catch(_e){}
+  area?.addEventListener('scroll',()=>{ if(backdrop){backdrop.scrollTop=area.scrollTop;backdrop.scrollLeft=area.scrollLeft;} });
+  area?.addEventListener('input',()=>{
+    v42SpiceAutoLinked=false; v42SpiceLineMap=[]; v42SpiceErrorLines=new Set(); v42SpiceWarningLines=new Set(); v42RenderSpiceBackdrop();
+    try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,area.value);}catch(_e){} scriptMessage('');
+  });
+  const refreshLinked=()=>{
+    if(!v42SpiceAutoLinked || !area) return;
+    const text=generateSpiceMacroFromTimeEstimate(); area.value=text; v42RenderSpiceBackdrop();
+    try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
+  };
+  rowsHost?.addEventListener('input',()=>queueMicrotask(refreshLinked));
+  rowsHost?.addEventListener('change',()=>queueMicrotask(refreshLinked));
+  if(rowsHost && typeof MutationObserver!=='undefined'){
+    v42SpiceMutationObserver?.disconnect();
+    v42SpiceMutationObserver=new MutationObserver(()=>queueMicrotask(refreshLinked));
+    v42SpiceMutationObserver.observe(rowsHost,{childList:true});
+  }
+  $('scriptToSpice')?.addEventListener('click',()=>{
+    try{
+      v42SpiceAutoLinked=true;
+      const text=generateSpiceMacroFromTimeEstimate(); area.value=text; v42RenderSpiceBackdrop();
+      try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
+      if(v42LastSpiceValidation?.ok) scriptMessage('Converted Time estimate commands to SPICE. ASET variables were expanded to their device list.');
+      else scriptMessage(`SPICE generated with ${v42LastSpiceValidation?.errors?.length||0} highlighted command error(s).`,true);
+    }catch(err){ scriptMessage(err?.message||String(err),true); }
+  });
+  $('scriptToCommands')?.addEventListener('click',()=>{
+    try{
+      const rows=parseSpiceMacroToRows(area?.value||''); replaceTimeEstimateRows(rows); v42SpiceAutoLinked=true;
+      const text=generateSpiceMacroFromTimeEstimate(); if(area) area.value=text; v42RenderSpiceBackdrop();
+      try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
+      scriptMessage(`Converted ${rows.length} SPICE command row${rows.length===1?'':'s'} to Time estimate commands.`);
+    }catch(err){ scriptMessage(err?.message||String(err),true); }
+  });
+  $('scriptCopySpice')?.addEventListener('click',copySpiceScript);
+  v42RenderSpiceBackdrop();
+};
 
 // ==================== Resolution calculator ====================
 let scanResults=[];

@@ -139,11 +139,12 @@
           <div id="geometryPlot" class="qe-plot geometry"></div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div class="time-range-help">Use spaces only. Scan commands: enter one fixed value or initial final step (e.g. 1 2 0.2). Adding a loop automatically creates its paired endloop; nested loops are labeled loop1, loop2, ... and can be referenced in Details with the same name. Commands inside loops are indented. If all Details entries are fixed, t (s) is automatically 0. temp / field: enter one target value or loopN. wait: enter the wait time directly in t (s). Fractions are accepted in Details.</div>
+          <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel); Target selects the motor or logical variable. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. loop automatically creates its paired endloop and loopN references remain available in Details. wait is a control command and uses t (s) directly. Fractions are accepted in Details.</div>
           <div class="time-scan-table-wrap">
             <div class="time-scan-table">
               <div class="time-scan-header">Index</div>
               <div class="time-scan-header">Command</div>
+              <div class="time-scan-header">Target</div>
               <div class="time-scan-header">Details</div>
               <div class="time-scan-header">t (s)</div>
               <div class="time-scan-header time-fix-header"><span>Fix</span><input id="timeFixAll" type="checkbox" aria-label="Fix selected scans or all scans"></div>
@@ -385,22 +386,28 @@
   <div id="scriptPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabScript">
     <section class="calc-card script-card">
       <div class="script-workspace">
-        <div class="script-command-pane">
-          <div class="script-pane-heading">Time estimate commands</div>
-          <div id="scriptTimeMount" class="script-time-mount"></div>
+        <div class="script-aset-pane">
+          <div class="script-pane-heading script-aset-heading"><span>ASET</span><button id="scriptAsetAdd" type="button">+ Add ASET</button></div>
+          <div class="script-aset-help">Each ASET is a SPICE command template. Use <code>value</code> where the Time estimate Detail value should be inserted. Separate multiple SPICE commands with commas.</div>
+          <div class="script-aset-table-header"><span>Index</span><span>Target</span><span>SPICE template</span><span></span></div>
+          <div id="scriptAsetList" class="script-aset-list"></div>
         </div>
-        <div class="script-transfer-controls" aria-label="Convert commands">
-          <button id="scriptToSpice" class="script-transfer-button" type="button" title="Convert Time estimate commands to SPICE" aria-label="Convert Time estimate commands to SPICE"><span class="script-transfer-wide">→ SPICE</span><span class="script-transfer-narrow">To SPICE ↓</span></button>
-          <button id="scriptToCommands" class="script-transfer-button" type="button" title="Convert SPICE to Time estimate commands" aria-label="Convert SPICE to Time estimate commands"><span class="script-transfer-wide">← Commands</span><span class="script-transfer-narrow">To Commands ↑</span></button>
+        <div class="script-command-pane">
+          <div class="script-pane-heading script-command-heading"><span>Time estimate commands</span><button id="scriptToSpice" type="button" title="Convert Time estimate commands to SPICE">→ SPICE</button></div>
+          <div id="scriptTimeMount" class="script-time-mount"></div>
         </div>
         <div class="script-spice-pane">
           <div class="script-pane-heading script-spice-heading">
             <span>SPICE macro</span>
             <div class="script-actions">
-              <button id="scriptCopySpice" type="button">Copy to clipboard</button>
+              <button id="scriptToCommands" type="button" title="Convert SPICE to Time estimate commands">← Commands</button>
+              <button id="scriptCopySpice" type="button">Copy</button>
             </div>
           </div>
-          <textarea id="scriptSpiceText" class="script-spice-text" spellcheck="false" aria-label="SPICE macro"></textarea>
+          <div class="script-spice-editor">
+            <pre id="scriptSpiceBackdrop" class="script-spice-backdrop" aria-hidden="true"></pre>
+            <textarea id="scriptSpiceText" class="script-spice-text" spellcheck="false" aria-label="SPICE macro"></textarea>
+          </div>
           <div id="scriptMessage" class="script-message" aria-live="polite"></div>
         </div>
       </div>

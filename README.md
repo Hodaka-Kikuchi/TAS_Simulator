@@ -110,3 +110,25 @@ This ZIP is a PATCH. Overwrite the corresponding top-level files in the existing
 ## v40 patch notes
 - `br` uses one compact `HKL` Detail field (`1 0 0`, `loop1 loop1 0`) and converts reversibly to/from `br h k l`.
 - Time estimate / Script performs a non-blocking instrument S2 upper-limit check for absolute `s2`, `th2th`, `QE`, `HKLE`, and `br` commands, including enclosing loop expansion. `rel s2` is checked from the most recent preceding `br` position, with the current scattering-sense sign and every relative scan point applied. Exceeding commands are highlighted and reported without blocking time calculation or SPICE conversion.
+
+## v42 Script command / ASET rework
+- Time estimate command rows are split into **Command** and **Target**. Motion commands are `drive`, `driverel`, `scan`, and `scanrel`; control rows remain `wait`, `loopN`, and paired `endloopN`.
+- Target choices are `Ei`, `Ef`, `E`, `S1`, `S2`, `HKLE`, `field`, and `temperature`.
+- Script now uses a three-pane **ASET / Time estimate commands / SPICE macro** workspace at approximately 1:2:1 width on desktop, stacking responsively on narrower screens.
+- ASET is a list, not tabs. `temperature` defaults to the SPICE device list `vti sample`, while `field` defaults to `field`; lists are editable and persisted locally.
+- Logical ASET variables expand during SPICE generation. For example, `drive temperature 1` produces `drive vti 1` and `drive sample 1` with the default ASET definition.
+- `drive Ef 3.5` exports as `ef 3.5`; `drive E 5` exports as `drive e 5`. HKLE uses `drive h ... k ... l ... e ...` or the corresponding multi-variable scan form.
+- SPICE loop bodies are no longer indented. `loop` / `endloop` lines and enclosed commands all begin at column 1.
+- Command validation errors are mirrored in the SPICE pane. When SPICE is generated from commands, invalid rows become highlighted `# ERROR Command N: ...` lines; non-blocking S2-limit warnings use a separate warning highlight.
+- SPICE-to-command conversion understands the new Ei/Ef/E/S1/S2/HKLE model and recombines generated multi-device ASET drives back into one logical `temperature`/`field` command when possible.
+- Legacy saved rows are migrated where unambiguous. Legacy `br` becomes fixed HKLE with E=0. Legacy QE cannot be represented without Q in the new target list and is deliberately flagged for manual recreation instead of silently changing its meaning.
+
+## v43 Script ASET and drag/drop endpoints
+- Script ASET entries can be added by the user. Click **+ Add ASET**, name the logical variable, then enter its space-separated SPICE device list. The new logical variable appears immediately in the Time estimate Target selector and is persisted locally.
+- Built-in `temperature` and `field` ASET entries remain fixed by name; user-created ASET entries can be removed.
+- While dragging Time estimate commands, explicit drop zones appear above Index 1 and below the final Index, so rows can be moved to the absolute beginning or end of the command sequence.
+
+## v44 ASET templates
+Script ASET is now an indexed inline table rather than a prompt-driven device alias list. Each row has a Target and a SPICE template. Use the literal word `value` wherever the Time estimate Details value should be substituted. Separate multiple SPICE commands with commas, semicolons, or line breaks. A template with no `value` is a fixed action and therefore shows no Details entry when selected.
+
+Default templates demonstrate the intended model: `temperature` expands to `drive vti value, drive sample value`; `field` expands to `drive field value, drive ramp 1`; and `field0` expands to `drive zero 1`. Custom ASET rows are added directly at the bottom of the list and become available as Time estimate Targets after their Target/template fields are valid.

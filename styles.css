@@ -426,8 +426,8 @@ textarea:disabled {
 /* Use the available Calculation-point width instead of leaving short
    fixed-width h/k/l/hbar-omega entry boxes surrounded by empty space. */
 #resolutionCalculation #singleInputs{
-  grid-template-columns:repeat(5,minmax(0,1fr));
-  gap:4px;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
   align-items:end;
 }
 #resolutionCalculation #singleInputs input[type=number]{
@@ -436,9 +436,9 @@ textarea:disabled {
   max-width:none;
 }
 #resolutionCalculation #singleInputs #calc{
-  grid-column:auto;
+  grid-column:1 / -1;
   width:100%;
-  padding:4px 5px;
+  padding:7px 10px;
 }
 
 /* Scan entries should also fill their grid cells consistently. */
@@ -471,7 +471,7 @@ textarea:disabled {
   #resolutionInstrumentDetails{grid-template-columns:1fr}
 }
 @media(max-width:600px){
-  #resolutionCalculation #singleInputs{grid-template-columns:repeat(5,minmax(0,1fr))}
+  #resolutionCalculation #singleInputs{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 /* v16: explicit U/V swap control. The entered order defines handedness, so this
@@ -1549,3 +1549,156 @@ main{
   border-radius:4px;
   padding:6px 8px;
 }
+
+/* v42 Script command model: ASET / commands / SPICE = ~1:2:1. */
+.time-scan-table{
+  grid-template-columns:42px 92px 94px minmax(0,1fr) 72px 44px!important;
+}
+.time-internal-command{display:none!important}
+.time-command-cell,.time-target-cell{min-width:0}
+.time-command-cell select,.time-target-cell select{width:100%;min-width:0;max-width:none}
+.time-target-cell select:disabled{background:#f4f4f4;color:#777}
+
+.script-workspace{
+  display:grid;
+  grid-template-columns:minmax(180px,1fr) minmax(440px,2fr) minmax(220px,1fr)!important;
+  gap:8px;
+  align-items:stretch;
+  min-width:0;
+}
+.script-aset-pane,.script-command-pane,.script-spice-pane{
+  border:1px solid #ddd;
+  border-radius:8px;
+  padding:9px;
+  min-width:0;
+  background:#fff;
+  overflow:hidden;
+}
+.script-command-heading,.script-spice-heading{justify-content:space-between;flex-wrap:nowrap}
+.script-command-heading button,.script-actions button{width:auto;white-space:nowrap}
+.script-aset-help{font-size:12px;line-height:1.35;color:#666;margin:-2px 0 8px}
+.script-aset-list{display:flex;flex-direction:column;gap:7px}
+.script-aset-item{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:3px;
+  border:1px solid #e2e2e2;
+  border-radius:6px;
+  padding:6px;
+  background:#fafafa;
+}
+.script-aset-item>span{font-size:12px;font-weight:650}
+.script-aset-item input{width:100%;min-width:0;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+.script-spice-editor{position:relative;width:100%;height:620px;min-height:260px;resize:vertical;overflow:hidden}
+.script-spice-backdrop,.script-spice-text{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  margin:0;
+  padding:10px;
+  border:1px solid #bbb;
+  border-radius:6px;
+  font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  white-space:pre;
+  overflow:auto;
+  tab-size:2;
+}
+.script-spice-backdrop{
+  pointer-events:none;
+  color:transparent;
+  background:#fff;
+  z-index:0;
+}
+.script-spice-text{
+  resize:none;
+  background:transparent;
+  color:#222;
+  caret-color:#222;
+  z-index:1;
+}
+.script-spice-backdrop .spice-backdrop-line{display:block;min-height:1.5em;color:transparent}
+.script-spice-backdrop .spice-backdrop-line.spice-line-error{background:rgba(213,73,48,.22)}
+.script-spice-backdrop .spice-backdrop-line.spice-line-warning{background:rgba(225,170,20,.20)}
+.script-spice-backdrop .spice-backdrop-line.spice-line-error::selection,
+.script-spice-backdrop .spice-backdrop-line.spice-line-warning::selection{background:transparent}
+
+@media(max-width:1180px){
+  .script-workspace{grid-template-columns:1fr!important}
+  .script-spice-editor{height:440px}
+  .script-aset-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .time-scan-table{grid-template-columns:38px 82px 84px minmax(150px,1fr) 64px 40px!important}
+  .time-scan-table-wrap{overflow-x:auto}
+  .script-aset-list{grid-template-columns:1fr}
+}
+
+/* v43: user-extensible ASET list and explicit first/last drag targets. */
+.script-aset-heading{justify-content:space-between;align-items:center}
+.script-aset-heading button{width:auto;white-space:nowrap}
+.script-aset-title{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
+.script-aset-title>span{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.script-aset-remove{width:auto;padding:2px 5px;font-size:11px;line-height:1.2}
+.time-edge-dropzone{
+  grid-column:1 / -1;
+  display:none;
+  width:100%;
+  min-width:0;
+  height:0;
+  margin:0;
+  border-radius:4px;
+  transition:height .12s ease,margin .12s ease,background .12s ease;
+}
+.time-scan-table-wrap.time-dragging .time-edge-dropzone{
+  display:block;
+  height:16px;
+  margin:2px 0;
+  background:rgba(59,130,246,.08);
+  outline:1px dashed rgba(59,130,246,.45);
+}
+.time-scan-table-wrap.time-dragging .time-edge-dropzone.time-drop-active{
+  height:24px;
+  background:rgba(59,130,246,.18);
+  outline:2px solid #3b82f6;
+}
+
+/* v44: ASET rows are edited directly as Index / Target / SPICE template. */
+.time-scan-table{
+  grid-template-columns:42px 116px 94px minmax(120px,1fr) 68px 44px!important;
+}
+.script-aset-list{display:flex!important;flex-direction:column;gap:4px}
+.script-aset-table-header,.script-aset-item{
+  display:grid;
+  grid-template-columns:34px minmax(68px,.7fr) minmax(120px,1.6fr) 26px;
+  gap:4px;
+  align-items:center;
+}
+.script-aset-table-header{
+  font-size:11px;
+  font-weight:650;
+  color:#555;
+  padding:0 2px 3px;
+  border-bottom:1px solid #ddd;
+  margin-bottom:4px;
+}
+.script-aset-item{
+  border:0;
+  border-radius:0;
+  padding:0;
+  background:transparent;
+}
+.script-aset-index{font-size:12px;text-align:center;color:#555;font-variant-numeric:tabular-nums}
+.script-aset-item input{
+  width:100%;min-width:0;
+  font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+.script-aset-item [data-aset-target]{font-family:inherit}
+.script-aset-remove{width:26px;height:26px;padding:0;font-size:13px;line-height:1}
+@media(max-width:760px){
+  .time-scan-table{grid-template-columns:38px 100px 82px minmax(130px,1fr) 60px 40px!important}
+  .script-aset-table-header,.script-aset-item{grid-template-columns:32px minmax(80px,.8fr) minmax(180px,1.7fr) 26px}
+  .script-aset-pane{overflow-x:auto}
+  .script-aset-table-header,.script-aset-list{min-width:380px}
+}
+.script-aset-item input.invalid{border-color:#c33;background:#fff4f4}
