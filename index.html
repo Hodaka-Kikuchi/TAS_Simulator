@@ -19,7 +19,7 @@
     <label>Energy mode<select id="energyMode"><option>Ei fixed</option><option selected>Ef fixed</option></select></label>
     <label id="energyLabel">Ef (meV)<input id="energy" type="number" value="14.7" step="0.1"></label>
     <label id="geometryRow">Geometry<select id="geometry"><option>W</option><option>anti-W</option></select></label>
-    <label id="senseRow">Sign<select id="sense"><option>+-+</option><option selected>-+-</option></select></label>
+    <label id="senseRow">Sign<select id="sense"><option>+++</option><option>+-+</option><option selected>-+-</option></select></label>
   </div>
   <div class="grid2">
     <label class="checkbox-label"><input id="lambdaHalf" type="checkbox"><span>λ/2 (range simulation)</span></label>
@@ -78,6 +78,7 @@
     <h3>Sample orientation</h3>
     <label>Orientation reference<select id="orientationReference"><option value="perpU" selected>k<sub>i</sub> ⟂ U</option><option value="perpV">k<sub>i</sub> ⟂ V</option><option value="parallelU">k<sub>i</sub> ∥ U</option><option value="parallelV">k<sub>i</sub> ∥ V</option><option value="bragg">Bragg peak position</option></select></label>
     <div id="braggReferenceInputs" class="grid4 hidden"><label>h<input id="refh" type="number" value="1" step="0.1"></label><label>k<input id="refk" type="number" value="0" step="0.1"></label><label>l<input id="refl" type="number" value="0" step="0.1"></label><label>S1 (deg)<input id="refs1" type="number" value="0" step="0.1"></label></div>
+    <div id="braggPlaneWarning" class="orientation-plane-warning hidden" role="status" aria-live="polite"></div>
   </div>
   <h3>Background scattering</h3>
   <input id="backgroundCount" type="hidden" value="1">
@@ -117,7 +118,25 @@
 
   <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
     <div id="singleMain">
-      <div class="chart-grid"><div class="qe-main-plot-column"><div id="singlePlot" class="qe-plot"></div><div id="powderPlot" class="qe-plot powder hidden"></div><div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div></div><div class="geometry-card">
+      <div class="chart-grid"><div class="qe-main-plot-column">
+        <div class="geometry-card-tabs qe-map-tabs" role="tablist" aria-label="Q-E map view">
+          <button id="qeMapTabConstant" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="qeConstantMapPane">Constant E map</button>
+          <button id="qeMapTabVector" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="qeVectorMapPane">Q vector–E map</button>
+        </div>
+        <div class="qe-map-toolbar"><label>Q unit<select id="qeMapUnit"><option value="ainv">Å⁻¹</option><option value="rlu">r.l.u.</option></select></label></div>
+        <div id="qeConstantMapPane" class="qe-map-pane" role="tabpanel" aria-labelledby="qeMapTabConstant">
+          <div id="singlePlot" class="qe-plot"></div><div id="powderPlot" class="qe-plot powder hidden"></div>
+          <div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div>
+        </div>
+        <div id="qeVectorMapPane" class="qe-map-pane hidden" role="tabpanel" aria-labelledby="qeMapTabVector">
+          <div class="qe-vector-inputs">
+            <div class="qe-vector-point"><strong>HKL 1</strong><label>H<input id="qeVecH0" type="number" value="-1" step="0.1"></label><label>K<input id="qeVecK0" type="number" value="-1" step="0.1"></label><label>L<input id="qeVecL0" type="number" value="0" step="0.1"></label></div>
+            <div class="qe-vector-point"><strong>HKL 2</strong><label>H<input id="qeVecH1" type="number" value="1" step="0.1"></label><label>K<input id="qeVecK1" type="number" value="-2" step="0.1"></label><label>L<input id="qeVecL1" type="number" value="0" step="0.1"></label></div>
+          </div>
+          <div id="qeVectorPlot" class="qe-plot"></div>
+          <div id="qeVectorMessage" class="time-estimate-message" aria-live="polite"></div>
+        </div>
+      </div><div class="geometry-card">
         <div class="geometry-card-tabs" role="tablist" aria-label="Angle calculation and time estimate">
           <button id="geometryTabAngles" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="geometryAnglesPane">Angle calculation & TAS geometry</button>
           <button id="geometryTabTime" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="geometryTimePane">Time estimate</button>
@@ -139,14 +158,18 @@
           <div id="geometryPlot" class="qe-plot geometry"></div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count and wait use t (s) directly. Fractions are accepted in numeric Details.</div>
+          <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count uses MCU; wait remains in seconds. Scan/count MCU values are converted to real time using the MCU setting below. Fractions are accepted in numeric Details.</div>
+          <div class="time-estimate-settings" aria-label="Time estimate settings">
+            <label><span>1 MCU =</span><span class="time-setting-entry"><input id="timeMcuSecondsPerUnit" type="number" min="0.000001" step="0.001" value="1" inputmode="decimal"><span>s</span></span></label>
+            <label><span>Movement time</span><span class="time-setting-entry"><input id="timeMovementPercent" type="number" min="0" step="0.1" value="1" inputmode="decimal"><span>%</span></span></label>
+          </div>
           <div class="time-scan-table-wrap">
             <div class="time-scan-table">
               <div class="time-scan-header">Index</div>
               <div class="time-scan-header">Command</div>
               <div class="time-scan-header">Target</div>
               <div class="time-scan-header">Details</div>
-              <div class="time-scan-header">t (s)</div>
+              <div class="time-scan-header">MCU</div>
               <div class="time-scan-header time-fix-header"><span>Fix</span><input id="timeFixAll" type="checkbox" aria-label="Fix selected scans or all scans"></div>
               <div id="timeScanRows" class="time-scan-rows"></div>
             </div>
@@ -158,7 +181,7 @@
           </div>
 
           <div class="time-mcu-help">
-            <strong>Calc MCU:</strong> Uses t (s) of ranged scan commands as relative weights and rescales only unfixed scan times to fit the Scan start–finish time. Loop repetitions are included in the weighting. Fixed-Details commands use t (s) = 0; wait is unchanged. Adjusted t (s) values are whole seconds and are truncated downward.
+            <strong>Calc MCU:</strong> Scan and count durations use the MCU value above together with the configured seconds per MCU. Ranged scan MCU values are used as relative weights and only unfixed scans are rescaled to fit the Scan start–finish time. Loop repetitions and Movement time are included. Fixed-Details commands use MCU = 0; wait remains in seconds. Adjusted MCU values are whole numbers and are truncated downward.
           </div>
 
           <div class="time-estimate-controls">
@@ -388,7 +411,7 @@
       <div class="script-workspace">
         <div class="script-aset-pane">
           <div class="script-pane-heading script-aset-heading"><span>ASET</span><button id="scriptAsetAdd" type="button">+ Add ASET</button></div>
-          <div class="script-aset-help">Each ASET is a SPICE command template. Use <code>&lt;value&gt;</code> for one-value Details and <code>&lt;range&gt;</code> for initial/final/step Details. Repeat placeholders to create multiple Detail boxes. For ASET lines beginning with <code>scan</code> or <code>scanrel</code>, <code>preset mcu</code> is added automatically from that command row's t (s). Separate commands with commas or line breaks.</div>
+          <div class="script-aset-help">Each ASET is a SPICE command template. Use <code>&lt;value&gt;</code> for one-value Details and <code>&lt;range&gt;</code> for initial/final/step Details. Repeat placeholders to create multiple Detail boxes. For ASET lines beginning with <code>scan</code> or <code>scanrel</code>, <code>preset mcu</code> is added automatically from that command row's MCU value. Separate commands with commas or line breaks.</div>
           <div class="script-aset-table-header"><span>Index</span><span>Target</span><span>SPICE template</span><span></span></div>
           <div id="scriptAsetList" class="script-aset-list"></div>
         </div>

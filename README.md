@@ -177,3 +177,65 @@ ASET templates now use only `<value>` and `<range>`. Scan/scanrel ASET lines aut
 - The Script Command selector includes `scantitle`. Its Details field is free text and may reference enclosing loops as `loop1`, `loop2`, etc.; these become `%i`, `%j`, etc. in SPICE. Spaces around the loop reference are not required (`T=loop1`, `T= loop1`, and `T = loop1 ,` are all supported).
 - `br` uses one `HKL` Details entry (`1 0 0`, `1 loop1 0`, etc.) rather than separate H/K/L boxes.
 - Built-in Target menus now avoid invalid operation/target combinations: `QE`/`th2th` appear only for `scan`, `br` only for `drive`, and relative `HKLE` is omitted.
+
+## v57 Time estimate / SPICE diagnostics
+- Time estimate uses **MCU** as the scan/count timing entry. Configure the physical conversion with **1 MCU = ... s** above the command table. `wait` remains measured in seconds because SPICE `wait` is a time delay rather than an MCU preset.
+- **Movement time (%)** adds a configurable overhead to the total estimate (default 1%). Calc finish includes this overhead, and Calc MCU compensates for it when fitting a requested finish time.
+- Both timing settings are stored with the Time estimate state and restored on reload.
+- SPICE -> Commands converts `%i`, `%j`, etc. back to their enclosing `loop1`, `loop2`, etc., including embedded forms such as `T=%i` in `scantitle`.
+- SPICE validation keeps macro text intact wherever possible. Invalid/warning lines are highlighted by line number and the detailed diagnostic is displayed below the editor instead of inserting `# ERROR ...` into the macro body.
+
+## v58 Time estimate settings layout
+The MCU conversion and movement-time controls are now shown as two separate white inline boxes above the command table.
+
+## v59 Q-E map views
+The Q-E Range plot area now has two sub-tabs: **Constant E map** (the existing reciprocal-space constant-energy view) and **Q vector–E map**. The latter accepts two HKL points and plots accessibility versus energy transfer along the straight line through those points. Single-crystal Q axes can be switched between Å⁻¹ and r.l.u.; r.l.u. uses the current scattering-plane U/V basis.
+
+
+## v60 Q vector–E map readability
+The Q vector–E horizontal axis follows the line `HKL1 + t(HKL2-HKL1)`. Integer path positions are labeled directly with extrapolated HKL coordinates, while the selected Å⁻¹ / r.l.u. unit controls path spacing. Dark-angle exclusions are shown as colored overlays rather than blank holes, and Q-E plot grids/frames are more visible on white backgrounds.
+
+### v61 Q-vector map refinements
+The Q-unit selector is now part of the Constant E map controls and is hidden on the Q vector–E tab. Q vector–E uses the HKL line parameter directly and labels integer-HKL points found along the selected segment, including intermediate points.
+
+### v62 Q vector–E presentation
+Q vector–E uses the same plot header as Constant E. HKL 1 / HKL 2 endpoint labels are positioned above the plot frame and aligned with their reference lines.
+
+
+### v63
+Q vector–E map now includes an Accessible Q legend entry, improved title/HKL-label spacing, and a taller default plot.
+
+## v65 sign-label correction
+- Added `+++` as an Instrument configuration Sign option.
+- `+++` uses the calculation and drawing behavior that was previously exposed as `+-+`.
+- `-+-` remains unchanged; the new `+-+` slot is reserved for later implementation.
+- Instrument JSON sign values are used as written; there is no automatic `+-+` to `+++` migration.
+- No Sample-orientation functionality was removed. `Bragg peak position` still includes h/k/l and observed S1.
+
+
+## v66 sign conventions
+- `+++` is the former application `+-+` behavior, including Angle calculation and TAS geometry.
+- `+-+` is now a distinct native branch based on the supplied reference implementation; S1 uses clockwise-positive convention (`c2Sign=+1`).
+- `-+-` is unchanged.
+
+## v68
+- Restored validated +++ and -+- behavior to the v66 implementation.
+- Fixed the Angle calculation regression `uiSense is not defined`.
+- Pure +-+ uses clockwise-positive S1 consistently; in a hexagonal HK0 test, 100 at S1=0 deg gives 010 at S1=+60 deg.
+- JSON files are unchanged.
+
+## v69
+- Pure `+-+` TAS Geometry U/V arrows now follow clockwise-positive S1, matching its Dark-angle rotation. `+++` and `-+-` are unchanged.
+
+## v70
+- Pure `+-+` HODACA Angle calculation now uses positive S2 and the corresponding detector-side Q_lab convention, while positive S1 remains clockwise.
+- `+++` and `-+-` behavior is unchanged from v69.
+
+## v71
+Pure `+-+`: S2 is displayed positive and positive S2 rotates clockwise in TAS Geometry. `+++` and `-+-` remain unchanged.
+
+## v72
+- Sample orientation > Bragg peak position now warns when its reference HKL is outside the current U-V scattering plane. This is UI validation only; numerical calculation branches are unchanged.
+
+## v73 reachability diagnostics
+Script / Time estimate now checks motion points against the current scattering plane, scattering-triangle condition, S2 minimum/maximum, and (for directional HKLE/br targets) the existing Dark-angle masks. Angle calculation & TAS geometry also displays ki/kf/fixed Dark-angle block warnings for the current point. This is validation/display logic only; the underlying TAS/Q-E/Dark-angle calculations are unchanged.

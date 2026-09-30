@@ -1889,3 +1889,154 @@ main{
   .script-workspace,.script-workspace.aset-collapsed{grid-template-columns:1fr!important}
   .script-workspace.aset-collapsed .script-aset-pane{display:none!important}
 }
+
+/* v57: explicit MCU conversion and movement-overhead controls. */
+.time-estimate-settings{
+  display:flex;
+  align-items:end;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:8px 0 9px;
+  padding:7px 8px;
+  border:1px solid #ddd;
+  border-radius:6px;
+  background:#fafafa;
+}
+.time-estimate-settings>label{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin:0;
+  font-size:13px;
+  white-space:nowrap;
+}
+.time-setting-entry{display:inline-flex;align-items:center;gap:4px}
+.time-setting-entry input{width:82px;min-width:0;padding:4px 5px}
+.script-message{white-space:pre-wrap}
+@media(max-width:760px){
+  .time-estimate-settings{display:grid;grid-template-columns:1fr 1fr}
+  .time-estimate-settings>label{justify-content:space-between}
+}
+.script-message.warning-text{color:#735800;background:#fff9df;border:1px solid #e4cf75;border-radius:4px;padding:6px 8px}
+
+/* v58: clearer Time estimate settings — two independent white inline boxes. */
+.time-estimate-settings{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:8px 0 9px;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+}
+.time-estimate-settings>label{
+  display:inline-flex;
+  flex-direction:row;
+  align-items:center;
+  justify-content:flex-start;
+  gap:6px;
+  margin:0;
+  padding:7px 9px;
+  border:1px solid #d6d6d6;
+  border-radius:6px;
+  background:#fff;
+  font-size:13px;
+  white-space:nowrap;
+}
+.time-estimate-settings .time-setting-entry{
+  display:inline-flex;
+  flex-direction:row;
+  align-items:center;
+  gap:4px;
+  white-space:nowrap;
+}
+.time-estimate-settings .time-setting-entry input{
+  width:82px;
+  min-width:0;
+  padding:4px 5px;
+}
+@media(max-width:760px){
+  .time-estimate-settings{
+    display:flex;
+    flex-wrap:wrap;
+  }
+  .time-estimate-settings>label{
+    justify-content:flex-start;
+  }
+}
+
+/* v59 Q-E map tabs and Q-vector map controls */
+.qe-map-tabs{margin:0;border:1px solid #ddd;border-bottom:0;border-radius:8px 8px 0 0;overflow:hidden}
+.qe-map-toolbar{display:flex;justify-content:flex-end;align-items:center;padding:6px 8px;border:1px solid #ddd;border-top:0;background:#fff}
+.qe-map-toolbar label{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600}
+.qe-map-toolbar select{width:auto;min-width:82px;padding:4px 6px}
+.qe-map-pane{min-width:0}
+.qe-vector-inputs{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;border:1px solid #ddd;border-top:0;background:#fff}
+.qe-vector-point{display:grid;grid-template-columns:auto repeat(3,minmax(64px,1fr));align-items:end;gap:6px;padding:7px 8px;border:1px solid #ddd;border-radius:7px;background:#fff}
+.qe-vector-point strong{align-self:center;white-space:nowrap;font-size:13px}
+.qe-vector-point label{font-size:12px}
+.qe-vector-point input{width:100%;min-width:0;padding:4px 5px}
+#qeVectorMessage{padding:4px 8px 8px}
+@media(max-width:760px){.qe-vector-inputs{grid-template-columns:1fr}.qe-vector-point{grid-template-columns:auto repeat(3,1fr)}}
+
+/* v60: clearer Q-E plot framing. Plotly also draws a mirrored axis frame;
+   this outer border keeps the graph area visible against the white UI. */
+.qe-map-pane .qe-plot{
+  border:1px solid #b8bec5;
+  border-radius:4px;
+  background:#fff;
+  box-sizing:border-box;
+}
+
+/* v61: Constant-E-only Q-unit control sits beside the nuclear-label toggle. */
+.nuclear-label-control{
+  gap:16px;
+  flex-wrap:wrap;
+  padding:6px 20px 6px;
+  background:#fff;
+}
+.nuclear-label-control .qe-map-toolbar{
+  order:-1;
+  padding:0;
+  border:0;
+  background:#fff;
+  justify-content:flex-start;
+}
+.nuclear-label-control .qe-map-toolbar label{
+  margin:0;
+  white-space:nowrap;
+}
+
+
+/* v63: Q-vector map legend, spacing, and taller plot. */
+#qeVectorPlot.qe-plot{
+  height:744px;
+  min-height:744px;
+}
+@media(max-width:1050px){
+  #qeVectorPlot.qe-plot{
+    height:672px;
+    min-height:672px;
+  }
+}
+@media(max-width:760px){
+  #qeVectorPlot.qe-plot{
+    height:620px;
+    min-height:620px;
+  }
+}
+
+
+/* v72: non-blocking warning when a Bragg orientation reference is outside U-V. */
+.orientation-plane-warning{
+  margin-top:6px;
+  padding:6px 8px;
+  border:1px solid #d6a84d;
+  border-radius:5px;
+  background:#fff8df;
+  font-size:12px;
+  line-height:1.35;
+  color:#6a4a00;
+}

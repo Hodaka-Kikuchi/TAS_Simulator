@@ -3559,28 +3559,6 @@ function qeGeometryAngles(cache, senseOverride=null, uiSenseOverride=null){
   return {calc,angles,Ei,Ef,ki:Math.sqrt(Ei/2.072),kf:Math.sqrt(Ef/2.072)};
 }
 
-function qeDarkBlockWarningsForHKLE(cache,hkl,hw){
-  if(!cache?.addDark || !Array.isArray(hkl) || hkl.length!==3) return [];
-  const energy=Number(hw);
-  if(!Number.isFinite(energy) || !Array.isArray(cache.hwList) || !cache.hwList.length) return [];
-  try{
-    const q=hklToQ(cache.rl,hkl.map(Number));
-    const p=[dot(q,cache.ex),dot(q,cache.ey)];
-    if(!p.every(Number.isFinite)) return [];
-    let index=0, best=Infinity;
-    for(let i=0;i<cache.hwList.length;i++){
-      const delta=Math.abs(Number(cache.hwList[i])-energy);
-      if(delta<best){ best=delta; index=i; }
-    }
-    const blocked=(polygons)=>Array.isArray(polygons) && polygons.some(poly=>qePointInPolygon(p,poly));
-    const warnings=[];
-    if(blocked(cache.darkKI?.[index])) warnings.push('ki blocked');
-    if(blocked(cache.darkKF?.[index])) warnings.push('kf blocked');
-    if(blocked(cache.darkFixed?.[index])) warnings.push('fixed blocked');
-    return warnings;
-  }catch(_err){ return []; }
-}
-
 function renderGeometry(cache,index=0){
   const isPowder=checkedValue("sampleMode")==="powder" || !!cache?.powder;
   const i=Math.max(0,Math.min(index,Math.max(0,(cache.hwList?.length||1)-1)));
@@ -3953,13 +3931,7 @@ function renderGeometry(cache,index=0){
       const s1Display=isPowder ? 0 : a.s1;
       const angleLine=`M1=${formatAngle(-a.m1)}°, M2=${formatAngle(-a.m2)}°, S1=${formatAngle(s1Display)}°, S2=${formatAngle(s2Display)}°, A1=${formatAngle(-a.a1)}°, A2=${formatAngle(-a.a2)}°`+
         (!isPowder && a.warning?` &nbsp; | &nbsp; ${a.warning}`:"");
-      const darkWarnings=!isPowder
-        ? qeDarkBlockWarningsForHKLE(cache,[target.calc.h,target.calc.k,target.calc.l],target.calc.hw)
-        : [];
-      const darkWarningLine=darkWarnings.length
-        ? `<div class="geometry-result-line warning-text">Warning: ${darkWarnings.join(' / ')}</div>`
-        : '';
-      angleBox.innerHTML=`<div class="geometry-result-line geometry-energy-line">${energyLine}</div><div class="geometry-result-line geometry-angle-line">${angleLine}</div>${darkWarningLine}`;
+      angleBox.innerHTML=`<div class="geometry-result-line geometry-energy-line">${energyLine}</div><div class="geometry-result-line geometry-angle-line">${angleLine}</div>`;
     }else{
       angleBox.classList.add("error-text"); angleBox.textContent=`Angle calculation unavailable: ${targetError}`;
     }
@@ -6105,17 +6077,13 @@ function validateAllTimeScanRows({showMessage=false}={}){
   updateTimeLoopIndentation();
   if(!errors.length){
     const structure=ensureTimeLoopPairIds();
-    let darkCache=null;
-    if(checkedValue('sampleMode')==='single' && $('addDark')?.checked){
-      try{ darkCache=singleCache || calculateSingleCrystal(); }catch(_e){ darkCache=null; }
-    }
     for(let i=0;i<rows.length;i++){
       const result=results[i];
       if(!result?.ok || result.kind==='loop' || result.kind==='endloop') continue;
-      const rowWarnings=timeRowMotionWarnings(rows[i],result,i+1,structure,darkCache);
-      if(rowWarnings.length){
-        warnings.push(...rowWarnings);
-        setTimeScanS2LimitWarning(rows[i],true,rowWarnings.join(' / '));
+      const warning=timeRowS2LimitWarning(rows[i],result,i+1,structure);
+      if(warning){
+        warnings.push(warning);
+        setTimeScanS2LimitWarning(rows[i],true,warning);
       }
     }
   }
@@ -7258,114 +7226,48 @@ timePreviousBrS2 = function(row,index,context,structure){
   return null;
 };
 
-function timeReachabilityFromQ(q,hw){
-  const energy=timeEnergyForTransfer(hw);
-  if(!energy) return {ok:false,reason:'the selected energy transfer makes Ei or Ef non-positive'};
-  const Q=Number(q);
-  if(!(Q>=0)) return {ok:false,reason:'Q is not a valid non-negative value'};
-  const ki=Math.sqrt(energy.Ei/2.072), kf=Math.sqrt(energy.Ef/2.072);
-  const denom=2*ki*kf;
-  const cosS2=(ki*ki+kf*kf-Q*Q)/denom;
-  if(cosS2<-1-1e-10 || cosS2>1+1e-10){
-    return {ok:false,reason:'the scattering triangle cannot be formed at this Q and energy',Ei:energy.Ei,Ef:energy.Ef};
-  }
-  const s2=Math.abs(rad2deg(Math.acos(clamp(cosS2,-1,1))));
-  return {ok:true,s2,Ei:energy.Ei,Ef:energy.Ef};
-}
-
-function timeS2RangeWarning(s2,Ei,detail,index){
-  if(!Number.isFinite(s2)) return null;
-  const value=Math.abs(Number(s2));
-  const min=Math.abs(Number(num('S2min')));
-  const max=timeS2LimitAtEi(Ei);
-  if(Number.isFinite(min) && value<min-1e-8){
-    return `Command ${index}: S2=${value.toFixed(2)}° is below the instrument min ${min.toFixed(2)}° (${detail}).`;
-  }
-  if(Number.isFinite(max) && value>max+1e-8){
-    return `Command ${index}: S2=${value.toFixed(2)}° exceeds the instrument max ${max.toFixed(2)}° at Ei=${Number(Ei).toFixed(2)} meV (${detail}).`;
-  }
-  return null;
-}
-
-function timeDarkWarningForHKLE(cache,hkl,hw,index,detail){
-  if(!cache?.addDark) return null;
-  const blocks=qeDarkBlockWarningsForHKLE(cache,hkl,hw);
-  return blocks.length ? `Command ${index}: Dark angle ${blocks.join(' / ')} (${detail}).` : null;
-}
-
-function timeRowMotionWarnings(row,result,index,structure,darkCache=null){
+timeRowS2LimitWarning = function(row,result,index,structure){
   const meta=timeCommandMeta(result.command);
-  if(!['s2','th2th','qe','hkle','br'].includes(meta.target)) return [];
+  if(!['s2','hkle','br'].includes(meta.target)) return null;
   const contextResult=timeLoopContextsForRow(row,structure);
-  if(!contextResult.ok){
-    return contextResult.tooMany
-      ? [`Command ${index}: reachability check skipped because enclosing loops expand beyond 50,000 combinations.`]
-      : [];
-  }
+  if(!contextResult.ok) return contextResult.tooMany?`Command ${index}: S2 limit check skipped because enclosing loops expand beyond 50,000 combinations.`:null;
   const parsedByKey={};
   for(const input of row.querySelectorAll('[data-time-range-key]')){
     const parsed=parseTimeDetail(input.value,result.command,row);
-    if(!parsed.ok) return [];
+    if(!parsed.ok) return null;
     parsedByKey[input.dataset.timeRangeKey]=parsed;
   }
-  let rl=null;
-  if(meta.target==='hkle'||meta.target==='br'){
-    try{ rl=buildResolutionLattice().rl; }catch(_e){ return []; }
-  }
-  const points=Math.max(1,result.points||1), warnings=[];
-  const add=message=>{ if(message && !warnings.includes(message)) warnings.push(message); };
+  let rl=null; if(meta.target==='hkle'||meta.target==='br'){ try{rl=buildResolutionLattice().rl;}catch(_e){return null;} }
+  let worst=null;
+  const consider=(s2,Ei,detail)=>{
+    if(!Number.isFinite(s2)) return;
+    const incident=Number.isFinite(Ei)?Ei:timeElasticIncidentEnergy();
+    const limit=timeS2LimitAtEi(incident); if(!Number.isFinite(limit)) return;
+    const excess=Math.abs(s2)-limit;
+    if(excess>1e-8 && (!worst||excess>worst.excess)) worst={s2:Math.abs(s2),limit,Ei:incident,excess,detail};
+  };
+  const points=Math.max(1,result.points||1);
   for(const context of contextResult.contexts){
     for(let point=0;point<points;point++){
-      if(meta.target==='s2' || meta.target==='th2th'){
-        const key=meta.target==='th2th'?'th2th':'s2';
-        const value=timeDetailValueAt(parsedByKey[key],point,context);
-        if(!Number.isFinite(value)) continue;
-        if(meta.target==='s2' && (meta.op==='driverel'||meta.op==='scanrel')){
+      if(meta.target==='s2'){
+        const value=timeDetailValueAt(parsedByKey.s2,point,context);
+        if(meta.op==='driverel'||meta.op==='scanrel'){
           const base=timePreviousBrS2(row,index,context,structure);
-          if(!base) continue;
-          const finalS2=base.s2+value;
-          add(timeS2RangeWarning(finalS2,base.Ei,`previous HKLE S2=${base.s2.toFixed(2)}°, rel S2=${Number(value.toPrecision?.(6)??value)}`,index));
-        }else{
-          const Ei=timeElasticIncidentEnergy();
-          add(timeS2RangeWarning(value,Ei,`${key}=${Number(value.toPrecision?.(6)??value)}`,index));
-        }
-        continue;
+          if(base&&Number.isFinite(value)) consider(base.s2+value,base.Ei,`previous HKLE S2=${base.s2.toFixed(2)}°, rel S2=${Number(value.toPrecision?.(6)??value)}`);
+        }else consider(Math.abs(value),timeElasticIncidentEnergy(),`S2=${Number(value.toPrecision?.(6)??value)}`);
+      }else{
+        const hkl=meta.target==='br'
+          ? (parsedByKey.hkl?.tuple||[]).map(item=>resolveTimeFixedValue(item,context))
+          : ['h','k','l'].map(key=>timeDetailValueAt(parsedByKey[key],point,context));
+        const hw=meta.target==='br'?0:timeDetailValueAt(parsedByKey.hw,point,context);
+        if(hkl.length!==3 || hkl.some(v=>!Number.isFinite(v))||!Number.isFinite(hw)) continue;
+        const q=norm(hklToQ(rl,hkl));
+        const calc=timeS2MagnitudeFromQ(q,hw);
+        if(calc) consider(calc.s2,calc.Ei,`HKLE=(${hkl.map(v=>Number(v.toPrecision(6))).join(', ')}, ${Number(hw.toPrecision(6))})`);
       }
-
-      if(meta.target==='qe'){
-        const q=timeDetailValueAt(parsedByKey.q,point,context);
-        const hw=timeDetailValueAt(parsedByKey.hw,point,context);
-        if(!Number.isFinite(q)||!Number.isFinite(hw)) continue;
-        const detail=`Q=${Number(q.toPrecision(6))}, E=${Number(hw.toPrecision(6))}`;
-        const reach=timeReachabilityFromQ(q,hw);
-        if(!reach.ok){ add(`Command ${index}: inaccessible point — ${reach.reason} (${detail}).`); continue; }
-        add(timeS2RangeWarning(reach.s2,reach.Ei,detail,index));
-        continue;
-      }
-
-      const hkl=meta.target==='br'
-        ? (parsedByKey.hkl?.tuple||[]).map(item=>resolveTimeFixedValue(item,context))
-        : ['h','k','l'].map(key=>timeDetailValueAt(parsedByKey[key],point,context));
-      const hw=meta.target==='br'?0:timeDetailValueAt(parsedByKey.hw,point,context);
-      if(hkl.length!==3 || hkl.some(v=>!Number.isFinite(v)) || !Number.isFinite(hw)) continue;
-      const detail=`HKLE=(${hkl.map(v=>Number(v.toPrecision(6))).join(', ')}, ${Number(hw.toPrecision(6))})`;
-      const plane=hklInCurrentScatteringPlane(hkl);
-      if(!plane.ok){
-        add(`Command ${index}: inaccessible point — HKL is outside the current U-V scattering plane (${detail}).`);
-        continue;
-      }
-      const q=norm(hklToQ(rl,hkl));
-      const reach=timeReachabilityFromQ(q,hw);
-      if(!reach.ok){ add(`Command ${index}: inaccessible point — ${reach.reason} (${detail}).`); continue; }
-      add(timeS2RangeWarning(reach.s2,reach.Ei,detail,index));
-      add(timeDarkWarningForHKLE(darkCache,hkl,hw,index,detail));
     }
   }
-  return warnings;
-}
-
-timeRowS2LimitWarning = function(row,result,index,structure){
-  return timeRowMotionWarnings(row,result,index,structure,null)[0] || null;
+  return worst?`Command ${index}: S2=${worst.s2.toFixed(2)}° exceeds the instrument max ${worst.limit.toFixed(2)}° at Ei=${worst.Ei.toFixed(2)} meV (${worst.detail}).`:null;
 };
 
 function v42DetailItems(row){
