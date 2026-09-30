@@ -8532,6 +8532,55 @@ function setToolboxFrom(kind){
   }finally{ toolboxUpdating=false; }
 }
 
+// ==================== Toolbox: X-ray -> neutron S2 conversion ====================
+function updateS2Conversion(){
+  const xLambda=Number($("s2ConvXrayLambda")?.value);
+  const xS2=Number($("s2ConvXrayS2")?.value);
+  const nLambda=fixedInstrumentWavelengthA();
+  const nLambdaField=$("s2ConvNeutronLambda");
+  const nS2Field=$("s2ConvNeutronS2");
+  const info=$("s2ConvInfo");
+  if(nLambdaField) nLambdaField.value=Number.isFinite(nLambda)?nLambda.toFixed(6):"";
+  if(nS2Field) nS2Field.value="";
+  if(info){ info.textContent=""; info.classList.remove("warning"); }
+  if(!(xLambda>0) || !(xS2>0 && xS2<180) || !(nLambda>0)){
+    if(info){ info.textContent='Enter a positive X-ray wavelength and an observed S2 between 0° and 180°.'; info.classList.add('warning'); }
+    return;
+  }
+  const theta=deg2rad(xS2/2);
+  const sinTheta=Math.sin(theta);
+  if(!(sinTheta>0)){
+    if(info){ info.textContent='The entered X-ray S2 does not define a finite d-spacing.'; info.classList.add('warning'); }
+    return;
+  }
+  const d=xLambda/(2*sinTheta);
+  const arg=nLambda/(2*d);
+  if(arg>1+1e-12){
+    if(info){ info.textContent=`No neutron Bragg solution at the current ${checkedValue('energyMode')}: λn=${nLambda.toFixed(6)} Å is too long for d=${d.toFixed(6)} Å.`; info.classList.add('warning'); }
+    return;
+  }
+  const neutronS2=2*rad2deg(Math.asin(clamp(arg,-1,1)));
+  if(nS2Field) nS2Field.value=neutronS2.toFixed(3);
+}
+
+function initializeS2Conversion(){
+  const source=$("s2ConvSource"), lambda=$("s2ConvXrayLambda"), s2=$("s2ConvXrayS2");
+  if(!source || !lambda || !s2) return;
+  source.addEventListener('change',()=>{
+    if(source.value!=='custom') lambda.value=source.value;
+    updateS2Conversion();
+  });
+  lambda.addEventListener('input',()=>{
+    const matching=[...source.options].find(o=>o.value!=='custom' && Math.abs(Number(o.value)-Number(lambda.value))<5e-7);
+    source.value=matching?matching.value:'custom';
+    updateS2Conversion();
+  });
+  s2.addEventListener('input',updateS2Conversion);
+  for(const id of ['energy','energyMode','instrument']) $(id)?.addEventListener('input',updateS2Conversion);
+  for(const id of ['energy','energyMode','instrument']) $(id)?.addEventListener('change',updateS2Conversion);
+  updateS2Conversion();
+}
+
 // ==================== CIF-based neutron attenuation ====================
 function fixedInstrumentWavelengthA(){
   const E=num('energy');
@@ -9207,6 +9256,7 @@ async function initialize(){
   $('absorptionTransmission')?.addEventListener('keydown',event=>{
     if(event.key==='Enter'){ event.preventDefault(); event.currentTarget.blur(); }
   });
+  initializeS2Conversion();
   $('absorptionCifSelectButton')?.addEventListener('click',()=>$('absorptionCifFileInput')?.click());
   $('absorptionCifFileInput')?.addEventListener('change',async()=>{
     const input=$('absorptionCifFileInput');

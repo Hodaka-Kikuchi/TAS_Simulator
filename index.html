@@ -270,6 +270,27 @@
       </div></div>
       
     </section>
+    <section class="calc-card s2-conversion-card">
+      <h2>S2 conversion</h2>
+      <div class="s2-conversion-grid">
+        <label>X-ray source
+          <select id="s2ConvSource">
+            <option value="1.540593" selected>Cu Kα1</option>
+            <option value="0.709317">Mo Kα1</option>
+            <option value="1.788965">Co Kα1</option>
+            <option value="1.936042">Fe Kα1</option>
+            <option value="2.289700">Cr Kα1</option>
+            <option value="0.559407">Ag Kα1</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label>X-ray wavelength (Å)<input id="s2ConvXrayLambda" type="number" value="1.540593" min="0" step="0.000001"></label>
+        <label>Observed X-ray S2 (deg)<input id="s2ConvXrayS2" type="number" value="60" min="0" max="180" step="0.001"></label>
+        <label>Neutron wavelength (Å)<input id="s2ConvNeutronLambda" type="number" readonly></label>
+        <label>Neutron S2 (deg)<input id="s2ConvNeutronS2" type="number" readonly></label>
+      </div>
+      <div id="s2ConvInfo" class="s2-conversion-info" aria-live="polite"></div>
+    </section>
     <section class="calc-card absorption-card">
       <h2>Neutron Attenuation</h2>
       <div class="absorption-workspace">
