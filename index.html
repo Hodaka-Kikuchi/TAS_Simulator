@@ -139,7 +139,7 @@
           <div id="geometryPlot" class="qe-plot geometry"></div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel); Target selects the motor or logical variable. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. loop automatically creates its paired endloop and loopN references remain available in Details. wait is a control command and uses t (s) directly. Fractions are accepted in Details.</div>
+          <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count and wait use t (s) directly. Fractions are accepted in numeric Details.</div>
           <div class="time-scan-table-wrap">
             <div class="time-scan-table">
               <div class="time-scan-header">Index</div>

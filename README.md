@@ -172,3 +172,8 @@ ASET templates now use only `<value>` and `<range>`. Scan/scanrel ASET lines aut
 
 ## v55 UI label
 - Renamed the attenuation tool section to **Neutron Attenuation**.
+
+## v56 Script scantitle / target cleanup
+- The Script Command selector includes `scantitle`. Its Details field is free text and may reference enclosing loops as `loop1`, `loop2`, etc.; these become `%i`, `%j`, etc. in SPICE. Spaces around the loop reference are not required (`T=loop1`, `T= loop1`, and `T = loop1 ,` are all supported).
+- `br` uses one `HKL` Details entry (`1 0 0`, `1 loop1 0`, etc.) rather than separate H/K/L boxes.
+- Built-in Target menus now avoid invalid operation/target combinations: `QE`/`th2th` appear only for `scan`, `br` only for `drive`, and relative `HKLE` is omitted.
