@@ -7580,12 +7580,14 @@ function v42SpiceLinesForRow(row,info,result){
   if(meta.kind==='endloop') return ['endloop'];
   if(meta.kind==='scantitle'){
     const raw=String(row.querySelector('[data-time-range-key="title"]')?.value||'').trim();
-    const title=raw.replace(/\bloop([1-9]\d*)\b/gi,token=>{
+    const unquoted=raw.length>=2 && raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1,-1).trim() : raw;
+    const title=unquoted.replace(/\bloop([1-9]\d*)\b/gi,token=>{
       const ref=parseTimeLoopReferenceToken(token,row);
       if(!ref?.ok) throw new Error(ref?.error||`${token} is not available at this command.`);
       return `%${spiceLoopVar(ref.loopRef)}`;
     });
-    return [`scantitle ${title}`];
+    const escaped=title.replace(/"/g,'\\"');
+    return [`scantitle "${escaped}"`];
   }
   if(meta.kind==='count') return [`count preset mcu ${row.querySelector('[data-time-mcu]')?.value||'0'}`];
   if(meta.kind==='wait') return [`wait ${row.querySelector('[data-time-mcu]')?.value||'0'}`];
@@ -7804,7 +7806,11 @@ parseSpiceMacroToRows = function(text){
     if(/^endloop\s*$/i.test(raw)){ if(!loopStack.length) throw new Error(`Line ${lineIndex+1}: endloop has no matching loop.`); loopStack.pop(); rows.push({command:'endloop',ranges:{},mcu:'0',fixed:true}); continue; }
     if((match=/^scantitle\s+(.+?)\s*$/i.exec(raw))){
       let title;
-      try{ title=spiceTokenToTime(match[1],loopStack); }
+      try{
+        const token=String(match[1]||'').trim();
+        const unquoted=token.length>=2 && token.startsWith('"') && token.endsWith('"') ? token.slice(1,-1) : token;
+        title=spiceTokenToTime(unquoted.replace(/\\"/g,'"'),loopStack);
+      }
       catch(err){ throw new Error(`Line ${lineIndex+1}: ${err?.message||String(err)}`); }
       rows.push({command:'scantitle',ranges:{title},mcu:'0',fixed:true}); continue;
     }
