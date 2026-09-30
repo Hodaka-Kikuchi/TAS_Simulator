@@ -5213,13 +5213,11 @@ function startTimeScanDrag(row,event){
   if(!rows.length) return;
 
   const command=row.querySelector('[data-time-variable]')?.value || '';
-  // Normal index dragging always reorders a complete loop block.  This keeps
-  // nested loops freely movable as units (loop1 may contain loop2, and loop2
-  // can still be moved before/after other commands without tearing its pair
-  // apart).  Alt-drag retains the older boundary-resize gesture for users who
-  // explicitly want to slide only loopN/endloopN.
-  const boundaryDrag=rows.length===1 && (command==='loop' || command==='endloop') && !!event.altKey;
+  const boundaryDrag=rows.length===1 && (command==='loop' || command==='endloop');
   if(boundaryDrag){
+    // Dragging a lone loop boundary resizes the loop instead of moving the
+    // whole block. Move loopN upward/downward to change the start boundary,
+    // or endloopN to change the end boundary.
     rows=[row];
     timeScanDragState={
       rows,
@@ -5595,7 +5593,7 @@ function addTimeScanRow(values={},options={}){
   const indexCell=row.querySelector('[data-time-index]');
   if(indexCell){
     indexCell.draggable=true;
-    indexCell.title='Click to select; drag to reorder. Loop/endloop moves the complete loop block; Alt-drag a loop boundary to resize its scope.';
+    indexCell.title='Click to select; drag a command to reorder it. Drag loop/endloop alone to slide that loop boundary.';
     indexCell.addEventListener('click',event=>{ event.stopPropagation(); selectTimeScanIndex(row,event); });
     indexCell.addEventListener('dragstart',event=>startTimeScanDrag(row,event));
     indexCell.addEventListener('dragend',cancelTimeScanDrag);
@@ -5874,19 +5872,13 @@ function parseTimeDetail(raw,command,row=null){
   }
   if(kind==='endloop') return {ok:true,fixed:true,count:1,value:null};
   const text=String(raw??'').trim();
-  // drive/driverel/count-style single-value fields use the same arithmetic
-  // expression parser as scan fixed values.  This intentionally accepts
-  // expressions such as loop1-1, (loop2+1)/6, or 4/6 while preserving the
-  // binding to the enclosing loop pair when rows are reordered.
-  const expression=parseTimeMathExpression(text,row,{allowLoopReference:true});
-  if(!expression.ok){
-    return {ok:false,error:`Enter one numeric expression${row?' using loopN if needed':''}. ${expression.error||''}`.trim()};
+  if(row){
+    const loopRef=parseTimeLoopReferenceToken(text,row);
+    if(loopRef) return loopRef;
   }
-  return {
-    ok:true,fixed:true,count:1,value:expression.refs.length?null:expression.value,
-    expression,expressionText:text,symbolic:expression.refs.length>0,
-    textRefs:expression.refs
-  };
+  const value=parseNumericValue(text);
+  if(!text || !Number.isFinite(value)) return {ok:false,error:'Enter one numeric target value or a valid loopN reference.'};
+  return {ok:true,fixed:true,count:1,value};
 }
 
 function validateTimeRangeInput(input){
@@ -7264,7 +7256,7 @@ addTimeScanRow = function(values={},options={}){
   const indexCell=row.querySelector('[data-time-index]');
   if(indexCell){
     indexCell.draggable=true;
-    indexCell.title='Click to select; drag to reorder. Loop/endloop moves the complete loop block; Alt-drag a loop boundary to resize its scope.';
+    indexCell.title='Click to select; drag a command to reorder it. Drag loop/endloop alone to slide that loop boundary.';
     indexCell.addEventListener('click',event=>{ event.stopPropagation(); selectTimeScanIndex(row,event); });
     indexCell.addEventListener('dragstart',event=>startTimeScanDrag(row,event));
     indexCell.addEventListener('dragend',cancelTimeScanDrag);
@@ -7893,24 +7885,10 @@ validateTimeRangeInput = function(input){
     setTimeInputInvalid(input,!result.ok); return result;
   }
   const text=String(input?.value??'').trim();
-  // ASET <value> is scalar-only, but the scalar may be an arithmetic expression
-  // using enclosing loop variables, e.g. loop1-1 or (loop2+1)/6.  Use the same
-  // expression parser as the normal Time estimate command fields so validation,
-  // loop binding, reordering, and SPICE round-tripping stay consistent.
-  const expr=parseTimeMathExpression(text,row,{allowLoopReference:true});
-  if(expr.ok && input){
-    if(Array.isArray(expr.refs) && expr.refs.length){
-      input.dataset.timeLoopTextPairs=JSON.stringify(expr.refs.map(ref=>({pair:ref.pair,level:ref.level})));
-    }else{
-      delete input.dataset.timeLoopTextPairs;
-    }
-    delete input.dataset.timeLoopRefPair;
-    delete input.dataset.timeLoopRefPairs;
-  }
-  const result=expr.ok
-    ? {ok:true,fixed:true,count:1,value:expr.refs.length?null:expr.value,expression:expr,expressionText:text,symbolic:expr.refs.length>0,textRefs:expr.refs}
-    : {ok:false,error:`Enter one numeric expression using loopN if needed. ${expr.error||''}`.trim()};
-  setTimeInputInvalid(input,!result.ok); return result;
+  if(row){ const ref=parseTimeLoopReferenceToken(text,row); if(ref){setTimeInputInvalid(input,false); return ref;} }
+  const value=parseNumericValue(text); const ok=!!text && Number.isFinite(value);
+  const result=ok?{ok:true,fixed:true,count:1,value}:{ok:false,error:'Enter one numeric value or a valid loopN reference for <value>.'};
+  setTimeInputInvalid(input,!ok); return result;
 };
 
 initializeScriptUI = function(){

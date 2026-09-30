@@ -18,9 +18,12 @@ Browser-based simulator for triple-axis neutron spectrometers. The current versi
 - Resolution ellipses and matrices for the selected calculation point.
 
 ### Script / Time estimate
+- `th2th` is interpreted as a relative S2 scan for Script warning checks; its offsets are evaluated from the S2 position reached by preceding movement commands.
 - Command-table editor with drive/scan/scanrel/loop/count/wait/scantitle and supported targets.
 - SPICE macro conversion in both directions.
-- ASET templates with `<value>` and `<range>` placeholders.
+- Time-estimate expressions support arithmetic, parentheses, fractions, and enclosing `loopN` variables (for example `4/6+(loop1-1)*1/6`); SPICE export converts embedded `loopN` references back to `%i`, `%j`, etc.
+- Numeric target fields also accept loop arithmetic such as `loop1-1`; nested loop blocks can be reordered by dragging their Index, while Alt-drag adjusts a loop boundary only.
+- ASET templates with `<value>` and `<range>` placeholders; scalar `<value>` fields also accept the same loop arithmetic expressions as normal numeric fields.
 - MCU timing, movement-time overhead, loop expansion, and duration estimation.
 - Reachability diagnostics for applicable commands, including scattering-plane, scattering-triangle, S1/S2 limit, and Dark-angle checks.
 
