@@ -17,6 +17,7 @@ Browser-based simulator for triple-axis neutron spectrometers. The current versi
 
 ### Resolution
 - TAS resolution calculation with the instrument parameters loaded from JSON.
+- Resolution recalculates automatically when its calculation point or instrument settings change; no Calculate button is required.
 - Resolution ellipses and matrices for the selected calculation point.
 
 ### Script / Time estimate
@@ -110,3 +111,30 @@ The Angle calculation Scan table uses vermilion row highlighting for non-empty S
 
 ## v100 UI note
 Angle calculation Scan warning rows use a pale vermilion highlight, and the `Single / Scan` plus `Table / TAS geometry` tab selections are restored from browser-local state after reload.
+
+### Scattering-plane warnings
+Q vector–E, Angle calculation, and Resolution warn when user-entered HKL points do not lie in the current U–V scattering plane. Scan modes check the interpolated scan points as well. These are non-blocking UI warnings and do not alter the underlying calculation methods.
+
+### Q vector–E input responsiveness
+HKL1/HKL2 editing uses a short debounce and updates only the Q vector–E display instead of rebuilding the full simulator state on every keystroke.
+
+### Angle Scan input responsiveness
+Angle calculation Scan Initial/Final H/K/L/ħω and Points inputs use a short debounce while typing to avoid unnecessary full simulator recalculation.
+
+### Resolution update behavior
+Resolution Single updates automatically. Resolution Scan uses an explicit **Calculate** button so editing scan, lattice, and instrument parameters remains responsive. Hidden Q-E plots are not rebuilt while the Resolution tab is active; they refresh when Q-E Range is opened.
+
+### Resolution calculation
+Resolution Single and Scan calculations are explicit. Edit the calculation point or scan conditions, then press `Calculate`; this avoids expensive resolution work while other inputs are being edited.
+
+### v107 UI note
+Resolution Single displays H, K, L, ħω, and Calculate on one row.
+
+## v108
+- Resolution Scan slider navigation now preserves calculated plots/results and only changes the displayed scan point.
+
+
+### Interactive calculation behavior
+- Resolution Single updates automatically after a short input debounce.
+- Resolution Scan is calculated only when **Calculate** is pressed.
+- Q vector–E HKL1/HKL2 updates are debounced while typing and apply immediately when the edit is committed.

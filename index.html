@@ -133,6 +133,7 @@
             <div class="qe-vector-point"><strong>HKL 1</strong><label>H<input id="qeVecH0" type="number" value="-1" step="0.1"></label><label>K<input id="qeVecK0" type="number" value="-1" step="0.1"></label><label>L<input id="qeVecL0" type="number" value="0" step="0.1"></label></div>
             <div class="qe-vector-point"><strong>HKL 2</strong><label>H<input id="qeVecH1" type="number" value="1" step="0.1"></label><label>K<input id="qeVecK1" type="number" value="-2" step="0.1"></label><label>L<input id="qeVecL1" type="number" value="0" step="0.1"></label></div>
           </div>
+          <div id="qeVectorPlaneWarning" class="orientation-plane-warning hidden" aria-live="polite"></div>
           <div id="qeVectorPlot" class="qe-plot"></div>
           <div id="qeVectorMessage" class="time-estimate-message" aria-live="polite"></div>
         </div>
@@ -160,6 +161,7 @@
               <label>Q (Å⁻¹)<input id="powderGeomQ" type="text" inputmode="text" value="1.0"></label>
               <label>ħω (meV)<input id="powderGeomHW" type="text" inputmode="text" value="0"></label>
             </div>
+            <div id="geometryPlaneWarning" class="orientation-plane-warning hidden" aria-live="polite"></div>
             <div id="geometryAngles" class="geometry-angles">Enter a target Q and ħω to calculate TAS angles.</div>
           </div>
           <div id="geometryDefaultPlotMount"><div id="geometryPlot" class="qe-plot geometry"></div></div>
@@ -262,8 +264,9 @@
     <section class="calc-card" id="resolutionCalculation">
       <h2>Calculation point</h2>
       <div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
-      <div id="singleInputs" class="grid5"><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label><button id="calc">Calculate</button></div>
-      <div id="scanInputs" class="scan hidden"><div class="grid5"><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><label>ℏω final<input id="hw1" type="number" value="10"></label><button id="calcScan">Calculate</button></div></div>
+      <div id="singleInputs" class="grid4"><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label></div>
+      <div id="scanInputs" class="scan hidden"><div class="grid5"><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><label>ℏω final<input id="hw1" type="number" value="10"></label><button id="calcScanResolution" type="button">Calculate</button></div></div>
+      <div id="resolutionPlaneWarning" class="orientation-plane-warning hidden" aria-live="polite"></div>
     </section>
     <section id="result" class="hidden"><h2>Resolution</h2><div id="summary" class="summary"></div><div id="scanNav" class="scan-nav hidden"><button id="prev">◀ Prev</button><input id="scanSlider" type="range" min="1" max="1" value="1"><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
       </div>

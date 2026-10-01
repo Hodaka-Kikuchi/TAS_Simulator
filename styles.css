@@ -435,11 +435,6 @@ textarea:disabled {
   min-width:0;
   max-width:none;
 }
-#resolutionCalculation #singleInputs #calc{
-  grid-column:1 / -1;
-  width:100%;
-  padding:7px 10px;
-}
 
 /* Scan entries should also fill their grid cells consistently. */
 #resolutionCalculation #scanInputs input[type=number]{
@@ -471,7 +466,9 @@ textarea:disabled {
   #resolutionInstrumentDetails{grid-template-columns:1fr}
 }
 @media(max-width:600px){
-  #resolutionCalculation #singleInputs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #resolutionCalculation #singleInputs{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  #resolutionCalculation #singleInputs label{font-size:11.5px}
+  #resolutionCalculation #singleInputs input[type=number]{padding-left:4px;padding-right:4px}
 }
 
 /* v16: explicit U/V swap control. The entered order defines handedness, so this
@@ -2156,3 +2153,7 @@ main{
   .geometry-scan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .geometry-scan-empty{display:none}
 }
+
+/* v105: Resolution Scan is explicitly calculated to keep common editing responsive. */
+#calcScanResolution{align-self:end;min-height:38px}
+#calcScanResolution.needs-calc{font-weight:700}

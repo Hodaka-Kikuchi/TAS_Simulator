@@ -3231,6 +3231,12 @@ function renderQEVectorMap(cache){
   if(!plot || !cache || cache.powder) return;
   try{
     const a=qeVectorHKL(0), b=qeVectorHKL(1), dh=b.map((v,i)=>v-a[i]);
+    const planeWarnings=[];
+    const w0=scatteringPlaneWarningMessage(a,'HKL 1');
+    const w1=scatteringPlaneWarningMessage(b,'HKL 2');
+    if(w0) planeWarnings.push(w0.replace(/^Warning:\s*/,''));
+    if(w1) planeWarnings.push(w1.replace(/^Warning:\s*/,''));
+    setScatteringPlaneWarning('qeVectorPlaneWarning',planeWarnings.length?`Warning: ${planeWarnings.join(' / ')}`:'');
     const dhNorm=Math.hypot(...dh);
     if(!(dhNorm>1e-12)) throw new Error('HKL 1 and HKL 2 must be different points.');
     const qa=hklToQ(cache.rl,a), qb=hklToQ(cache.rl,b);
@@ -3721,6 +3727,30 @@ function geometryScanErrorStatus(err){
   return userFacingTasMessage(raw);
 }
 
+function updateGeometryPlaneWarning(points=null){
+  if(checkedValue('sampleMode')!=='single'){
+    setScatteringPlaneWarning('geometryPlaneWarning','');
+    return;
+  }
+  const scan=geometryCalculationMode()==='scan';
+  if(!scan){
+    const hkl=[num('geomH'),num('geomK'),num('geomL')];
+    setScatteringPlaneWarning('geometryPlaneWarning',scatteringPlaneWarningMessage(hkl));
+    return;
+  }
+  const list=Array.isArray(points)?points:geometryScanPoints();
+  if(!list.length){ setScatteringPlaneWarning('geometryPlaneWarning',''); return; }
+  let outside=0, firstError='';
+  for(const p of list){
+    const result=hklInCurrentScatteringPlane([p.h,p.k,p.l]);
+    if(!result.ok){ outside++; if(result.error && !firstError) firstError=result.error; }
+  }
+  const message=firstError
+    ? `Warning: ${firstError}`
+    : (outside ? `Warning: ${outside} of ${list.length} scan point(s) are outside the current U-V scattering plane.` : '');
+  setScatteringPlaneWarning('geometryPlaneWarning',message);
+}
+
 function renderGeometryScanTable(cache,points,sense,displaySense,selectedIndex){
   const box=$('geometryScanTableHost');
   if(!box) return;
@@ -3735,6 +3765,8 @@ function renderGeometryScanTable(cache,points,sense,displaySense,selectedIndex){
       const target=qeGeometryAngles(cache,null,null,calc);
       const a=geometryDisplayedMotorAngles(target,false,sense,displaySense);
       const warnings=[];
+      const plane=hklInCurrentScatteringPlane([calc.h,calc.k,calc.l]);
+      if(!plane.ok) warnings.push(plane.error || 'Outside scattering plane');
       if(target.angles?.warning) warnings.push(target.angles.warning);
       warnings.push(...geometryScanStatusWarnings(target,a));
       warnings.push(...qeDarkBlockWarningsForHKLE(cache,[calc.h,calc.k,calc.l],calc.hw));
@@ -3827,6 +3859,7 @@ function renderGeometry(cache,index=0){
   const displaySense=legacyTasSense(sense);
   const scanMode=!isPowder && geometryCalculationMode()==='scan';
   const scanPoints=scanMode ? geometryScanPoints() : [];
+  updateGeometryPlaneWarning(scanPoints);
   const scanIndex=scanMode ? syncGeometryScanPointSlider(scanPoints.length) : 0;
   const scanCalc=scanMode ? (scanPoints[scanIndex] || null) : null;
   const hw=isPowder ? parseNumericValue($("powderGeomHW")?.value) || 0 : (scanCalc?.hw ?? num("geomHW"));
@@ -4634,9 +4667,58 @@ function calculatePowder(){
 }
 
 let timer=null;
-function scheduleRecalc(){
+function resolutionPanelIsVisible(){
+  const panel=$("resolutionPanel");
+  return !!panel && !panel.classList.contains("hidden");
+}
+function markResolutionSingleDirty(){
+  if(!resolutionPanelIsVisible() || $("calcMode")?.value!=="single") return;
+  $("result")?.classList.add("hidden");
+  const btn=$("calcSingleResolution");
+  if(btn) btn.classList.add("needs-calc");
+}
+function markResolutionScanDirty(){
+  if(!resolutionPanelIsVisible() || $("calcMode")?.value!=="scan") return;
+  $("result")?.classList.add("hidden");
+  const btn=$("calcScanResolution");
+  if(btn) btn.classList.add("needs-calc");
+}
+function markCurrentResolutionDirty(){
+  if($("calcMode")?.value==="scan") markResolutionScanDirty();
+}
+function runScheduledRecalc(){
+  timer=null;
+  // Resolution Scan is intentionally explicit via Calculate because it is the
+  // expensive path.  Resolution Single is only one point, so keep it responsive
+  // with the same debounced input flow used elsewhere.
+  if(resolutionPanelIsVisible()){
+    clearError();
+    updateEnergyLabel();
+    updateS2MaxDisplay();
+    updateModeVisibility();
+    updateAutoW();
+    updateResolutionPlaneWarning();
+    if($("calcMode")?.value==="scan"){
+      markResolutionScanDirty();
+    }else{
+      doSingleResolution();
+    }
+    return;
+  }
+  recalculate();
+}
+function scheduleRecalc(delayOrEvent=50){
+  let delay=50;
+  if(typeof delayOrEvent==="number"){
+    delay=Math.max(0,delayOrEvent);
+  }else if(delayOrEvent?.type){
+    const el=delayOrEvent.target;
+    if(delayOrEvent.type==="change") delay=0;
+    else if(el?.tagName==="INPUT" && !["range","checkbox","radio","button"].includes(String(el.type||"").toLowerCase())) delay=180;
+    else delay=60;
+  }
   clearTimeout(timer);
-  timer=setTimeout(recalculate,50);
+  timer=setTimeout(runScheduledRecalc,delay);
 }
 function setGeometryTargetHKL(hkl){
   const values=hkl.map(Number);
@@ -4861,8 +4943,63 @@ $('qeMapUnit')?.addEventListener('change',()=>{
     renderSingle(singleCache,Number($('hwSlider')?.value)||0);
   }
 });
-for(const id of ['qeVecH0','qeVecK0','qeVecL0','qeVecH1','qeVecK1','qeVecL1']){
-  $(id)?.addEventListener('input',()=>{if(singleCache && !$('qeVectorMapPane')?.classList.contains('hidden')) renderQEVectorMap(singleCache);});
+// Q vector–E HKL editing is display-only: changing HKL1/HKL2 does not
+// require rebuilding the full Q-E/geometry cache.  Debounce the relatively
+// expensive Plotly map redraw while the user is typing, and redraw
+// immediately when the edit is committed.
+let qeVectorInputTimer=null;
+const QE_VECTOR_HKL_INPUT_IDS=['qeVecH0','qeVecK0','qeVecL0','qeVecH1','qeVecK1','qeVecL1'];
+function qeVectorHKLInputsAreComplete(){
+  return QE_VECTOR_HKL_INPUT_IDS.every(id=>{
+    const raw=String($(id)?.value??'').trim();
+    return raw!=='' && Number.isFinite(parseNumericValue(raw));
+  });
+}
+function scheduleQEVectorMapRender(delay=350){
+  clearTimeout(qeVectorInputTimer);
+  if(!qeVectorHKLInputsAreComplete()) return;
+  qeVectorInputTimer=setTimeout(()=>{
+    qeVectorInputTimer=null;
+    if(singleCache && !$('qeVectorMapPane')?.classList.contains('hidden')) renderQEVectorMap(singleCache);
+  },Math.max(0,Number(delay)||0));
+}
+function renderQEVectorMapImmediately(){
+  clearTimeout(qeVectorInputTimer);
+  qeVectorInputTimer=null;
+  if(!qeVectorHKLInputsAreComplete()) return;
+  if(singleCache && !$('qeVectorMapPane')?.classList.contains('hidden')) renderQEVectorMap(singleCache);
+}
+for(const id of QE_VECTOR_HKL_INPUT_IDS){
+  $(id)?.addEventListener('input',()=>scheduleQEVectorMapRender(350));
+  $(id)?.addEventListener('change',renderQEVectorMapImmediately);
+  $(id)?.addEventListener('keydown',event=>{
+    if(event.key==='Enter') renderQEVectorMapImmediately();
+  });
+}
+
+// Angle calculation Scan inputs are display-only.  Rebuilding the complete
+// single-crystal Q-E cache on every keypress made H/K/L/hw editing sluggish,
+// especially when the scan table contains many points.  Reuse the current
+// cache and debounce only the Angle/TAS geometry redraw while typing.
+let geometryScanInputTimer=null;
+const GEOMETRY_SCAN_INPUT_IDS=[
+  'geomScanH0','geomScanK0','geomScanL0','geomScanHW0',
+  'geomScanH1','geomScanK1','geomScanL1','geomScanHW1','geomScanNpts'
+];
+function renderGeometryScanFromCurrentCache(){
+  clearTimeout(geometryScanInputTimer);
+  geometryScanInputTimer=null;
+  if(singleCache && checkedValue('sampleMode')==='single' && geometryCalculationMode()==='scan'){
+    renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
+  }
+}
+function scheduleGeometryScanRender(delay=180){
+  clearTimeout(geometryScanInputTimer);
+  geometryScanInputTimer=setTimeout(renderGeometryScanFromCurrentCache,Math.max(0,Number(delay)||0));
+}
+for(const id of GEOMETRY_SCAN_INPUT_IDS){
+  $(id)?.addEventListener('input',()=>scheduleGeometryScanRender(180));
+  $(id)?.addEventListener('change',renderGeometryScanFromCurrentCache);
 }
 
 $('geometryModeSingle')?.addEventListener('click',()=>{setGeometryCalculationMode('single');saveRightPanelState();});
@@ -4894,7 +5031,10 @@ document.querySelectorAll("input,select").forEach(el=>{
     "seSelect","seSelect2","seSelect3",
     ...BACKGROUND_SLOTS.map(slot=>slot.id),
     "hwSlider",
-    "geomScanPointSlider"
+    "geomScanPointSlider",
+    "scanSlider",
+    ...QE_VECTOR_HKL_INPUT_IDS,
+    ...GEOMETRY_SCAN_INPUT_IDS
   ].includes(el.id)) return;
 
   el.addEventListener("input",scheduleRecalc);
@@ -5037,6 +5177,21 @@ function hklInCurrentScatteringPlane(hkl){
   }catch(err){
     return {ok:false,error:userFacingTasMessage(err?.message||String(err))};
   }
+}
+
+function setScatteringPlaneWarning(boxId,message){
+  const box=$(boxId);
+  if(!box) return;
+  const text=String(message||'').trim();
+  box.textContent=text;
+  box.classList.toggle('hidden',!text);
+}
+
+function scatteringPlaneWarningMessage(hkl,label='HKL'){
+  const result=hklInCurrentScatteringPlane(hkl);
+  if(result.ok) return '';
+  if(result.error) return `Warning: ${result.error}`;
+  return `Warning: ${label} (${hkl.map(v=>Number(v).toFixed(3)).join(', ')}) is outside the current U-V scattering plane.`;
 }
 
 function validateHkleScanPlane(parsedByKey,points){
@@ -8810,18 +8965,46 @@ function renderResolution(entry,indexInfo='',plotLimits=null){
     {responsive:true}
   );
 }
+function resolutionScanPoints(){
+  const nRaw=Math.round(num('npts'));
+  const n=Number.isFinite(nRaw)?Math.max(2,nRaw):2;
+  const hs=linspace(num('h0'),num('h1'),n), ks=linspace(num('k0'),num('k1'),n), ls=linspace(num('l0'),num('l1'),n);
+  return Array.from({length:n},(_,i)=>[hs[i],ks[i],ls[i]]);
+}
+
+function updateResolutionPlaneWarning(){
+  const scan=$('calcMode')?.value==='scan';
+  if(!scan){
+    setScatteringPlaneWarning('resolutionPlaneWarning',scatteringPlaneWarningMessage([num('h'),num('k'),num('l')]));
+    return;
+  }
+  const points=resolutionScanPoints();
+  let outside=0, firstError='';
+  for(const hkl of points){
+    const result=hklInCurrentScatteringPlane(hkl);
+    if(!result.ok){ outside++; if(result.error && !firstError) firstError=result.error; }
+  }
+  const message=firstError
+    ? `Warning: ${firstError}`
+    : (outside ? `Warning: ${outside} of ${points.length} scan point(s) are outside the current U-V scattering plane.` : '');
+  setScatteringPlaneWarning('resolutionPlaneWarning',message);
+}
+
 function doSingleResolution(){
   clearError();
+  updateResolutionPlaneWarning();
   try{
     const e=calcOne({hw:num('hw'),h:num('h'),k:num('k'),l:num('l')});
     scanResolutionPlotLimits=null;
     $('scanNav').classList.add('hidden');
     // Single-point Calc: always fit to this calculation's resolution ellipse.
     renderResolution(e,'',e.result.lim);
+    $('calcSingleResolution')?.classList.remove('needs-calc');
   }catch(e){showError(e);}
 }
 function doScanResolution(){
   clearError();
+  updateResolutionPlaneWarning();
   try{
     const n=Math.max(2,Math.round(num('npts'))),xs=(a,b)=>linspace(a,b,n),hs=xs(num('h0'),num('h1')),ks=xs(num('k0'),num('k1')),ls=xs(num('l0'),num('l1')),ws=xs(num('hw0'),num('hw1'));
     scanResults=Array.from({length:n},(_,i)=>calcOne({hw:ws[i],h:hs[i],k:ks[i],l:ls[i]}));
@@ -8833,6 +9016,7 @@ function doScanResolution(){
     $('scanSlider').max=n;
     $('scanSlider').value=1;
     $('scanNav').classList.remove('hidden');
+    $('calcScanResolution')?.classList.remove('needs-calc');
     renderResolutionScan(1);
   }catch(e){
     scanResolutionPlotLimits=null;
@@ -8844,6 +9028,18 @@ function renderResolutionScan(i){
   $('scanSlider').value=i;
   $('scanIndex').textContent=`${i} / ${scanResults.length}`;
   renderResolution(scanResults[i-1],`| scan ${i}/${scanResults.length}`,scanResolutionPlotLimits || scanResults[i-1].result.lim);
+}
+
+function bindResolutionManualCalculation(){
+  const panel=$('resolutionPanel');
+  if(!panel || panel.dataset.manualResolutionBound==='1') return;
+  panel.dataset.manualResolutionBound='1';
+  for(const control of panel.querySelectorAll('input, select')){
+    if(control.id==='scanSlider') continue;
+    const markScanOnly=()=>{ if($('calcMode')?.value==='scan') markResolutionScanDirty(); };
+    control.addEventListener('input',markScanOnly);
+    control.addEventListener('change',markScanOnly);
+  }
 }
 
 
@@ -9410,10 +9606,24 @@ function setActiveTab(name){
     $(id).classList.toggle('active',on);
     $(id).setAttribute('aria-selected',String(on));
   }
+  if(isResolution){
+    markCurrentResolutionDirty();
+  }else if(isQE){
+    // Q-E may have been intentionally left stale while the heavy Resolution
+    // tab was active; rebuild it only when the user actually returns here.
+    scheduleRecalc(0);
+  }
   try{ localStorage.setItem(ACTIVE_TAB_STORAGE_KEY,name); }catch(_e){}
   requestAnimationFrame(()=>requestAnimationFrame(resizeVisiblePlots));
 }
-function updateCalcMode(){const scan=$('calcMode').value==='scan';$('singleInputs').classList.toggle('hidden',scan);$('scanInputs').classList.toggle('hidden',!scan);}
+function updateCalcMode(){
+  const scan=$('calcMode').value==='scan';
+  $('singleInputs').classList.toggle('hidden',scan);
+  $('scanInputs').classList.toggle('hidden',!scan);
+  updateResolutionPlaneWarning();
+  if(scan) markResolutionScanDirty();
+  else if(resolutionPanelIsVisible()) scheduleRecalc(0);
+}
 
 // ==================== App chrome + right-panel persistence ====================
 const RIGHT_PANEL_STORAGE_KEY='tas-simulator-right-panel-v1';
@@ -9839,7 +10049,12 @@ async function initialize(){
   setToolboxFrom('toolLambda'); syncPowderLinkedInputs();
   initializeResponsivePlotResize();
   setActiveTab(savedActiveTab());
-  $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);$('calc').addEventListener('click',doSingleResolution);$('calcScan').addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
+  $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);bindResolutionManualCalculation();$('calcScanResolution')?.addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
+  for(const id of ['h','k','l','h0','k0','l0','h1','k1','l1','npts','Uh','Uk','Ul','Vh','Vk','Vl','a','b','c','alpha','beta','gamma']){
+    $(id)?.addEventListener('input',updateResolutionPlaneWarning);
+    $(id)?.addEventListener('change',updateResolutionPlaneWarning);
+  }
+  updateResolutionPlaneWarning();
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl']) $(id).addEventListener('input',updateAutoW);
   // Keep the Bragg-reference plane warning live as lattice/plane/HKL inputs change.
   for(const id of ['a','b','c','alpha','beta','gamma','Uh','Uk','Ul','Vh','Vk','Vl','refh','refk','refl']){
