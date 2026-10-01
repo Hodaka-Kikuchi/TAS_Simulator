@@ -1646,7 +1646,7 @@ async function discoverJsonFilesFromGitHub(directory){
   const parts=window.location.pathname.split('/').filter(Boolean);
   const repo=parts[0];
   if(!repo) throw new Error("GitHub Pages repository name could not be inferred. Add directory/index.json.");
-  const apiUrl=`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${directory}?ref=main`;
+  const apiUrl=`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${directory}`;
   const response=await fetch(apiUrl,{cache:"no-store",headers:{"Accept":"application/vnd.github+json"}});
   if(!response.ok) throw new Error(`GitHub API: ${directory}/ (HTTP ${response.status})`);
   const items=await response.json();
@@ -1686,15 +1686,23 @@ async function discoverJsonFilesFromDirectoryListing(directory){
 
 async function discoverJsonFiles(directory){
   // Local development with python -m http.server exposes directory listings.
-  // Prefer that path directly so a missing optional index.json does not create
-  // a harmless-but-noisy 404 in the browser console.
   if(isLocalDirectoryListingHost()){
     const files=await discoverJsonFilesFromDirectoryListing(directory);
     if(files.length===0) throw new Error(`${directory}/ に JSON ファイルを見つけられませんでした。`);
     return files;
   }
 
-  // Static hosting may provide an explicit manifest.
+  // GitHub Pages does not expose directory listings.  Query the repository
+  // that owns the *current* Pages URL directly instead of probing an optional
+  // directory/index.json first.  This both restores optional data directories
+  // (BG material / sample environments) and avoids noisy manifest 404s.
+  if(isGitHubPages()){
+    const files=await discoverJsonFilesFromGitHub(directory);
+    if(files.length===0) throw new Error(`${directory}/ に JSON ファイルがありません。`);
+    return files;
+  }
+
+  // Other static hosts may provide an explicit manifest.
   try{
     const manifestResponse=await fetch(`${directory}/index.json`,{cache:"no-store"});
     if(manifestResponse.ok){
@@ -1705,12 +1713,6 @@ async function discoverJsonFiles(directory){
       if(files.length>0) return files.sort((a,b)=>a.localeCompare(b));
     }
   }catch(_err){}
-
-  if(isGitHubPages()){
-    const files=await discoverJsonFilesFromGitHub(directory);
-    if(files.length===0) throw new Error(`${directory}/ に JSON ファイルがありません。`);
-    return files;
-  }
 
   const files=await discoverJsonFilesFromDirectoryListing(directory);
   if(files.length===0) throw new Error(`${directory}/ に JSON ファイルを見つけられませんでした。`);
@@ -1742,7 +1744,7 @@ async function discoverCifFilesFromGitHub(directory){
   const parts=window.location.pathname.split('/').filter(Boolean);
   const repo=parts[0];
   if(!repo) throw new Error("GitHub Pages repository name could not be inferred. Add BG_material/index.json.");
-  const apiUrl=`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${directory}?ref=main`;
+  const apiUrl=`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${directory}`;
   const response=await fetch(apiUrl,{cache:"no-store",headers:{"Accept":"application/vnd.github+json"}});
   if(!response.ok) throw new Error(`GitHub API: ${directory}/ (HTTP ${response.status})`);
   const items=await response.json();
@@ -1773,11 +1775,15 @@ async function discoverCifFilesFromDirectoryListing(directory){
 }
 
 async function discoverCifFiles(directory){
-  // On the local Python server, the directory listing is authoritative and
-  // avoids probing a non-existent BG_material/index.json first.
+  // On the local Python server, the directory listing is authoritative.
   if(isLocalDirectoryListingHost()) return await discoverCifFilesFromDirectoryListing(directory);
 
-  // Optional manifest for static hosts that do not expose directory listings.
+  // On GitHub Pages, use the current repository directly.  Do not probe a
+  // possibly absent BG_material/index.json, because the repository contents
+  // API already gives the authoritative CIF list without a console 404.
+  if(isGitHubPages()) return await discoverCifFilesFromGitHub(directory);
+
+  // Optional manifest for other static hosts that do not expose listings.
   try{
     const response=await fetch(`${directory}/index.json`,{cache:"no-store"});
     if(response.ok){
@@ -1787,7 +1793,6 @@ async function discoverCifFiles(directory){
     }
   }catch(_err){}
 
-  if(isGitHubPages()) return await discoverCifFilesFromGitHub(directory);
   return await discoverCifFilesFromDirectoryListing(directory);
 }
 
@@ -9656,12 +9661,10 @@ async function initialize(){
   catch(err){ console.warn('Neutron data load warning:',err); }
   const nInstrument=await loadJsonDirectory('instrument',instruments);
   const [nBG,nSE]=await Promise.all([
-    // These are optional add-on directories.  GitHub Pages does not expose
-    // directory listings, and older deployments may not ship manifest files.
-    // Do not probe missing optional paths there: a failed fetch is harmless to
-    // the application but still produces noisy 404 messages in DevTools.
-    tryLoadCifDir('BG_material',backgroundMaterials,{skipGitHubPages:true}),
-    tryLoadDir('sample_environments',sampleEnvironments,{skipGitHubPages:true})
+    // Optional data directories are loaded on every host.  GitHub Pages uses
+    // the repository contents API, so no directory/index.json probe is needed.
+    tryLoadCifDir('BG_material',backgroundMaterials),
+    tryLoadDir('sample_environments',sampleEnvironments)
   ]);
   // The unified instrument/ directory is the preferred source. On localhost,
   // do not probe a possibly absent legacy instruments/ directory at startup;

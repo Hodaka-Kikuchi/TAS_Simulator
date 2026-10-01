@@ -97,3 +97,6 @@ Scan mode provides equal-width initial/final HKL/energy inputs and Points, follo
 
 ### Angle scan table
 The Scan table uses compact 3-decimal H/K/L/ħω columns. Rows may be clicked for table-only highlighting. Status reports motor-range and kinematic reachability warnings as well as Dark-angle blocks.
+
+### Data directories
+At startup, the current version loads instrument JSON, BG-material CIF data, and sample-environment/Dark-angle JSON data. On GitHub Pages, file discovery uses the current Pages repository contents directly, so separate `index.json` manifests are not required for these directories.
