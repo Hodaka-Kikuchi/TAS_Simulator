@@ -2424,8 +2424,7 @@ function updateModeVisibility(){
     $('qeMapUnit').disabled=!single;
     if(!single) $('qeMapUnit').value='ainv';
   }
-  $("singleGeometryTarget")?.classList.toggle("hidden",!single);
-  $("powderGeometryTarget")?.classList.toggle("hidden",single);
+  updateGeometryCalculationModeVisibility();
   $("geometrySpurionWarning")?.classList.toggle("hidden",!single);
   $("qeRangeControlGrid")?.classList.toggle("hidden",!single);
   document.querySelector('.nuclear-label-control')?.classList.toggle('hidden',!single);
@@ -3253,11 +3252,15 @@ function renderQEVectorMap(cache){
       for(const sv of sVals){
         const pt=[p0[0]+sv*ux,p0[1]+sv*uy];
         const geometric=qePointInPolygon(pt,region);
-        const inKi=geometric && darkKi.some(poly=>qePointInPolygon(pt,poly));
-        const inKf=geometric && darkKf.some(poly=>qePointInPolygon(pt,poly));
-        const inFixed=geometric && darkFixed.some(poly=>qePointInPolygon(pt,poly));
+        // Dark-angle geometry is an independent display layer.  Do not clip it
+        // to the Accessible-Q polygon: a blocked motor geometry can lie outside
+        // the currently reachable S1 envelope and should still be visible on
+        // the Q-vector–E map when it falls inside the displayed axes.
+        const inKi=darkKi.some(poly=>qePointInPolygon(pt,poly));
+        const inKf=darkKf.some(poly=>qePointInPolygon(pt,poly));
+        const inFixed=darkFixed.some(poly=>qePointInPolygon(pt,poly));
         // Keep the underlying accessible region yellow and draw dark-angle
-        // exclusions as explicit colored overlays instead of unexplained holes.
+        // regions as explicit colored overlays, including outside Accessible Q.
         row.push(geometric?1:0);
         kiRow.push(inKi?1:null);
         kfRow.push(inKf?1:null);
@@ -3285,15 +3288,19 @@ function renderQEVectorMap(cache){
     for(let t=firstTick;t<=lastTick;t+=tickStep) tickTs.push(t);
     for(const t of [0,1]) if(t>=tMin-1e-9 && t<=tMax+1e-9 && !tickTs.some(x=>Math.abs(x-t)<1e-8)) tickTs.push(t);
 
-    // Add every integer-HKL point that lies on the segment HKL1 -> HKL2.
-    // This also catches fractional t values, e.g. (0,0,0)->(2,2,0)
-    // includes (1,1,0) at t=0.5.
+    // Add every integer-HKL point across the full *displayed* horizontal range,
+    // not only between HKL1 (t=0) and HKL2 (t=1).  A point is labelled when
+    // h, k and l are all integers simultaneously.  Using the most strongly
+    // varying component to enumerate candidates also catches fractional t,
+    // e.g. (0,0,0)->(2,2,0) gives (1,1,0) at t=0.5.
     const varying=dh.map((v,i)=>[Math.abs(v),i]).sort((x,y)=>y[0]-x[0])[0][1];
-    const lo=Math.ceil(Math.min(a[varying],b[varying])-1e-9);
-    const hi=Math.floor(Math.max(a[varying],b[varying])+1e-9);
+    const hklAtTMin=a[varying]+tMin*dh[varying];
+    const hklAtTMax=a[varying]+tMax*dh[varying];
+    const lo=Math.ceil(Math.min(hklAtTMin,hklAtTMax)-1e-9);
+    const hi=Math.floor(Math.max(hklAtTMin,hklAtTMax)+1e-9);
     for(let n=lo;n<=hi;n++){
       const t=(n-a[varying])/dh[varying];
-      if(t<-1e-9 || t>1+1e-9) continue;
+      if(t<tMin-1e-9 || t>tMax+1e-9) continue;
       const hkl=a.map((v,k)=>v+t*dh[k]);
       if(hkl.every(v=>Math.abs(v-Math.round(v))<1e-8) && !tickTs.some(x=>Math.abs(x-t)<1e-8)) tickTs.push(t);
     }
@@ -3312,16 +3319,83 @@ function renderQEVectorMap(cache){
     },{
       type:'scatter',mode:'markers',x:[null],y:[null],hoverinfo:'skip',
       marker:{size:11,symbol:'square',color:'rgba(255,222,105,0.90)',line:{color:'#c7a62c',width:1}},
-      name:'Accessible Q',showlegend:true
+      name:'Accessible Q',showlegend:true,legendrank:0
     }];
-    const addDarkOverlay=(mask,name,color)=>{
+    const addDarkOverlay=(mask,name,color,legendrank)=>{
       if(!mask.some(row=>row.some(v=>v===1))) return;
       traces.push({type:'heatmap',x:xVals,y:cache.hwList,z:mask,zmin:0,zmax:1,showscale:false,hoverinfo:'skip',
-        colorscale:[[0,color],[1,color]],name,showlegend:true});
+        colorscale:[[0,color],[1,color]],name,showlegend:true,legendrank});
     };
-    addDarkOverlay(darkKiZ,'Dark angle (ki side)','rgba(75,190,105,0.55)');
-    addDarkOverlay(darkKfZ,'Dark angle (kf side)','rgba(75,170,235,0.55)');
-    addDarkOverlay(darkFixedZ,'Dark angle (fixed)','rgba(95,105,220,0.50)');
+    // Keep legend ordering consistent with the Constant E map: Accessible Q,
+    // background materials, then dark-angle overlays.
+
+    // Overlay selected BG-material powder reflections on the Q-vector path.
+    // A powder reflection is a |Q| = const ring/sphere.  Intersect that with
+    // the selected reciprocal-space line p(s)=p0+s*u; each real intersection
+    // becomes a vertical line in the t (= s/lineLen) coordinate.  This is a
+    // display-only overlay and reuses the same BG powder peak calculation and
+    // intensity convention as the Powder Q-E map.
+    const qVectorLimit=Math.max(
+      Math.hypot(p0[0]+sMin*ux,p0[1]+sMin*uy),
+      Math.hypot(p0[0]+sMax*ux,p0[1]+sMax*uy)
+    );
+    for(const bg of selectedBackgrounds()){
+      const material=backgroundMaterials.get(bg.key);
+      const visiblePeaks=backgroundPowderPeaks(material,qVectorLimit);
+      let bgLegendShown=false;
+      for(const peak of visiblePeaks){
+        const discriminant=peak.q*peak.q-perp2;
+        if(discriminant < -1e-10) continue;
+        const root=Math.sqrt(Math.max(0,discriminant));
+        const roots=[-proj-root,-proj+root];
+        const uniqueRoots=[];
+        for(const sv of roots){
+          if(sv < sMin-1e-9 || sv > sMax+1e-9) continue;
+          if(uniqueRoots.some(v=>Math.abs(v-sv)<1e-8)) continue;
+          uniqueRoots.push(sv);
+        }
+        for(const sv of uniqueRoots){
+          const t=sv/lineLen;
+          const x=[], y=[], customdata=[];
+          let open=false;
+          for(const w of cache.hwList){
+            const s2=powderS2ForQAtHW(peak.q,w);
+            if(!Number.isFinite(s2)){
+              if(open){ x.push(null); y.push(null); customdata.push(null); open=false; }
+              continue;
+            }
+            const hkl=a.map((v,k)=>v+t*dh[k]);
+            x.push(t); y.push(w);
+            customdata.push([
+              `BG${bg.index+1}: ${bg.key}<br>${representativePowderHklText(peak)}<br>I/Imax = ${peak.relativeIntensity.toFixed(3)}<br>HKL path = (${hkl.map(v=>v.toFixed(3)).join(', ')})`,
+              peak.q,
+              `${s2.toFixed(3)}°`
+            ]);
+            open=true;
+          }
+          if(open){ x.push(null); y.push(null); customdata.push(null); }
+          if(!x.length) continue;
+          traces.push({
+            type:'scatter',mode:'lines',x,y,customdata,
+            name:`BG${bg.index+1}: ${bg.key}`,
+            legendgroup:`background-scattering-${bg.index}`,
+            showlegend:!bgLegendShown,
+            legendrank:10+bg.index,
+            line:{
+              color:backgroundColor(bg.slot,0.20+0.75*peak.relativeIntensity),
+              width:1.5
+            },
+            hovertemplate:`%{customdata[0]}<br>Q = %{customdata[1]:.4f} Å⁻¹<br>ħω = %{y:.3f} meV<br>S2 = %{customdata[2]}<extra></extra>`
+          });
+          bgLegendShown=true;
+        }
+      }
+    }
+
+    addDarkOverlay(darkKiZ,'Dark angle (ki side)','rgba(75,190,105,0.55)',20);
+    addDarkOverlay(darkKfZ,'Dark angle (kf side)','rgba(75,170,235,0.55)',21);
+    addDarkOverlay(darkFixedZ,'Dark angle (fixed)','rgba(95,105,220,0.50)',22);
+
     Plotly.react(plot,traces,{
       uirevision:'qeVector-hkl',
       plot_bgcolor:'#fff',paper_bgcolor:'#fff',
@@ -3536,8 +3610,8 @@ function renderSingle(cache,index=0){
   if(!$('qeVectorMapPane')?.classList.contains('hidden')) renderQEVectorMap(cache);
 }
 
-function qeGeometryAngles(cache, senseOverride=null, uiSenseOverride=null){
-  const calc={h:num("geomH"),k:num("geomK"),l:num("geomL"),hw:num("geomHW")};
+function qeGeometryAngles(cache, senseOverride=null, uiSenseOverride=null, calcOverride=null){
+  const calc=calcOverride || {h:num("geomH"),k:num("geomK"),l:num("geomL"),hw:num("geomHW")};
   // Reuse exactly the same motor-angle calculation as Resolution & Angle.
   // Only override the fixed energy when Q-E Range is in lambda/2 mode, because
   // calculateSingleCrystal() uses four times the entered energy in that mode.
@@ -3581,6 +3655,144 @@ function qeDarkBlockWarningsForHKLE(cache,hkl,hw){
   }catch(_err){ return []; }
 }
 
+
+function geometryCalculationMode(){
+  return $('geometryModeScan')?.classList.contains('active') ? 'scan' : 'single';
+}
+
+function geometryScanPoints(){
+  const nRaw=Math.round(Number($('geomScanNpts')?.value));
+  const n=Number.isFinite(nRaw) ? Math.max(2,nRaw) : 2;
+  const start={h:num('geomScanH0'),k:num('geomScanK0'),l:num('geomScanL0'),hw:num('geomScanHW0')};
+  const end={h:num('geomScanH1'),k:num('geomScanK1'),l:num('geomScanL1'),hw:num('geomScanHW1')};
+  const keys=['h','k','l','hw'];
+  if(keys.some(key=>!Number.isFinite(start[key]) || !Number.isFinite(end[key]))) return [];
+  return Array.from({length:n},(_,i)=>{
+    const f=n<=1?0:i/(n-1);
+    return Object.fromEntries(keys.map(key=>[key,start[key]+(end[key]-start[key])*f]));
+  });
+}
+
+function syncGeometryScanPointSlider(pointCount){
+  const slider=$('geomScanPointSlider'), output=$('geomScanPointValue');
+  const n=Math.max(1,Number(pointCount)||1);
+  let point=Math.round(Number(slider?.value)||1);
+  point=Math.max(1,Math.min(n,point));
+  if(slider){ slider.min=1; slider.max=n; slider.step=1; slider.value=point; }
+  if(output) output.textContent=`${point} / ${n}`;
+  return point-1;
+}
+
+function geometryDisplayedMotorAngles(target,isPowder,sense,displaySense){
+  const a=target.angles;
+  const s2=sense==="+-+"
+    ? +Math.abs(Number(a.s2))
+    : (displaySense==="+-+" ? -Math.abs(Number(a.s2)) : +Math.abs(Number(a.s2)));
+  return {
+    m1:-Number(a.m1), m2:-Number(a.m2),
+    s1:isPowder ? 0 : Number(a.s1), s2,
+    a1:-Number(a.a1), a2:-Number(a.a2)
+  };
+}
+
+function geometryScanStatusWarnings(target,displayedAngles){
+  const warnings=[];
+  const s1=Number(displayedAngles?.s1), s2=Math.abs(Number(displayedAngles?.s2));
+  const s1min=num("S1min"), s1max=num("S1max"), s2min=num("S2min");
+  if(Number.isFinite(s1) && Number.isFinite(s1min) && Number.isFinite(s1max) && (s1<s1min-1e-8 || s1>s1max+1e-8)) warnings.push('S1 out of range');
+  let s2max=NaN;
+  try{ s2max=effectiveS2MaxAtEi(currentInstrument(),target?.Ei,false); }catch(_e){}
+  if(Number.isFinite(s2) && Number.isFinite(s2min) && s2<s2min-1e-8) warnings.push('S2 out of range');
+  if(Number.isFinite(s2) && Number.isFinite(s2max) && s2>s2max+1e-8 && !warnings.includes('S2 out of range')) warnings.push('S2 out of range');
+  return warnings;
+}
+
+function geometryScanErrorStatus(err){
+  const raw=String(err?.message || err || '');
+  if(/kinematically inaccessible|requested Q and energy transfer/i.test(raw)) return 'No scattering triangle';
+  return userFacingTasMessage(raw);
+}
+
+function renderGeometryScanTable(cache,points,sense,displaySense,selectedIndex){
+  const box=$('geometryScanTableHost');
+  if(!box) return;
+  if(!points.length){
+    box.classList.add('error-text');
+    box.textContent='Angle calculation unavailable: enter valid initial/final H, K, L, ħω values.';
+    return;
+  }
+  box.classList.remove('error-text');
+  const rows=points.map((calc,i)=>{
+    try{
+      const target=qeGeometryAngles(cache,null,null,calc);
+      const a=geometryDisplayedMotorAngles(target,false,sense,displaySense);
+      const warnings=[];
+      if(target.angles?.warning) warnings.push(target.angles.warning);
+      warnings.push(...geometryScanStatusWarnings(target,a));
+      warnings.push(...qeDarkBlockWarningsForHKLE(cache,[calc.h,calc.k,calc.l],calc.hw));
+      const f=v=>Number.isFinite(v)?formatAngle(v):'—';
+      return `<tr data-geometry-scan-row="${i}"><td class="geometry-scan-point-cell">${i+1}</td><td class="geometry-scan-hkl-cell">${calc.h.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.k.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.l.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.hw.toFixed(3)}</td><td>${f(a.m1)}</td><td>${f(a.m2)}</td><td>${f(a.s1)}</td><td>${f(a.s2)}</td><td>${f(a.a1)}</td><td>${f(a.a2)}</td><td>${warnings.length?warnings.join(' / '):''}</td></tr>`;
+    }catch(err){
+      return `<tr data-geometry-scan-row="${i}"><td class="geometry-scan-point-cell">${i+1}</td><td class="geometry-scan-hkl-cell">${calc.h.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.k.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.l.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.hw.toFixed(3)}</td><td colspan="6">—</td><td>${geometryScanErrorStatus(err)}</td></tr>`;
+    }
+  }).join('');
+  box.innerHTML=`<div class="geometry-scan-table-wrap"><table class="geometry-scan-table"><thead><tr><th>Point</th><th class="geometry-scan-hkl-head">H</th><th class="geometry-scan-hkl-head">K</th><th class="geometry-scan-hkl-head">L</th><th class="geometry-scan-hkl-head">ħω</th><th>M1</th><th>M2</th><th>S1</th><th>S2</th><th>A1</th><th>A2</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  box.querySelectorAll('tbody tr[data-geometry-scan-row]').forEach(row=>{
+    row.addEventListener('click',()=>{
+      box.querySelectorAll('tbody tr.geometry-scan-clicked-row').forEach(other=>other.classList.remove('geometry-scan-clicked-row'));
+      row.classList.add('geometry-scan-clicked-row');
+    });
+  });
+}
+
+function currentGeometryScanOutputTab(){
+  return $('geometryScanTabPlot')?.classList.contains('active') ? 'plot' : 'table';
+}
+
+function setGeometryScanOutputTab(name){
+  const plot=name==='plot';
+  $('geometryScanTabTable')?.classList.toggle('active',!plot);
+  $('geometryScanTabPlot')?.classList.toggle('active',plot);
+  $('geometryScanTabTable')?.setAttribute('aria-selected',String(!plot));
+  $('geometryScanTabPlot')?.setAttribute('aria-selected',String(plot));
+  $('geometryScanTablePane')?.classList.toggle('hidden',plot);
+  $('geometryScanPlotPane')?.classList.toggle('hidden',!plot);
+  if(plot && singleCache && checkedValue('sampleMode')==='single'){
+    requestAnimationFrame(()=>renderGeometry(singleCache,Number($('hwSlider')?.value)||0));
+  }
+}
+
+function moveGeometryPlotForMode(scan){
+  const plot=$('geometryPlot');
+  const mount=$(scan?'geometryScanPlotMount':'geometryDefaultPlotMount');
+  if(plot && mount && plot.parentNode!==mount) mount.appendChild(plot);
+}
+
+function setGeometryCalculationMode(mode){
+  const scan=mode==='scan';
+  $('geometryModeSingle')?.classList.toggle('active',!scan);
+  $('geometryModeScan')?.classList.toggle('active',scan);
+  $('geometryModeSingle')?.setAttribute('aria-selected',String(!scan));
+  $('geometryModeScan')?.setAttribute('aria-selected',String(scan));
+  updateGeometryCalculationModeVisibility();
+  if(singleCache && checkedValue('sampleMode')==='single'){
+    renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
+  }
+}
+
+function updateGeometryCalculationModeVisibility(){
+  const singleSample=checkedValue('sampleMode')==='single';
+  const scan=singleSample && geometryCalculationMode()==='scan';
+  $('geometryCalcModeTabs')?.classList.toggle('hidden',!singleSample);
+  $('singleGeometryTarget')?.classList.toggle('hidden',!singleSample || scan);
+  $('scanGeometryTarget')?.classList.toggle('hidden',!scan);
+  $('powderGeometryTarget')?.classList.toggle('hidden',singleSample);
+  $('geometryScanOutput')?.classList.toggle('hidden',!scan);
+  $('geometryAngles')?.classList.toggle('hidden',scan);
+  $('geometryDefaultPlotMount')?.classList.toggle('hidden',scan);
+  moveGeometryPlotForMode(scan);
+}
+
 function renderGeometry(cache,index=0){
   const isPowder=checkedValue("sampleMode")==="powder" || !!cache?.powder;
   const i=Math.max(0,Math.min(index,Math.max(0,(cache.hwList?.length||1)-1)));
@@ -3591,20 +3803,25 @@ function renderGeometry(cache,index=0){
   // +++ keeps the exact former +-+ schematic placement.  The native +-+ branch
   // also uses the canonical plus-side drawing; only -+- is mirrored.
   const displaySense=legacyTasSense(sense);
-  const hw=isPowder ? parseNumericValue($("powderGeomHW")?.value) || 0 : (cache.hwList[i] || 0);
+  const scanMode=!isPowder && geometryCalculationMode()==='scan';
+  const scanPoints=scanMode ? geometryScanPoints() : [];
+  const scanIndex=scanMode ? syncGeometryScanPointSlider(scanPoints.length) : 0;
+  const scanCalc=scanMode ? (scanPoints[scanIndex] || null) : null;
+  const hw=isPowder ? parseNumericValue($("powderGeomHW")?.value) || 0 : (scanCalc?.hw ?? num("geomHW"));
   if(isPowder){
     $("geometrySpurionWarning")?.classList.add("hidden");
   }else{
     $("geometrySpurionWarning")?.classList.remove("hidden");
-    updateGeometrySpurionWarning(cache,num("geomHW"));
+    updateGeometrySpurionWarning(cache,hw);
   }
   const mirror=displaySense==="+-+" ? 1 : -1;
 
-  // A Single-crystal target is h,k,l,hw. A Powder target is the linked
-  // S2/Q pair together with hw; editing either S2 or Q updates the other.
+  // A Single-crystal target is h,k,l,hw. Scan mode supplies the selected
+  // interpolated point without changing the established single-point inputs.
+  // A Powder target is the linked S2/Q pair together with hw.
   let target=null;
   let targetError="";
-  try{ target=isPowder ? powderGeometryTarget() : qeGeometryAngles(cache); }
+  try{ target=isPowder ? powderGeometryTarget() : qeGeometryAngles(cache,null,null,scanCalc); }
   catch(err){ targetError=userFacingTasMessage(err?.message || String(err)); }
 
   const L=2.05;
@@ -3629,7 +3846,7 @@ function renderGeometry(cache,index=0){
     // Single crystal. Powder's user-facing angle calculation still keeps the
     // established sign-label mapping; only the schematic bypasses that mapping
     // so the drawing mirrors exactly like the Single-crystal schematic.
-    const drawTarget=isPowder ? powderGeometryTarget("+-+",true) : qeGeometryAngles(cache,"+-+",sense);
+    const drawTarget=isPowder ? powderGeometryTarget("+-+",true) : qeGeometryAngles(cache,"+-+",sense,scanCalc);
     const {angles,ki,kf}=drawTarget;
     source=[-L,0];
     mono=[0,0];
@@ -3937,21 +4154,17 @@ function renderGeometry(cache,index=0){
 
   const angleBox=$("geometryAngles");
   if(angleBox){
-    if(target){
+    if(scanMode){
+      renderGeometryScanTable(cache,scanPoints,sense,displaySense,scanIndex);
+    }else if(target){
       const a=target.angles;
+      const shown=geometryDisplayedMotorAngles(target,isPowder,sense,displaySense);
       angleBox.classList.remove("error-text");
       const qValue=isPowder
         ? target.q
         : norm(hklToQ(cache.rl,[target.calc.h,target.calc.k,target.calc.l]));
       const energyLine=`Ei=${target.Ei.toFixed(3)} meV, Ef=${target.Ef.toFixed(3)} meV, Q=${qValue.toFixed(4)} Å⁻¹`;
-
-      // Display-only S2 sign in the Angle calculation & TAS geometry card.
-      // Keep target.angles.s2 unchanged because it is used by the geometry.
-      const s2Display=sense==="+-+"
-        ? +Math.abs(Number(a.s2))
-        : (displaySense==="+-+" ? -Math.abs(Number(a.s2)) : +Math.abs(Number(a.s2)));
-      const s1Display=isPowder ? 0 : a.s1;
-      const angleLine=`M1=${formatAngle(-a.m1)}°, M2=${formatAngle(-a.m2)}°, S1=${formatAngle(s1Display)}°, S2=${formatAngle(s2Display)}°, A1=${formatAngle(-a.a1)}°, A2=${formatAngle(-a.a2)}°`+
+      const angleLine=`M1=${formatAngle(shown.m1)}°, M2=${formatAngle(shown.m2)}°, S1=${formatAngle(shown.s1)}°, S2=${formatAngle(shown.s2)}°, A1=${formatAngle(shown.a1)}°, A2=${formatAngle(shown.a2)}°`+
         (!isPowder && a.warning?` &nbsp; | &nbsp; ${a.warning}`:"");
       const darkWarnings=!isPowder
         ? qeDarkBlockWarningsForHKLE(cache,[target.calc.h,target.calc.k,target.calc.l],target.calc.hw)
@@ -3965,11 +4178,15 @@ function renderGeometry(cache,index=0){
     }
   }
 
-  Plotly.react("geometryPlot",traces,{
-    xaxis:{range:[xMin,xMax],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true,constrain:"domain"},
-    yaxis:{range:[yMin,yMax],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true,constrain:"domain"},
-    annotations,margin:{l:10,r:10,t:12,b:10},showlegend:false
-  },{responsive:true,displayModeBar:false});
+  const geometryPlot=$('geometryPlot');
+  const geometryPlotVisible=geometryPlot && !geometryPlot.closest('.hidden');
+  if(geometryPlotVisible){
+    Plotly.react("geometryPlot",traces,{
+      xaxis:{range:[xMin,xMax],showgrid:false,zeroline:false,showticklabels:false,fixedrange:true,constrain:"domain"},
+      yaxis:{range:[yMin,yMax],showgrid:false,zeroline:false,showticklabels:false,scaleanchor:"x",scaleratio:1,fixedrange:true,constrain:"domain"},
+      annotations,margin:{l:10,r:10,t:12,b:10},showlegend:false
+    },{responsive:true,displayModeBar:false});
+  }
 }
 
 function powderS2ForQAtHW(q,hw){
@@ -4267,7 +4484,7 @@ function calculatePowder(){
         name:`BG${bg.index+1}: ${bg.key}`,
         legendgroup:`background-scattering-${bg.index}`,
         showlegend:index===0,
-        legendrank:30+bg.index,
+        legendrank:10+bg.index,
         line:{
           color:backgroundColor(bg.slot,0.20+0.75*ratio),
           width:1.5
@@ -4515,18 +4732,6 @@ function setGeometryTargetFromDarkRef(slot){
   setGeometryTargetHKL([num(ids.refH),num(ids.refK),num(ids.refL)]);
 }
 
-function syncGeometryHWSlider(cache){
-  const slider=$("geomHWSlider"), output=$("geomHWValue"), entry=$("geomHW");
-  if(!slider || !output || !entry || !cache?.hwList?.length) return;
-  const lo=Math.min(...cache.hwList), hi=Math.max(...cache.hwList);
-  const diffs=cache.hwList.slice(1).map((x,i)=>Math.abs(x-cache.hwList[i])).filter(x=>x>1e-9);
-  const step=diffs.length ? Math.min(...diffs) : 0.1;
-  slider.min=lo; slider.max=hi; slider.step=step;
-  const v=Math.max(lo,Math.min(hi,Number(entry.value)||0));
-  slider.value=v;
-  output.textContent=`${Number(entry.value||0).toFixed(1)} meV`;
-}
-
 
 function ensureNuclearLabelControl(){
   if($("displayNuclearLabels")) return;
@@ -4602,7 +4807,6 @@ function recalculate(){
     assertImplementedUiSense();
     if(checkedValue("sampleMode")==="single"){
       singleCache=calculateSingleCrystal();
-      syncGeometryHWSlider(singleCache);
       $("hwSlider").min=0;
       $("hwSlider").max=Math.max(0,singleCache.regions.length-1);
       $("hwSlider").step=1;
@@ -4639,15 +4843,12 @@ for(const id of ['qeVecH0','qeVecK0','qeVecL0','qeVecH1','qeVecK1','qeVecL1']){
   $(id)?.addEventListener('input',()=>{if(singleCache && !$('qeVectorMapPane')?.classList.contains('hidden')) renderQEVectorMap(singleCache);});
 }
 
-$("geomHWSlider").addEventListener("input",()=>{
-  const v=Number($("geomHWSlider").value);
-  $("geomHW").value=Number.isFinite(v) ? v.toFixed(1) : "0.0";
-  $("geomHWValue").textContent=`${Number($("geomHW").value).toFixed(1)} meV`;
-  scheduleRecalc();
-});
-
-$("geomHW").addEventListener("input",()=>{
-  if(singleCache) syncGeometryHWSlider(singleCache);
+$('geometryModeSingle')?.addEventListener('click',()=>setGeometryCalculationMode('single'));
+$('geometryModeScan')?.addEventListener('click',()=>setGeometryCalculationMode('scan'));
+$('geometryScanTabTable')?.addEventListener('click',()=>setGeometryScanOutputTab('table'));
+$('geometryScanTabPlot')?.addEventListener('click',()=>setGeometryScanOutputTab('plot'));
+$('geomScanPointSlider')?.addEventListener('input',()=>{
+  if(singleCache && checkedValue('sampleMode')==='single') renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
 });
 
 $("geomSetU").addEventListener("click",setGeometryTargetFromU);
@@ -4671,7 +4872,7 @@ document.querySelectorAll("input,select").forEach(el=>{
     "seSelect","seSelect2","seSelect3",
     ...BACKGROUND_SLOTS.map(slot=>slot.id),
     "hwSlider",
-    "geomHWSlider"
+    "geomScanPointSlider"
   ].includes(el.id)) return;
 
   el.addEventListener("input",scheduleRecalc);
@@ -6507,6 +6708,9 @@ const SPICE_LOOP_VARS=['i','j','k','l','m','n','p','q','r','s','t','u','v','w','
 function mountTimeEstimateForScript(active){
   const pane=$('geometryTimePane');
   if(!pane) return;
+  const infoRow=pane.querySelector('.time-info-row');
+  const commandActions=document.querySelector('.script-command-actions');
+  const asetToggle=$('scriptAsetToggle');
   if(!timeEstimateHomeParent){
     timeEstimateHomeParent=pane.parentElement;
     timeEstimateHomeNextSibling=pane.nextSibling;
@@ -6514,15 +6718,25 @@ function mountTimeEstimateForScript(active){
   if(active){
     const mount=$('scriptTimeMount');
     if(mount && pane.parentElement!==mount) mount.appendChild(pane);
+    if(infoRow && commandActions && asetToggle && infoRow.parentElement!==commandActions){
+      infoRow.classList.add('time-info-row-inline');
+      commandActions.insertBefore(infoRow,asetToggle);
+    }
     pane.classList.remove('hidden');
     requestAnimationFrame(()=>{
       updateTimeScanScrollState();
       validateAllTimeScanRows({showMessage:true});
     });
-  }else if(timeEstimateHomeParent && pane.parentElement!==timeEstimateHomeParent){
-    if(timeEstimateHomeNextSibling && timeEstimateHomeNextSibling.parentNode===timeEstimateHomeParent){
-      timeEstimateHomeParent.insertBefore(pane,timeEstimateHomeNextSibling);
-    }else timeEstimateHomeParent.appendChild(pane);
+  }else{
+    if(infoRow && infoRow.parentElement!==pane){
+      infoRow.classList.remove('time-info-row-inline');
+      pane.insertBefore(infoRow,pane.firstChild);
+    }
+    if(timeEstimateHomeParent && pane.parentElement!==timeEstimateHomeParent){
+      if(timeEstimateHomeNextSibling && timeEstimateHomeNextSibling.parentNode===timeEstimateHomeParent){
+        timeEstimateHomeParent.insertBefore(pane,timeEstimateHomeNextSibling);
+      }else timeEstimateHomeParent.appendChild(pane);
+    }
     pane.classList.toggle('hidden',currentGeometryCardTab()!=='time');
   }
 }
@@ -7045,7 +7259,7 @@ function v42CreateAsetRow(key='',template='',{removable=true}={}){
   row.className='script-aset-item'; row.dataset.asetRow='1';
   row.innerHTML=`<span class="script-aset-index" data-aset-index></span>`+
     `<input type="text" data-aset-target value="${v42EscapeAttr(String(key||''))}" placeholder="target" spellcheck="false" aria-label="ASET target">`+
-    `<textarea data-aset-template rows="2" placeholder="drive device <value>\nscan e <range>" spellcheck="false" aria-label="ASET SPICE template">${v42EscapeHtml(String(template||''))}</textarea>`+
+    `<textarea data-aset-template rows="2" placeholder="drive device <value>\nscan device <range>" spellcheck="false" aria-label="ASET SPICE template">${v42EscapeHtml(String(template||''))}</textarea>`+
     `${removable?'<button type="button" class="script-aset-remove" title="Remove ASET" aria-label="Remove ASET">×</button>':'<span></span>'}`;
   host.appendChild(row); v42RenumberAsetRows(); return row;
 }
@@ -7923,6 +8137,18 @@ initializeScriptUI = function(){
   const area=$('scriptSpiceText'),backdrop=$('scriptSpiceBackdrop'),numbers=$('scriptSpiceLineNumbers'),rowsHost=$('timeScanRows');
   v42LoadAset();
   v42RefreshTargetSelects();
+  const bindInfoToggle=(buttonId,panelId)=>{
+    const button=$(buttonId),panel=$(panelId);
+    if(!button || !panel || button.dataset.infoBound==='1') return;
+    button.dataset.infoBound='1';
+    button.addEventListener('click',()=>{
+      const show=panel.classList.contains('hidden');
+      panel.classList.toggle('hidden',!show);
+      button.setAttribute('aria-expanded',String(show));
+    });
+  };
+  bindInfoToggle('scriptAsetInfoToggle','scriptAsetHelp');
+  bindInfoToggle('timeEstimateInfoToggle','timeEstimateInfoPanel');
   const asetHost=$('scriptAsetList');
   const refreshAset=()=>{
     const check=v42ValidateAsetRows();
@@ -7930,10 +8156,6 @@ initializeScriptUI = function(){
     for(const row of timeScanRows()){ const meta=timeCommandMeta(row.querySelector('[data-time-variable]')?.value||''); if(meta.aset) updateTimeScanRowFields(row); }
     validateAllTimeScanRows({showMessage:true});
     if(!check.ok) scriptMessage(check.message,true);
-    if(v42SpiceAutoLinked){
-      const text=generateSpiceMacroFromTimeEstimate(); if(area) area.value=text; v42RenderSpiceBackdrop();
-      try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
-    }
   };
   asetHost?.addEventListener('input',event=>{
     if(event.target.closest?.('[data-aset-target],[data-aset-template]')) refreshAset();
@@ -7973,24 +8195,14 @@ initializeScriptUI = function(){
     v42SpiceAutoLinked=false; v42SpiceLineMap=[]; v42SpiceErrorLines=new Set(); v42SpiceWarningLines=new Set(); v42RenderSpiceBackdrop();
     try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,area.value);}catch(_e){} scriptMessage('');
   });
-  const refreshLinked=()=>{
-    if(!v42SpiceAutoLinked || !area) return;
-    const text=generateSpiceMacroFromTimeEstimate(); area.value=text; v42RenderSpiceBackdrop();
-    try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
-    if(v42LastSpiceValidation?.errors?.length) scriptMessage(v57SpiceValidationSummary(v42LastSpiceValidation),true);
-    else if(v42LastSpiceValidation?.warnings?.length) scriptMessage(v57SpiceValidationSummary(v42LastSpiceValidation),false,true);
-    else scriptMessage('');
-  };
-  rowsHost?.addEventListener('input',()=>queueMicrotask(refreshLinked));
-  rowsHost?.addEventListener('change',()=>queueMicrotask(refreshLinked));
-  if(rowsHost && typeof MutationObserver!=='undefined'){
-    v42SpiceMutationObserver?.disconnect();
-    v42SpiceMutationObserver=new MutationObserver(()=>queueMicrotask(refreshLinked));
-    v42SpiceMutationObserver.observe(rowsHost,{childList:true});
-  }
+  // Conversion is intentionally one-shot only. Editing either side must not
+  // overwrite the other side until the user explicitly presses an arrow button.
+  v42SpiceAutoLinked=false;
+  v42SpiceMutationObserver?.disconnect();
+  v42SpiceMutationObserver=null;
   $('scriptToSpice')?.addEventListener('click',()=>{
     try{
-      v42SpiceAutoLinked=true;
+      v42SpiceAutoLinked=false;
       const text=generateSpiceMacroFromTimeEstimate(); area.value=text; v42RenderSpiceBackdrop();
       try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
       if(v42LastSpiceValidation?.errors?.length) scriptMessage(v57SpiceValidationSummary(v42LastSpiceValidation),true);
@@ -8000,9 +8212,8 @@ initializeScriptUI = function(){
   });
   $('scriptToCommands')?.addEventListener('click',()=>{
     try{
-      const rows=parseSpiceMacroToRows(area?.value||''); replaceTimeEstimateRows(rows); v42SpiceAutoLinked=true;
-      const text=generateSpiceMacroFromTimeEstimate(); if(area) area.value=text; v42RenderSpiceBackdrop();
-      try{localStorage.setItem(SPICE_SCRIPT_STORAGE_KEY,text);}catch(_e){}
+      const rows=parseSpiceMacroToRows(area?.value||''); replaceTimeEstimateRows(rows); v42SpiceAutoLinked=false;
+      v42RenderSpiceBackdrop();
       if(v42LastSpiceValidation?.errors?.length) scriptMessage(v57SpiceValidationSummary(v42LastSpiceValidation),true);
       else if(v42LastSpiceValidation?.warnings?.length) scriptMessage(v57SpiceValidationSummary(v42LastSpiceValidation),false,true);
       else scriptMessage(`Converted ${rows.length} SPICE command row${rows.length===1?'':'s'} to Time estimate commands.`);
@@ -8747,32 +8958,55 @@ function setToolboxFrom(kind){
 // ==================== Toolbox: X-ray -> neutron S2 conversion ====================
 function updateS2Conversion(){
   const xLambda=Number($("s2ConvXrayLambda")?.value);
-  const xS2=Number($("s2ConvXrayS2")?.value);
+  const raw=String($("s2ConvXrayS2")?.value||"").trim();
   const nLambda=fixedInstrumentWavelengthA();
   const nLambdaField=$("s2ConvNeutronLambda");
-  const nS2Field=$("s2ConvNeutronS2");
+  const neutronS2Field=$("s2ConvNeutronS2");
+  const dField=$("s2ConvD");
   const info=$("s2ConvInfo");
   if(nLambdaField) nLambdaField.value=Number.isFinite(nLambda)?nLambda.toFixed(6):"";
-  if(nS2Field) nS2Field.value="";
+  if(neutronS2Field) neutronS2Field.value="";
+  if(dField) dField.value="";
   if(info){ info.textContent=""; info.classList.remove("warning"); }
-  if(!(xLambda>0) || !(xS2>0 && xS2<180) || !(nLambda>0)){
-    if(info){ info.textContent='Enter a positive X-ray wavelength and an observed S2 between 0° and 180°.'; info.classList.add('warning'); }
+  if(!(xLambda>0) || !(nLambda>0)){
+    if(info){ info.textContent='Enter a positive X-ray wavelength.'; info.classList.add('warning'); }
     return;
   }
-  const theta=deg2rad(xS2/2);
-  const sinTheta=Math.sin(theta);
-  if(!(sinTheta>0)){
-    if(info){ info.textContent='The entered X-ray S2 does not define a finite d-spacing.'; info.classList.add('warning'); }
+  if(!raw){
+    if(info){ info.textContent='Enter one or more observed X-ray S2 values between 0° and 180°, separated by spaces.'; info.classList.add('warning'); }
     return;
   }
-  const d=xLambda/(2*sinTheta);
-  const arg=nLambda/(2*d);
-  if(arg>1+1e-12){
-    if(info){ info.textContent=`No neutron Bragg solution at the current ${checkedValue('energyMode')}: λn=${nLambda.toFixed(6)} Å is too long for d=${d.toFixed(6)} Å.`; info.classList.add('warning'); }
+  const tokens=raw.split(/\s+/).filter(Boolean);
+  const values=tokens.map(t=>Number(t));
+  if(values.some(v=>!Number.isFinite(v) || !(v>0 && v<180))){
+    if(info){ info.textContent='Enter valid X-ray S2 values between 0° and 180°, separated by spaces.'; info.classList.add('warning'); }
     return;
   }
-  const neutronS2=2*rad2deg(Math.asin(clamp(arg,-1,1)));
-  if(nS2Field) nS2Field.value=neutronS2.toFixed(3);
+  const rows=values.map(xS2=>{
+    const theta=deg2rad(xS2/2);
+    const sinTheta=Math.sin(theta);
+    const d=xLambda/(2*sinTheta);
+    const arg=nLambda/(2*d);
+    if(!(sinTheta>0) || !Number.isFinite(d) || !(d>0)){
+      return {xS2,d:NaN,neutronS2:NaN,status:'Invalid d-spacing'};
+    }
+    if(arg>1+1e-12){
+      return {xS2,d,neutronS2:NaN,status:'No solution'};
+    }
+    const neutronS2=2*rad2deg(Math.asin(clamp(arg,-1,1)));
+    return {xS2,d,neutronS2,status:''};
+  });
+  if(neutronS2Field){
+    neutronS2Field.value=rows.map(row=>Number.isFinite(row.neutronS2)?row.neutronS2.toFixed(3):'—').join(' ');
+  }
+  if(dField){
+    dField.value=rows.map(row=>Number.isFinite(row.d)?row.d.toFixed(6):'—').join(' ');
+  }
+  const blocked=rows.filter(r=>r.status).length;
+  if(blocked && info){
+    info.textContent=`${blocked} entr${blocked===1?'y':'ies'} cannot satisfy the neutron Bragg condition at the current ${checkedValue('energyMode')}.`;
+    info.classList.add('warning');
+  }
 }
 
 function initializeS2Conversion(){
@@ -9380,8 +9614,14 @@ function restoreLeftPanelState(){
 document.querySelector('.sidebar').addEventListener('input',saveLeftPanelState);
 document.querySelector('.sidebar').addEventListener('change',saveLeftPanelState);
 
-async function tryLoadDir(directory,map){try{return await loadJsonDirectory(directory,map);}catch(_e){map.clear();return 0;}}
-async function tryLoadCifDir(directory,map){try{return await loadCifDirectory(directory,map);}catch(_e){map.clear();return 0;}}
+async function tryLoadDir(directory,map,{skipGitHubPages=false}={}){
+  if(skipGitHubPages && isGitHubPages()){ map.clear(); return 0; }
+  try{return await loadJsonDirectory(directory,map);}catch(_e){map.clear();return 0;}
+}
+async function tryLoadCifDir(directory,map,{skipGitHubPages=false}={}){
+  if(skipGitHubPages && isGitHubPages()){ map.clear(); return 0; }
+  try{return await loadCifDirectory(directory,map);}catch(_e){map.clear();return 0;}
+}
 function mergeLegacyRangeData(){
   for(const [key,inst] of instruments){
     if(Array.isArray(inst.S2_limits)||(inst.qe_range&&(Array.isArray(inst.qe_range.S2_limits)||Array.isArray(inst.qe_range.configuration)))) continue;
@@ -9416,15 +9656,22 @@ async function initialize(){
   catch(err){ console.warn('Neutron data load warning:',err); }
   const nInstrument=await loadJsonDirectory('instrument',instruments);
   const [nBG,nSE]=await Promise.all([
-    tryLoadCifDir('BG_material',backgroundMaterials),
-    tryLoadDir('sample_environments',sampleEnvironments)
+    // These are optional add-on directories.  GitHub Pages does not expose
+    // directory listings, and older deployments may not ship manifest files.
+    // Do not probe missing optional paths there: a failed fetch is harmless to
+    // the application but still produces noisy 404 messages in DevTools.
+    tryLoadCifDir('BG_material',backgroundMaterials,{skipGitHubPages:true}),
+    tryLoadDir('sample_environments',sampleEnvironments,{skipGitHubPages:true})
   ]);
   // The unified instrument/ directory is the preferred source. On localhost,
   // do not probe a possibly absent legacy instruments/ directory at startup;
   // that failed compatibility probe only creates noisy 404s. Static/GitHub
   // deployments retain the legacy fallback during migration.
   const needsLegacy=[...instruments.values()].some(inst=>!(Array.isArray(inst.S2_limits)||(inst.qe_range&&(Array.isArray(inst.qe_range.S2_limits)||Array.isArray(inst.qe_range.configuration)))));
-  if(needsLegacy && !isLocalDirectoryListingHost()){
+  if(needsLegacy && !isLocalDirectoryListingHost() && !isGitHubPages()){
+    // `instruments/` is only a legacy compatibility source.  On GitHub Pages
+    // the unified `instrument/` directory is authoritative; probing a removed
+    // legacy directory causes a visible 404 and can also hit a stale repo URL.
     await tryLoadDir('instruments',legacyRangeInstruments);
   }
   mergeLegacyRangeData();

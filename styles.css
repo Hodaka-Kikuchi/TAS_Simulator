@@ -2043,9 +2043,114 @@ main{
 
 /* v74: compact X-ray -> neutron S2 conversion toolbox */
 .s2-conversion-card{max-width:none;width:100%}
-.s2-conversion-grid{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr));gap:10px;align-items:end}
+.s2-conversion-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:end}
 .s2-conversion-grid input,.s2-conversion-grid select{width:100%;max-width:none}
 .s2-conversion-info{margin-top:8px;min-height:1.4em;font-size:12px;color:#555}
 .s2-conversion-info.warning{color:#a25a00;background:#fff8e6;border:1px solid #e5c982;border-radius:5px;padding:6px 8px}
-@media(max-width:1050px){.s2-conversion-grid{grid-template-columns:repeat(2,minmax(130px,1fr))}}
-@media(max-width:760px){.s2-conversion-grid{grid-template-columns:1fr}}
+@media(max-width:1250px){.s2-conversion-card{overflow-x:auto}.s2-conversion-grid{grid-template-columns:repeat(6,minmax(150px,1fr));min-width:980px}}
+
+/* v83: balanced Script workspace, compact help, and explicit one-shot conversion. */
+@media(min-width:1181px){
+  .script-workspace:not(.aset-collapsed){
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+}
+.script-aset-heading-actions{display:flex;align-items:center;gap:6px}
+.info-toggle-button{
+  width:auto!important;
+  padding:3px 7px;
+  white-space:nowrap;
+  font-size:12px;
+  line-height:1.35;
+}
+.time-info-row{display:flex;justify-content:flex-end;margin:0 0 5px}
+.time-info-panel{
+  margin:0 0 8px;
+  padding:7px 8px;
+  border:1px solid #d9dee5;
+  border-radius:6px;
+  background:#f8fafc;
+}
+.time-info-panel .time-range-help,
+.time-info-panel .time-mcu-help{
+  margin:0;
+  color:#555;
+}
+.time-info-panel .time-mcu-help{margin-top:7px;padding-top:7px;border-top:1px solid #e2e5e9}
+
+/* v84: larger Script help controls and editor text. */
+.info-toggle-button{
+  padding:6px 11px!important;
+  font-size:14px!important;
+  line-height:1.35!important;
+  font-weight:650;
+}
+.time-info-row-inline{
+  display:inline-flex!important;
+  justify-content:flex-start!important;
+  margin:0!important;
+}
+.script-command-actions{display:flex;align-items:center;gap:6px}
+.script-aset-help{
+  font-size:14px!important;
+  line-height:1.5!important;
+}
+.script-spice-editor .script-spice-backdrop,
+.script-spice-editor .script-spice-text{
+  font-size:15px!important;
+  line-height:1.55!important;
+}
+.script-spice-line-numbers{
+  font-size:15px!important;
+  line-height:1.55!important;
+}
+
+
+/* v85: ASET Info uses the same panel presentation as Time estimate Info. */
+#scriptAsetHelp.time-info-panel{
+  margin:0 0 8px!important;
+  padding:7px 8px!important;
+  border:1px solid #d9dee5!important;
+  border-radius:6px!important;
+  background:#f8fafc!important;
+  color:#555!important;
+  font-size:14px!important;
+  line-height:1.5!important;
+}
+
+/* v87: multi-peak S2 conversion results */
+.s2-conversion-results{margin-top:8px;overflow-x:auto}
+.s2-conversion-table{width:100%;border-collapse:collapse;font-size:13px}
+.s2-conversion-table th,.s2-conversion-table td{padding:6px 8px;border:1px solid #d9dee5;text-align:right;white-space:nowrap}
+.s2-conversion-table th{background:#f6f8fa;font-weight:600}
+.s2-conversion-table .warning-row td:last-child{color:#a25a00;font-weight:600}
+
+/* v94 Angle calculation Single / Scan controls */
+.geometry-inner-tabs{margin-top:0}
+.geometry-scan-target{padding:8px 0 2px}
+.geometry-scan-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:end}
+.geometry-scan-grid-final{margin-top:8px}
+.geometry-scan-grid label,.geometry-scan-grid input[type=number]{min-width:0;width:100%;max-width:none}
+.geometry-scan-empty{min-height:1px}
+.geometry-scan-output{margin-top:8px;border-top:1px solid #ddd}
+.geometry-scan-output-pane{background:#fff;padding:8px}
+.geometry-scan-point-row{display:flex;align-items:center;gap:10px;margin:0 0 8px}
+.geometry-scan-point-row label{flex:1}
+.geometry-scan-point-row input[type=range]{width:100%}
+.geometry-scan-point-row output{min-width:62px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}
+.geometry-scan-table-panel{background:#fff;border:1px solid #ddd;border-radius:4px;max-width:100%;overflow:auto;max-height:430px}
+.geometry-scan-table-wrap{width:max-content;min-width:100%;overflow:visible;background:#fff}
+.geometry-scan-table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;background:#fff}
+.geometry-scan-table th,.geometry-scan-table td{border:1px solid #ddd;padding:6px 7px;text-align:right;font-variant-numeric:tabular-nums;background:#fff}
+.geometry-scan-table th{background:#f2f2f2;font-weight:650;position:sticky;top:0;z-index:1}
+.geometry-scan-table th:first-child,.geometry-scan-table td:first-child{text-align:center;width:52px;min-width:52px}
+.geometry-scan-table th:last-child,.geometry-scan-table td:last-child{text-align:left;white-space:normal;min-width:150px}
+.geometry-scan-selected-row td{background:#fff7d6}
+.geometry-scan-hkl-head,.geometry-scan-hkl-cell{width:64px;min-width:64px;max-width:64px}
+.geometry-scan-clicked-row td{background:#fff0ad !important}
+.geometry-scan-table tbody tr{cursor:pointer}
+.geometry-scan-table tbody tr:hover td{background:#fff9e8}
+@media(max-width:900px){
+  .geometry-scan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .geometry-scan-empty{display:none}
+}

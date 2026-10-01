@@ -143,10 +143,17 @@
         </div>
         <div id="geometryAnglesPane" class="geometry-card-pane" role="tabpanel" aria-labelledby="geometryTabAngles">
           <div id="geometrySpurionWarning" class="qe-spurion-warning geometry-spurion-warning" aria-live="polite"></div>
+          <div id="geometryCalcModeTabs" class="geometry-card-tabs geometry-inner-tabs" role="tablist" aria-label="Angle calculation mode">
+            <button id="geometryModeSingle" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="singleGeometryTarget">Single</button>
+            <button id="geometryModeScan" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="scanGeometryTarget">Scan</button>
+          </div>
           <div class="geometry-target">
             <div id="singleGeometryTarget">
               <div class="geometry-target-row"><div class="grid4"><label>h<input id="geomH" type="number" value="1" step="0.1"></label><label>k<input id="geomK" type="number" value="0" step="0.1"></label><label>l<input id="geomL" type="number" value="0" step="0.1"></label><label>ħω (meV)<input id="geomHW" type="number" value="0" step="0.1"></label></div><div class="geometry-target-buttons"><div class="geometry-target-all-buttons"><button id="geomSetU" type="button">Set U</button><button id="geomSetV" type="button">Set V</button><button id="geomPerpU" type="button">ki ⟂ U</button><button id="geomPerpV" type="button">ki ⟂ V</button><button id="geomParallelU" type="button" class="hidden">ki ∥ U</button><button id="geomParallelV" type="button" class="hidden">ki ∥ V</button><button id="geomSetBragg" type="button" class="hidden">Set Bragg peak</button></div></div></div>
-              <div class="geometry-hw-slider-row"><label>ħω<input id="geomHWSlider" type="range" min="0" max="0" step="0.1" value="0"></label><output id="geomHWValue">0.0 meV</output></div>
+            </div>
+            <div id="scanGeometryTarget" class="geometry-scan-target hidden">
+              <div class="geometry-scan-grid geometry-scan-grid-initial"><label>H initial<input id="geomScanH0" type="number" value="1" step="0.1"></label><label>K initial<input id="geomScanK0" type="number" value="0" step="0.1"></label><label>L initial<input id="geomScanL0" type="number" value="0" step="0.1"></label><label>ħω initial (meV)<input id="geomScanHW0" type="number" value="0" step="0.1"></label><label>Points<input id="geomScanNpts" type="number" min="2" step="1" value="11"></label></div>
+              <div class="geometry-scan-grid geometry-scan-grid-final"><label>H final<input id="geomScanH1" type="number" value="1" step="0.1"></label><label>K final<input id="geomScanK1" type="number" value="0" step="0.1"></label><label>L final<input id="geomScanL1" type="number" value="0" step="0.1"></label><label>ħω final (meV)<input id="geomScanHW1" type="number" value="10" step="0.1"></label><div class="geometry-scan-empty" aria-hidden="true"></div></div>
             </div>
             <div id="powderGeometryTarget" class="powder-geometry-target hidden">
               <label>S2 (deg)<input id="powderGeomS2" type="text" inputmode="text" value="-30"></label>
@@ -155,10 +162,27 @@
             </div>
             <div id="geometryAngles" class="geometry-angles">Enter a target Q and ħω to calculate TAS angles.</div>
           </div>
-          <div id="geometryPlot" class="qe-plot geometry"></div>
+          <div id="geometryDefaultPlotMount"><div id="geometryPlot" class="qe-plot geometry"></div></div>
+          <div id="geometryScanOutput" class="geometry-scan-output hidden">
+            <div class="geometry-card-tabs geometry-inner-tabs" role="tablist" aria-label="Scan output">
+              <button id="geometryScanTabTable" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="geometryScanTablePane">Table</button>
+              <button id="geometryScanTabPlot" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="geometryScanPlotPane">TAS geometry</button>
+            </div>
+            <div id="geometryScanTablePane" class="geometry-scan-output-pane" role="tabpanel" aria-labelledby="geometryScanTabTable">
+              <div id="geometryScanTableHost" class="geometry-scan-table-panel"></div>
+            </div>
+            <div id="geometryScanPlotPane" class="geometry-scan-output-pane hidden" role="tabpanel" aria-labelledby="geometryScanTabPlot">
+              <div class="geometry-scan-point-row"><label>Point<input id="geomScanPointSlider" type="range" min="1" max="11" step="1" value="1"></label><output id="geomScanPointValue">1 / 11</output></div>
+              <div id="geometryScanPlotMount"></div>
+            </div>
+          </div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count uses MCU; wait remains in seconds. Scan/count MCU values are converted to real time using the MCU setting below. Fractions are accepted in numeric Details.</div>
+          <div class="time-info-row"><button id="timeEstimateInfoToggle" class="info-toggle-button" type="button" aria-expanded="false" aria-controls="timeEstimateInfoPanel" title="Show Time estimate information">ⓘ Info</button></div>
+          <div id="timeEstimateInfoPanel" class="time-info-panel hidden">
+            <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count uses MCU; wait remains in seconds. Scan/count MCU values are converted to real time using the MCU setting below. Fractions are accepted in numeric Details.</div>
+            <div class="time-mcu-help"><strong>Calc MCU:</strong> Scan and count durations use the MCU value above together with the configured seconds per MCU. Ranged scan MCU values are used as relative weights and only unfixed scans are rescaled to fit the Scan start–finish time. Loop repetitions and Movement time are included. Fixed-Details commands use MCU = 0; wait remains in seconds. Adjusted MCU values are whole numbers and are truncated downward.</div>
+          </div>
           <div class="time-estimate-settings" aria-label="Time estimate settings">
             <label><span>1 MCU =</span><span class="time-setting-entry"><input id="timeMcuSecondsPerUnit" type="number" min="0.000001" step="0.001" value="1" inputmode="decimal"><span>s</span></span></label>
             <label><span>Movement time</span><span class="time-setting-entry"><input id="timeMovementPercent" type="number" min="0" step="0.1" value="1" inputmode="decimal"><span>%</span></span></label>
@@ -180,9 +204,6 @@
             <button id="timeRemoveScan" type="button" disabled>Remove</button>
           </div>
 
-          <div class="time-mcu-help">
-            <strong>Calc MCU:</strong> Scan and count durations use the MCU value above together with the configured seconds per MCU. Ranged scan MCU values are used as relative weights and only unfixed scans are rescaled to fit the Scan start–finish time. Loop repetitions and Movement time are included. Fixed-Details commands use MCU = 0; wait remains in seconds. Adjusted MCU values are whole numbers and are truncated downward.
-          </div>
 
           <div class="time-estimate-controls">
             <div class="time-estimate-button-row">
@@ -241,8 +262,8 @@
     <section class="calc-card" id="resolutionCalculation">
       <h2>Calculation point</h2>
       <div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
-      <div id="singleInputs" class="grid5"><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><button id="calc">Calculate</button></div>
-      <div id="scanInputs" class="scan hidden"><div class="grid5"><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>ℏω final<input id="hw1" type="number" value="10"></label><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><button id="calcScan">Calculate</button></div></div>
+      <div id="singleInputs" class="grid5"><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label><button id="calc">Calculate</button></div>
+      <div id="scanInputs" class="scan hidden"><div class="grid5"><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><label>ℏω final<input id="hw1" type="number" value="10"></label><button id="calcScan">Calculate</button></div></div>
     </section>
     <section id="result" class="hidden"><h2>Resolution</h2><div id="summary" class="summary"></div><div id="scanNav" class="scan-nav hidden"><button id="prev">◀ Prev</button><input id="scanSlider" type="range" min="1" max="1" value="1"><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
       </div>
@@ -285,9 +306,10 @@
           </select>
         </label>
         <label>X-ray wavelength (Å)<input id="s2ConvXrayLambda" type="number" value="1.540593" min="0" step="0.000001"></label>
-        <label>Observed X-ray S2 (deg)<input id="s2ConvXrayS2" type="number" value="60" min="0" max="180" step="0.001"></label>
-        <label>Neutron wavelength (Å)<input id="s2ConvNeutronLambda" type="number" readonly></label>
-        <label>Neutron S2 (deg)<input id="s2ConvNeutronS2" type="number" readonly></label>
+        <label>Observed X-ray S2 (deg)<input id="s2ConvXrayS2" type="text" value="60" inputmode="decimal" placeholder="e.g. 20 35.5 60"></label>
+        <label>Neutron wavelength (Å)<input id="s2ConvNeutronLambda" type="text" readonly></label>
+        <label>Neutron S2 (deg)<input id="s2ConvNeutronS2" type="text" readonly></label>
+        <label>d (Å)<input id="s2ConvD" type="text" readonly></label>
       </div>
       <div id="s2ConvInfo" class="s2-conversion-info" aria-live="polite"></div>
     </section>
@@ -431,8 +453,8 @@
     <section class="calc-card script-card">
       <div class="script-workspace">
         <div class="script-aset-pane">
-          <div class="script-pane-heading script-aset-heading"><span>ASET</span><button id="scriptAsetAdd" type="button">+ Add ASET</button></div>
-          <div class="script-aset-help">Each ASET is a SPICE command template. Use <code>&lt;value&gt;</code> for one-value Details and <code>&lt;range&gt;</code> for initial/final/step Details. Repeat placeholders to create multiple Detail boxes. For ASET lines beginning with <code>scan</code> or <code>scanrel</code>, <code>preset mcu</code> is added automatically from that command row's MCU value. Separate commands with commas or line breaks.</div>
+          <div class="script-pane-heading script-aset-heading"><span>ASET</span><div class="script-aset-heading-actions"><button id="scriptAsetInfoToggle" class="info-toggle-button" type="button" aria-expanded="false" aria-controls="scriptAsetHelp" title="Show ASET information">ⓘ Info</button><button id="scriptAsetAdd" type="button">+ Add ASET</button></div></div>
+          <div id="scriptAsetHelp" class="time-info-panel script-aset-help hidden">Each ASET is a SPICE command template. Use <code>&lt;value&gt;</code> for one-value Details and <code>&lt;range&gt;</code> for initial/final/step Details. Repeat placeholders to create multiple Detail boxes. For ASET lines beginning with <code>scan</code> or <code>scanrel</code>, <code>preset mcu</code> is added automatically from that command row's MCU value. Separate commands with commas or line breaks.</div>
           <div class="script-aset-table-header"><span>Index</span><span>Target</span><span>SPICE template</span><span></span></div>
           <div id="scriptAsetList" class="script-aset-list"></div>
         </div>

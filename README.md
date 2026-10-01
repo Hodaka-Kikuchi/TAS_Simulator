@@ -7,8 +7,10 @@ Browser-based simulator for triple-axis neutron spectrometers. The current versi
 ### Q-E Range
 - Single-crystal and powder Q-E accessibility calculations.
 - Constant-E reciprocal-space map and Q vector–E map.
+- Q vector–E Dark-angle overlays remain visible even where they extend outside the Accessible Q region.
 - Nuclear/magnetic Bragg peak display, background scattering, and Dark-angle overlays.
 - Angle calculation & TAS geometry using the selected instrument sign convention.
+- Angle calculation supports Single and Scan modes; Scan interpolates H/K/L/ħω between initial/final points, shows all motor angles in a table, and uses a Point slider to inspect the corresponding TAS geometry.
 - Sample-orientation reference by ki ⟂ U, ki ⟂ V, or observed Bragg peak position.
 - Bragg-reference warning when the entered HKL is outside the current U-V scattering plane.
 - Dark-angle status warnings for the current geometry (`ki blocked`, `kf blocked`, `fixed blocked`).
@@ -18,6 +20,9 @@ Browser-based simulator for triple-axis neutron spectrometers. The current versi
 - Resolution ellipses and matrices for the selected calculation point.
 
 ### Script / Time estimate
+- With ASET visible, the desktop workspace uses equal-width ASET / Time estimate commands / SPICE macro panes.
+- ASET and Time estimate explanatory help is available from compact `Info` buttons; warnings/errors remain visible.
+- `→ SPICE` and `← Commands` are explicit one-shot conversions. Editing one side does not automatically overwrite the other side.
 - `th2th` is interpreted as a relative S2 scan for Script warning checks; its offsets are evaluated from the S2 position reached by preceding movement commands.
 - Command-table editor with drive/scan/scanrel/loop/count/wait/scantitle and supported targets.
 - SPICE macro conversion in both directions.
@@ -34,7 +39,7 @@ Browser-based simulator for triple-axis neutron spectrometers. The current versi
 ### Toolbox
 - Unit conversion and harmonic wavelength/energy table.
 - Neutron attenuation tools.
-- **S2 conversion**: converts an observed X-ray diffraction S2 (2θ) to the neutron S2 for the currently selected fixed Ei/Ef.
+- **S2 conversion**: converts one or more space-separated observed X-ray diffraction S2 (2θ) values to the corresponding d-spacing and neutron S2 for the currently selected fixed Ei/Ef.
   - Presets: Cu Kα1, Mo Kα1, Co Kα1, Fe Kα1, Cr Kα1, Ag Kα1.
   - X-ray wavelength remains editable for custom sources.
   - Neutron wavelength is obtained automatically from the current fixed instrument energy.
@@ -69,3 +74,26 @@ http://localhost:8888/
 ```
 
 After replacing JavaScript/CSS/HTML files, use a hard refresh (`Ctrl + Shift + R`) if the browser has cached an older version.
+
+
+## GitHub Pages data loading
+The unified `instrument/` directory is the primary instrument source. Optional `BG_material/`, `sample_environments/`, and legacy `instruments/` directories are not probed automatically on GitHub Pages when they are not part of the deployment, preventing unnecessary 404 requests.
+
+
+## v88
+- S2 conversion controls are shown on one row; result columns are X-ray S2, Neutron S2, then d-spacing.
+
+## v89
+- S2 conversion uses a single-row six-field layout. Neutron wavelength, neutron S2, and d are read-only; multiple peak results are shown space-separated.
+
+### Q vector-E background material overlay
+When BG materials are selected, their powder reflection lines are also shown on the Q vector-E map at the intersections between each powder |Q| ring and the selected HKL path.
+
+### v91 display refinements
+Q vector–E uses the same legend ordering as Constant E and labels every integer-HKL point within the displayed horizontal range.
+
+### Angle calculation scan display
+Scan mode provides equal-width initial/final HKL/energy inputs and Points, followed by Table and TAS geometry views. The table is scrollable, while TAS geometry provides the Point slider for inspecting individual scan points.
+
+### Angle scan table
+The Scan table uses compact 3-decimal H/K/L/ħω columns. Rows may be clicked for table-only highlighting. Status reports motor-range and kinematic reachability warnings as well as Dark-angle blocks.
