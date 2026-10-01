@@ -3661,6 +3661,9 @@ function qeDarkBlockWarningsForHKLE(cache,hkl,hw){
 }
 
 
+const GEOMETRY_CALC_MODE_STORAGE_KEY='tas-geometry-calc-mode-v1';
+const GEOMETRY_SCAN_OUTPUT_STORAGE_KEY='tas-geometry-scan-output-tab-v1';
+
 function geometryCalculationMode(){
   return $('geometryModeScan')?.classList.contains('active') ? 'scan' : 'single';
 }
@@ -3736,16 +3739,28 @@ function renderGeometryScanTable(cache,points,sense,displaySense,selectedIndex){
       warnings.push(...geometryScanStatusWarnings(target,a));
       warnings.push(...qeDarkBlockWarningsForHKLE(cache,[calc.h,calc.k,calc.l],calc.hw));
       const f=v=>Number.isFinite(v)?formatAngle(v):'—';
-      return `<tr data-geometry-scan-row="${i}"><td class="geometry-scan-point-cell">${i+1}</td><td class="geometry-scan-hkl-cell">${calc.h.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.k.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.l.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.hw.toFixed(3)}</td><td>${f(a.m1)}</td><td>${f(a.m2)}</td><td>${f(a.s1)}</td><td>${f(a.s2)}</td><td>${f(a.a1)}</td><td>${f(a.a2)}</td><td>${warnings.length?warnings.join(' / '):''}</td></tr>`;
+      const status=warnings.length?warnings.join(' / '):'';
+      const rowClasses=[];
+      if(i===selectedIndex) rowClasses.push('geometry-scan-selected-row');
+      if(status) rowClasses.push('geometry-scan-warning-row');
+      const rowClass=rowClasses.length?` class="${rowClasses.join(' ')}"`:'';
+      return `<tr data-geometry-scan-row="${i}"${rowClass}><td class="geometry-scan-point-cell">${i+1}</td><td class="geometry-scan-hkl-cell">${calc.h.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.k.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.l.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.hw.toFixed(3)}</td><td>${f(a.m1)}</td><td>${f(a.m2)}</td><td>${f(a.s1)}</td><td>${f(a.s2)}</td><td>${f(a.a1)}</td><td>${f(a.a2)}</td><td>${status}</td></tr>`;
     }catch(err){
-      return `<tr data-geometry-scan-row="${i}"><td class="geometry-scan-point-cell">${i+1}</td><td class="geometry-scan-hkl-cell">${calc.h.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.k.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.l.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.hw.toFixed(3)}</td><td colspan="6">—</td><td>${geometryScanErrorStatus(err)}</td></tr>`;
+      const status=geometryScanErrorStatus(err);
+      const rowClasses=['geometry-scan-warning-row'];
+      if(i===selectedIndex) rowClasses.push('geometry-scan-selected-row');
+      const rowClass=` class="${rowClasses.join(' ')}"`;
+      return `<tr data-geometry-scan-row="${i}"${rowClass}><td class="geometry-scan-point-cell">${i+1}</td><td class="geometry-scan-hkl-cell">${calc.h.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.k.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.l.toFixed(3)}</td><td class="geometry-scan-hkl-cell">${calc.hw.toFixed(3)}</td><td colspan="6">—</td><td>${status}</td></tr>`;
     }
   }).join('');
-  box.innerHTML=`<div class="geometry-scan-table-wrap"><table class="geometry-scan-table"><thead><tr><th>Point</th><th class="geometry-scan-hkl-head">H</th><th class="geometry-scan-hkl-head">K</th><th class="geometry-scan-hkl-head">L</th><th class="geometry-scan-hkl-head">ħω</th><th>M1</th><th>M2</th><th>S1</th><th>S2</th><th>A1</th><th>A2</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  box.innerHTML=`<div class="geometry-scan-table-wrap"><table class="geometry-scan-table"><thead><tr><th>No.</th><th class="geometry-scan-hkl-head">H</th><th class="geometry-scan-hkl-head">K</th><th class="geometry-scan-hkl-head">L</th><th class="geometry-scan-hkl-head">ħω</th><th>M1</th><th>M2</th><th>S1</th><th>S2</th><th>A1</th><th>A2</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   box.querySelectorAll('tbody tr[data-geometry-scan-row]').forEach(row=>{
     row.addEventListener('click',()=>{
-      box.querySelectorAll('tbody tr.geometry-scan-clicked-row').forEach(other=>other.classList.remove('geometry-scan-clicked-row'));
-      row.classList.add('geometry-scan-clicked-row');
+      const i=Number(row.dataset.geometryScanRow);
+      const slider=$('geomScanPointSlider');
+      if(slider && Number.isInteger(i)) slider.value=String(i+1);
+      syncGeometryScanPointSlider(points.length);
+      if(singleCache && checkedValue('sampleMode')==='single') renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
     });
   });
 }
@@ -3756,6 +3771,7 @@ function currentGeometryScanOutputTab(){
 
 function setGeometryScanOutputTab(name){
   const plot=name==='plot';
+  try{ localStorage.setItem(GEOMETRY_SCAN_OUTPUT_STORAGE_KEY,plot?'plot':'table'); }catch(_e){}
   $('geometryScanTabTable')?.classList.toggle('active',!plot);
   $('geometryScanTabPlot')?.classList.toggle('active',plot);
   $('geometryScanTabTable')?.setAttribute('aria-selected',String(!plot));
@@ -3775,6 +3791,7 @@ function moveGeometryPlotForMode(scan){
 
 function setGeometryCalculationMode(mode){
   const scan=mode==='scan';
+  try{ localStorage.setItem(GEOMETRY_CALC_MODE_STORAGE_KEY,scan?'scan':'single'); }catch(_e){}
   $('geometryModeSingle')?.classList.toggle('active',!scan);
   $('geometryModeScan')?.classList.toggle('active',scan);
   $('geometryModeSingle')?.setAttribute('aria-selected',String(!scan));
@@ -4848,10 +4865,10 @@ for(const id of ['qeVecH0','qeVecK0','qeVecL0','qeVecH1','qeVecK1','qeVecL1']){
   $(id)?.addEventListener('input',()=>{if(singleCache && !$('qeVectorMapPane')?.classList.contains('hidden')) renderQEVectorMap(singleCache);});
 }
 
-$('geometryModeSingle')?.addEventListener('click',()=>setGeometryCalculationMode('single'));
-$('geometryModeScan')?.addEventListener('click',()=>setGeometryCalculationMode('scan'));
-$('geometryScanTabTable')?.addEventListener('click',()=>setGeometryScanOutputTab('table'));
-$('geometryScanTabPlot')?.addEventListener('click',()=>setGeometryScanOutputTab('plot'));
+$('geometryModeSingle')?.addEventListener('click',()=>{setGeometryCalculationMode('single');saveRightPanelState();});
+$('geometryModeScan')?.addEventListener('click',()=>{setGeometryCalculationMode('scan');saveRightPanelState();});
+$('geometryScanTabTable')?.addEventListener('click',()=>{setGeometryScanOutputTab('table');saveRightPanelState();});
+$('geometryScanTabPlot')?.addEventListener('click',()=>{setGeometryScanOutputTab('plot');saveRightPanelState();});
 $('geomScanPointSlider')?.addEventListener('input',()=>{
   if(singleCache && checkedValue('sampleMode')==='single') renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
 });
@@ -9444,7 +9461,14 @@ function saveRightPanelState(){
     for(const el of rightPanelControls()){
       values[el.id]=(el.type==='checkbox'||el.type==='radio') ? !!el.checked : el.value;
     }
-    localStorage.setItem(RIGHT_PANEL_STORAGE_KEY,JSON.stringify({version:1,values}));
+    // Keep the tab state alongside the right-panel values as well as in its
+    // dedicated keys.  This makes Single/Scan and Table/TAS geometry survive
+    // reloads even if initialization later rebuilds or re-renders the panel.
+    values.__geometryCalculationMode=geometryCalculationMode();
+    values.__geometryScanOutputTab=currentGeometryScanOutputTab();
+    localStorage.setItem(RIGHT_PANEL_STORAGE_KEY,JSON.stringify({version:2,values}));
+    localStorage.setItem(GEOMETRY_CALC_MODE_STORAGE_KEY,values.__geometryCalculationMode);
+    localStorage.setItem(GEOMETRY_SCAN_OUTPUT_STORAGE_KEY,values.__geometryScanOutputTab);
   }catch(_e){ /* localStorage may be unavailable in a restricted browser context. */ }
 }
 
@@ -9463,6 +9487,13 @@ function restoreRightPanelState(){
       }else el.value=String(value);
     }
     updateCalcMode();
+    // Restore the geometry sub-tabs after every right-panel value has been
+    // applied.  Applying this last prevents later UI refreshes from leaving the
+    // HTML-default Single/Table tabs selected.
+    const savedGeometryMode=saved.values.__geometryCalculationMode;
+    const savedGeometryOutput=saved.values.__geometryScanOutputTab;
+    if(savedGeometryMode==='single' || savedGeometryMode==='scan') setGeometryCalculationMode(savedGeometryMode);
+    if(savedGeometryOutput==='table' || savedGeometryOutput==='plot') setGeometryScanOutputTab(savedGeometryOutput);
     return true;
   }finally{restoringRightPanel=false;}
 }
@@ -9472,6 +9503,18 @@ function savedActiveTab(){
     const name=localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
     return ['qe','resolution','toolbox','cif-generator','script'].includes(name) ? name : 'qe';
   }catch(_e){ return 'qe'; }
+}
+
+function restoreGeometrySubTabsFromStorage(){
+  try{
+    const mode=localStorage.getItem(GEOMETRY_CALC_MODE_STORAGE_KEY);
+    const output=localStorage.getItem(GEOMETRY_SCAN_OUTPUT_STORAGE_KEY);
+    setGeometryCalculationMode(mode==='scan'?'scan':'single');
+    setGeometryScanOutputTab(output==='plot'?'plot':'table');
+  }catch(_e){
+    setGeometryCalculationMode('single');
+    setGeometryScanOutputTab('table');
+  }
 }
 
 function enableRightPanelPersistence(){
@@ -9645,6 +9688,7 @@ async function initialize(){
     const savedMapTab=localStorage.getItem('tas-qe-map-tab-v1');
     setQEMapTab(savedMapTab==='vector'?'vector':'constant');
   }catch(_e){ setQEMapTab('constant'); }
+  restoreGeometrySubTabsFromStorage();
 
   // Register the main tabs before any optional async data source is loaded.
   // A missing optional directory or CIF-generator asset must never leave the
@@ -9696,6 +9740,11 @@ async function initialize(){
   // Right-side controls are restored only after dynamic Toolbox controls exist and
   // after the default geometry target has been initialized, so saved values win.
   const restoredRightState=restoreRightPanelState();
+  // Re-apply the geometry tab state at the end of right-panel restoration.
+  // This is deliberately late: dynamic controls and saved numeric values are
+  // already in place, so no subsequent initialization step can overwrite the
+  // selected Single/Scan or Table/TAS geometry tab.
+  restoreGeometrySubTabsFromStorage();
   syncSfColorMaxControl("restore");
   enableRightPanelPersistence();
   for(const id of ['toolLambda','toolEnergy','toolK','toolTHz','toolTemp','toolCm','toolVelocity','toolMass','toolField','toolJ','toolCal']) $(id).addEventListener('input',()=>setToolboxFrom(id));

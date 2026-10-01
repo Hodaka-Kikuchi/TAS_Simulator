@@ -100,3 +100,13 @@ The Scan table uses compact 3-decimal H/K/L/ħω columns. Rows may be clicked fo
 
 ### Data directories
 At startup, the current version loads instrument JSON, BG-material CIF data, and sample-environment/Dark-angle JSON data. On GitHub Pages, file discovery uses the current Pages repository contents directly, so separate `index.json` manifests are not required for these directories.
+
+## v98 UI update
+- The Angle calculation Scan table uses `No.` labels, highlights warning/error Status cells in vermilion, and keeps the selected row synchronized with the TAS geometry scan position.
+
+
+### Scan UI state
+The Angle calculation Scan table uses vermilion row highlighting for non-empty Status values while keeping Status text black. The Single/Scan and Table/TAS geometry tab selections are stored locally and restored on reload.
+
+## v100 UI note
+Angle calculation Scan warning rows use a pale vermilion highlight, and the `Single / Scan` plus `Table / TAS geometry` tab selections are restored from browser-local state after reload.
