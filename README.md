@@ -142,3 +142,13 @@ Resolution Single displays H, K, L, ħω, and Calculate on one row.
 
 ### v110 UI note
 Dark-angle enable checkboxes now use one blue accent consistently, and Dark angle labels use normal font weight.
+
+
+## Manual
+The bundled `TAS_Simulator_Manual.html` can be opened from the `Manual` link in the application header.
+
+### v112 note
+BG material row count and selections are persisted locally and restored on reload.
+
+## Local parameters
+PLANE-TAS restores browser-local UI settings after configuration data are loaded. This includes dynamic BG and Dark-angle layouts, ordinary editable controls, checkboxes/selects, and the principal tab selections. Local file inputs are not restorable by the browser and must be selected again after reload.

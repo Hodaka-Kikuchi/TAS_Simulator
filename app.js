@@ -95,6 +95,7 @@ function handleBackgroundSelection(changedId){
     }
   }
   updateBackgroundSelectAvailability();
+  saveLeftPanelState();
   scheduleRecalc();
 }
 
@@ -155,6 +156,7 @@ function removeBackground(index){
   const position=backgroundRowIndices().indexOf(Number(index));
   if(position>=0) values.splice(position,1);
   replaceBackgroundRows(values,{recalc:true});
+  saveLeftPanelState();
 }
 
 function propagationVectorIndices(){
@@ -2101,6 +2103,7 @@ function removePropagationVector(index){
   const position=propagationVectorIndices().indexOf(Number(index));
   if(position>=0) values.splice(position,1);
   replacePropagationVectors(values,{recalc:true});
+  saveLeftPanelState();
 }
 
 function makeDarkRangeCells(slot,index,values={}){
@@ -2171,6 +2174,7 @@ function removeDarkRange(slot,index){
   const i=Math.max(0,Math.min(ranges.length-1,Number(index)||0));
   ranges.splice(i,1);
   replaceDarkRanges(slot,ranges,{recalc:true});
+  saveLeftPanelState();
 }
 
 function createDarkAsset(slot,values={}){
@@ -2269,6 +2273,7 @@ function removeDarkAsset(slot){
   const position=darkAssetSlots().indexOf(Number(slot));
   if(position>=0) values.splice(position,1);
   replaceDarkAssets(values,{recalc:true});
+  saveLeftPanelState();
 }
 
 function bindDynamicSidebarUI(){
@@ -2288,6 +2293,7 @@ function bindDynamicSidebarUI(){
     const values=propagationVectorValues();
     values.push({});
     replacePropagationVectors(values,{recalc:true});
+    saveLeftPanelState();
   });
 
   const backgroundHost=$("backgroundRows");
@@ -2306,6 +2312,7 @@ function bindDynamicSidebarUI(){
     const values=backgroundRowValues();
     values.push({});
     replaceBackgroundRows(values,{recalc:true});
+    saveLeftPanelState();
   });
 
   const darkHost=$("darkAssets");
@@ -2337,6 +2344,7 @@ function bindDynamicSidebarUI(){
         const ranges=darkRangeValues(slot);
         ranges.push({});
         replaceDarkRanges(slot,ranges,{recalc:true});
+        saveLeftPanelState();
       }else if(removeRange){
         removeDarkRange(Number(removeRange.dataset.darkSlot),Number(removeRange.dataset.darkRange));
       }else if(removeAsset){
@@ -2350,6 +2358,7 @@ function bindDynamicSidebarUI(){
     const values=darkAssetValues();
     values.push({});
     replaceDarkAssets(values,{recalc:true});
+    saveLeftPanelState();
   });
 }
 
@@ -9635,28 +9644,43 @@ function setupAppHeader(){
   const header=document.querySelector('header');
   const h1=header?.querySelector('h1');
   if(h1) h1.textContent='TAS Simulator';
-  if(!header || document.getElementById('githubLink')) return;
+  if(!header) return;
 
-  // Project repository: fixed URL so the GitHub link works identically on
-  // localhost, GitHub Pages, and custom-domain deployments.
-  const repoUrl='https://github.com/Hodaka-Kikuchi/TAS_Simulator';
+  // Keep the user manual next to the repository link in the top status bar.
+  // Both are ordinary static links so they work on localhost and GitHub Pages.
+  if(!document.getElementById('manualLink')){
+    const manual=document.createElement('a');
+    manual.id='manualLink';
+    manual.href='TAS_Simulator_Manual.html';
+    manual.target='_blank';
+    manual.rel='noopener noreferrer';
+    manual.textContent='Manual';
+    manual.title='Open the PLANE-TAS user manual';
+    Object.assign(manual.style,{whiteSpace:'nowrap',fontWeight:'600'});
+    header.appendChild(manual);
+  }
 
-  const a=document.createElement('a');
-  a.id='githubLink';
-  a.href=repoUrl;
-  a.target='_blank';
-  a.rel='noopener noreferrer';
-  a.textContent='GitHub';
-  a.title='Open this project on GitHub';
-  Object.assign(a.style,{marginLeft:'auto',whiteSpace:'nowrap',fontWeight:'600'});
-  header.appendChild(a);
-  // Keep the link at the far right without requiring a styles.css change.
+  if(!document.getElementById('githubLink')){
+    // Project repository: fixed URL so the GitHub link works identically on
+    // localhost, GitHub Pages, and custom-domain deployments.
+    const repoUrl='https://github.com/Hodaka-Kikuchi/TAS_Simulator';
+    const github=document.createElement('a');
+    github.id='githubLink';
+    github.href=repoUrl;
+    github.target='_blank';
+    github.rel='noopener noreferrer';
+    github.textContent='GitHub';
+    github.title='Open this project on GitHub';
+    Object.assign(github.style,{whiteSpace:'nowrap',fontWeight:'600'});
+    header.appendChild(github);
+  }
+
+  // Keep status, Manual, and GitHub together at the right side of the header.
   header.style.display='flex';
   header.style.alignItems='center';
   header.style.gap='14px';
   const status=header.querySelector('#status');
   if(status) status.style.marginLeft='auto';
-  a.style.marginLeft='0';
 }
 
 function rightPanelControls(){
@@ -9735,6 +9759,87 @@ function enableRightPanelPersistence(){
   }
 }
 
+// Catch-all UI persistence.  Dedicated serializers above remain authoritative
+// for dynamic/complex widgets (Dark angle, BG, Time estimate, Script, etc.),
+// while this layer prevents ordinary stable-ID controls or tab choices from
+// silently falling through the cracks as the UI evolves.
+const APP_UI_STORAGE_KEY='tas-simulator-ui-state-v1';
+let restoringGlobalUI=false;
+let globalUIPersistenceEnabled=false;
+
+function globalUIPersistentControls(){
+  return [...document.querySelectorAll('input[id], select[id], textarea[id]')].filter(el=>{
+    const type=String(el.type||'').toLowerCase();
+    if(['button','submit','file'].includes(type)) return false;
+    if(el.readOnly) return false; // derived outputs are recomputed, not restored
+    return true;
+  });
+}
+
+function currentCifOutputTab(){
+  return $('cifOutputTabReflections')?.classList.contains('active') ? 'reflections' : 'preview';
+}
+
+function saveGlobalUIState(){
+  if(restoringGlobalUI || !globalUIPersistenceEnabled) return;
+  try{
+    const controls={};
+    for(const el of globalUIPersistentControls()){
+      controls[el.id]=(el.type==='checkbox'||el.type==='radio') ? !!el.checked : el.value;
+    }
+    const tabs={
+      main:['qe','resolution','toolbox','cif-generator','script'].find(name=>{
+        const id={qe:'tabQe',resolution:'tabResolution',toolbox:'tabToolbox','cif-generator':'tabCifGenerator',script:'tabScript'}[name];
+        return $(id)?.classList.contains('active');
+      }) || 'qe',
+      qeMap:$('qeMapTabVector')?.classList.contains('active') ? 'vector' : 'constant',
+      geometryCard:currentGeometryCardTab(),
+      geometryMode:geometryCalculationMode(),
+      geometryOutput:currentGeometryScanOutputTab(),
+      cifOutput:currentCifOutputTab()
+    };
+    localStorage.setItem(APP_UI_STORAGE_KEY,JSON.stringify({version:1,controls,tabs}));
+  }catch(_e){}
+}
+
+function restoreGlobalUIState(){
+  let saved;
+  try{ saved=JSON.parse(localStorage.getItem(APP_UI_STORAGE_KEY)||'null'); }catch(_e){ return false; }
+  if(!saved || saved.version!==1 || !saved.controls || typeof saved.controls!=='object') return false;
+  restoringGlobalUI=true;
+  try{
+    for(const el of globalUIPersistentControls()){
+      const value=saved.controls[el.id];
+      if(value===undefined) continue;
+      if(el.type==='checkbox'||el.type==='radio') el.checked=!!value;
+      else if(el.tagName==='SELECT'){
+        if([...el.options].some(o=>o.value===String(value))) el.value=String(value);
+      }else el.value=String(value);
+    }
+    const tabs=saved.tabs||{};
+    if(['constant','vector'].includes(tabs.qeMap)) setQEMapTab(tabs.qeMap);
+    if(['angles','time'].includes(tabs.geometryCard)) setGeometryCardTab(tabs.geometryCard);
+    if(['single','scan'].includes(tabs.geometryMode)) setGeometryCalculationMode(tabs.geometryMode);
+    if(['table','plot'].includes(tabs.geometryOutput)) setGeometryScanOutputTab(tabs.geometryOutput);
+    if(['preview','reflections'].includes(tabs.cifOutput)) setCifOutputTab(tabs.cifOutput);
+    if(['qe','resolution','toolbox','cif-generator','script'].includes(tabs.main)) setActiveTab(tabs.main);
+    updateCalcMode(); updateModeVisibility(); updateOrientationReferenceUI();
+    for(const slot of darkAssetSlots()) updateDarkReferenceUI(slot);
+    updateBackgroundSelectAvailability();
+    return true;
+  }finally{ restoringGlobalUI=false; }
+}
+
+function enableGlobalUIPersistence(){
+  if(globalUIPersistenceEnabled) return;
+  globalUIPersistenceEnabled=true;
+  document.addEventListener('input',saveGlobalUIState);
+  document.addEventListener('change',saveGlobalUIState);
+  document.addEventListener('click',event=>{
+    if(event.target.closest?.('[role="tab"]')) setTimeout(saveGlobalUIState,0);
+  });
+}
+
 setupAppHeader();
 
 // ==================== Local left-panel persistence ====================
@@ -9760,7 +9865,19 @@ function saveLeftPanelState(){
     for(const el of leftPanelControls()){
       values[el.id]=(el.type==='checkbox'||el.type==='radio') ? !!el.checked : el.value;
     }
-    localStorage.setItem(LEFT_PANEL_STORAGE_KEY,JSON.stringify({version:1,values}));
+    // Background-material rows are dynamic.  Persist their ordered selections
+    // explicitly so add/remove/rebuild operations cannot lose the user's BG
+    // choices even if a dynamic <select> is temporarily absent from the DOM.
+    values.__backgroundRows=backgroundRowValues();
+    values.backgroundCount=values.__backgroundRows.length;
+    // Dynamic sidebar groups need an explicit structural snapshot as well as
+    // per-control values. Add/remove operations do not emit input/change events,
+    // and recreating the DOM from only fixed IDs can otherwise lose row counts.
+    values.__propagationVectors=propagationVectorValues();
+    values.propagationCount=values.__propagationVectors.length;
+    values.__darkAssets=darkAssetValues();
+    values.darkAssetCount=values.__darkAssets.length;
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY,JSON.stringify({version:3,values}));
   }catch(_e){ /* localStorage may be unavailable in a restricted browser context. */ }
 }
 
@@ -9789,52 +9906,78 @@ function restoreLeftPanelState(){
     // controls.  For legacy fixed-3/fixed-4 saves, only actually used extra
     // slots/ranges are expanded.
     const nonzero=x=>Number.isFinite(Number(x)) && Math.abs(Number(x))>1e-12;
-    let propagationCount=Number(v.propagationCount);
+    const savedPropagationVectors=Array.isArray(v.__propagationVectors)
+      ? v.__propagationVectors.map(row=>({
+          enabled:!!row?.enabled,
+          h:String(row?.h ?? "0"), k:String(row?.k ?? "0"), l:String(row?.l ?? "0")
+        }))
+      : null;
+    let propagationCount=savedPropagationVectors?.length || Number(v.propagationCount);
     if(!(propagationCount>=1)){
       propagationCount=1;
       for(let i=2;i<=3;i++){
         if(v[`q_enable${i}`] || ["h","k","l"].some(c=>nonzero(v[`q${i}_${c}`]))) propagationCount=i;
       }
     }
-    setPropagationVectorCount(propagationCount);
+    if(savedPropagationVectors?.length) replacePropagationVectors(savedPropagationVectors,{recalc:false});
+    else setPropagationVectorCount(propagationCount);
 
-    let backgroundCount=Number(v.backgroundCount);
+    const savedBackgroundRows=Array.isArray(v.__backgroundRows)
+      ? v.__backgroundRows.map(row=>({key:String(row?.key||"")}))
+      : null;
+    let backgroundCount=savedBackgroundRows?.length || Number(v.backgroundCount);
     if(!(backgroundCount>=1)){
       backgroundCount=1;
       for(let i=2;i<=BACKGROUND_SLOTS.length;i++) if(v[`backgroundSelect${i}`]) backgroundCount=i;
     }
-    setBackgroundCount(backgroundCount);
+    if(savedBackgroundRows?.length) replaceBackgroundRows(savedBackgroundRows,{recalc:false});
+    else setBackgroundCount(backgroundCount);
 
-    let darkCount=Number(v.darkAssetCount);
-    if(!(darkCount>=1)){
-      darkCount=1;
-      for(let slot=2;slot<=3;slot++){
-        const ids=darkAssetIds(slot);
-        const used=!!v[ids.enable] || !!v[ids.se] || (v[ids.ref] && v[ids.ref]!=="Reference Q") ||
-          nonzero(v[ids.rotation]) || (v[ids.refH]!==undefined && Math.abs(Number(v[ids.refH])-1)>1e-12) || nonzero(v[ids.refK]) || nonzero(v[ids.refL]) ||
-          [0,1,2,3].some(i=>nonzero(v[ids.from(i)])||nonzero(v[ids.to(i)])||nonzero(v[ids.offset(i)]));
-        if(used) darkCount=slot;
-      }
-    }
-    setDarkAssetCount(darkCount);
-    for(const slot of darkAssetSlots()){
-      const ids=darkAssetIds(slot);
-      let rangeCount=Number(v[ids.rangeCount]);
-      if(!(rangeCount>=1)){
-        rangeCount=1;
-        if(slot<=3){
-          for(let i=1;i<4;i++){
-            if(nonzero(v[ids.from(i)])||nonzero(v[ids.to(i)])||nonzero(v[ids.offset(i)])) rangeCount=i+1;
-          }
+    const savedDarkAssets=Array.isArray(v.__darkAssets)
+      ? v.__darkAssets.map(card=>({
+          enabled:card?.enabled!==undefined ? !!card.enabled : true,
+          se:String(card?.se||""), ref:String(card?.ref||"Reference Q"),
+          rotation:Number(card?.rotation), refH:Number(card?.refH), refK:Number(card?.refK), refL:Number(card?.refL),
+          ranges:Array.isArray(card?.ranges) ? card.ranges.map(r=>({from:Number(r?.from),to:Number(r?.to),offset:Number(r?.offset)})) : [{}]
+        }))
+      : null;
+    if(savedDarkAssets?.length){
+      // Exact snapshot: preserve asset count, range count, checkbox state,
+      // sample-environment selection and all user-entered values.
+      replaceDarkAssets(savedDarkAssets,{recalc:false});
+    }else{
+      // Backward-compatible restore for pre-v113 localStorage.
+      let darkCount=Number(v.darkAssetCount);
+      if(!(darkCount>=1)){
+        darkCount=1;
+        for(let slot=2;slot<=3;slot++){
+          const ids=darkAssetIds(slot);
+          const used=!!v[ids.enable] || !!v[ids.se] || (v[ids.ref] && v[ids.ref]!=="Reference Q") ||
+            nonzero(v[ids.rotation]) || (v[ids.refH]!==undefined && Math.abs(Number(v[ids.refH])-1)>1e-12) || nonzero(v[ids.refK]) || nonzero(v[ids.refL]) ||
+            [0,1,2,3].some(i=>nonzero(v[ids.from(i)])||nonzero(v[ids.to(i)])||nonzero(v[ids.offset(i)]));
+          if(used) darkCount=slot;
         }
       }
-      setDarkRangeCount(slot,rangeCount);
-      refreshDarkEnvironmentSelect(slot);
-    }
+      setDarkAssetCount(darkCount);
+      for(const slot of darkAssetSlots()){
+        const ids=darkAssetIds(slot);
+        let rangeCount=Number(v[ids.rangeCount]);
+        if(!(rangeCount>=1)){
+          rangeCount=1;
+          if(slot<=3){
+            for(let i=1;i<4;i++){
+              if(nonzero(v[ids.from(i)])||nonzero(v[ids.to(i)])||nonzero(v[ids.offset(i)])) rangeCount=i+1;
+            }
+          }
+        }
+        setDarkRangeCount(slot,rangeCount);
+        refreshDarkEnvironmentSelect(slot);
+      }
 
-    // 2) The sample-environment JSON can populate dark-angle fields, so apply it
-    //    before restoring the user's individual left-panel values.
-    for(const slot of darkAssetSlots()){ const ids=darkAssetIds(slot); if(setSavedControl(ids.se,v[ids.se])) applySampleEnvironmentDefaults(slot); }
+      // Legacy saves relied on the selected sample-environment JSON to seed
+      // the rest of each dark-angle card before individual controls were restored.
+      for(const slot of darkAssetSlots()){ const ids=darkAssetIds(slot); if(setSavedControl(ids.se,v[ids.se])) applySampleEnvironmentDefaults(slot); }
+    }
 
     // Migrate the v57 single background selection into BG1 once, if present.
     if(v.backgroundSelect1===undefined && v.sampleSelect!==undefined) v.backgroundSelect1=v.sampleSelect;
@@ -9855,12 +9998,14 @@ function restoreLeftPanelState(){
     // 3) Restore every left-side parameter.  For crystal selectors, run their
     //    existing UI handler first; dMono/dAna are restored afterwards in DOM order.
     const darkSeIds=new Set(darkAssetSlots().map(slot=>darkAssetIds(slot).se));
+    const explicitBackgroundRows=!!savedBackgroundRows?.length;
     // The Resolution-only instrument details used to live in the permanent
     // sidebar. Include them here only for migration of the old left-panel
     // localStorage values; subsequent edits are persisted by resolutionPanel.
     const legacyRestoreControls=[...leftPanelControls(),...resolutionInstrumentDetailControls()];
     for(const el of legacyRestoreControls){
       if(el.id==='instrument'||darkSeIds.has(el.id)) continue;
+      if(explicitBackgroundRows && /^backgroundSelect\d+$/.test(el.id)) continue;
       setSavedControl(el.id,v[el.id],{dispatchChange:el.id==='monoCrystal'||el.id==='anaCrystal'});
     }
 
@@ -10076,6 +10221,14 @@ async function initialize(){
     syncGeometryTargetToOrientationReference();
   });
   $('addDark')?.addEventListener('change',updateGeometryQuickTargetButtons);
-  setStatus(`${nInstrument} instrument(s), ${nBG} BG CIF material(s), ${nSE} sample environment(s), ${nNeutron} neutron-data record(s) loaded${(restoredLocalState||restoredRightState) ? ' / local parameters restored' : ''}`);recalculate();
+  // Restore any ordinary controls/tabs that are not owned by a specialized
+  // serializer, then start the catch-all listener only after initialization so
+  // defaults cannot overwrite the user's previous browser-local state.
+  const restoredGlobalState=restoreGlobalUIState();
+  enableGlobalUIPersistence();
+  saveLeftPanelState();
+  saveRightPanelState();
+  saveGlobalUIState();
+  setStatus(`${nInstrument} instrument(s), ${nBG} BG CIF material(s), ${nSE} sample environment(s), ${nNeutron} neutron-data record(s) loaded${(restoredLocalState||restoredRightState||restoredGlobalState) ? ' / local parameters restored' : ''}`);recalculate();
 }
 initialize().catch(err=>{showError(err);setStatus('Configuration loading failed. Open the project through an HTTP server.');});
