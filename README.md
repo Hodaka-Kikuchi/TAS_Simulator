@@ -162,3 +162,10 @@ PLANE-TAS restores browser-local UI settings after configuration data are loaded
 
 ### v116 UI note
 - The bundled user manual now expands to the full browser-tab width with responsive side padding.
+
+## v117 UI behavior
+Resolution Single updates automatically; Resolution Scan remains Calculate-driven. Returning from Time estimate to Angle calculation & TAS geometry now forces the geometry plot to be rebuilt from the current calculation cache, preventing a blank plot after hidden-tab recalculations.
+
+
+## v118
+- Resolution Single now uses four equal-width H/K/L/ħω fields across one row.

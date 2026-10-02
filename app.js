@@ -4698,9 +4698,9 @@ function markCurrentResolutionDirty(){
 }
 function runScheduledRecalc(){
   timer=null;
-  // Resolution is intentionally explicit via Calculate in both Single and
-  // Scan modes.  This keeps input/UI updates independent from the comparatively
-  // expensive resolution calculation and avoids event-order dependent results.
+  // Resolution Single is inexpensive enough to update automatically, but only
+  // while its panel is actually visible.  Resolution Scan stays explicit via
+  // Calculate so common edits never trigger the heavy multi-point calculation.
   if(resolutionPanelIsVisible()){
     clearError();
     updateEnergyLabel();
@@ -4708,7 +4708,8 @@ function runScheduledRecalc(){
     updateModeVisibility();
     updateAutoW();
     updateResolutionPlaneWarning();
-    markCurrentResolutionDirty();
+    if($("calcMode")?.value==="single") doSingleResolution();
+    else markResolutionScanDirty();
     return;
   }
   recalculate();
@@ -5076,7 +5077,12 @@ function setGeometryCardTab(name){
     const powder=checkedValue('sampleMode')==='powder';
     safeResizePlot($(powder?'powderPlot':'singlePlot'));
     if(!time && (powder ? powderCache : singleCache)){
-      safeResizePlot($('geometryPlot'));
+      // A recalculation performed while Time estimate is visible intentionally
+      // skips Plotly.react() for the hidden geometry div.  Resizing alone cannot
+      // create a plot that was never rendered, so rebuild it when the user
+      // returns to Angle calculation & TAS geometry.
+      if(powder) renderGeometry(powderCache,0);
+      else renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
     }
     if(time){
       updateTimeScanScrollState();
@@ -9042,7 +9048,9 @@ function bindResolutionManualCalculation(){
   panel.dataset.manualResolutionBound='1';
   for(const control of panel.querySelectorAll('input, select')){
     if(control.id==='scanSlider') continue;
-    const markCurrent=()=>markCurrentResolutionDirty();
+    const markCurrent=()=>{
+      if($("calcMode")?.value==="scan") markResolutionScanDirty();
+    };
     control.addEventListener('input',markCurrent);
     control.addEventListener('change',markCurrent);
   }
@@ -9613,7 +9621,10 @@ function setActiveTab(name){
     $(id).setAttribute('aria-selected',String(on));
   }
   if(isResolution){
-    markCurrentResolutionDirty();
+    // Single Resolution is automatic, but wait until the panel has become
+    // visible before asking Plotly to render.  Scan remains Calculate-driven.
+    if($("calcMode")?.value==="single") requestAnimationFrame(()=>scheduleRecalc(0));
+    else markResolutionScanDirty();
   }else if(isQE){
     // Q-E may have been intentionally left stale while the heavy Resolution
     // tab was active; rebuild it only when the user actually returns here.
@@ -9628,7 +9639,7 @@ function updateCalcMode(){
   $('scanInputs').classList.toggle('hidden',!scan);
   updateResolutionPlaneWarning();
   if(scan) markResolutionScanDirty();
-  else markResolutionSingleDirty();
+  else if(resolutionPanelIsVisible()) requestAnimationFrame(()=>scheduleRecalc(0));
 }
 
 // ==================== App chrome + right-panel persistence ====================
@@ -10191,7 +10202,7 @@ async function initialize(){
   setToolboxFrom('toolLambda'); syncPowderLinkedInputs();
   initializeResponsivePlotResize();
   setActiveTab(savedActiveTab());
-  $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);bindResolutionManualCalculation();$('calcSingleResolution')?.addEventListener('click',doSingleResolution);$('calcScanResolution')?.addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
+  $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);bindResolutionManualCalculation();$('calcScanResolution')?.addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['h','k','l','h0','k0','l0','h1','k1','l1','npts','Uh','Uk','Ul','Vh','Vk','Vl','a','b','c','alpha','beta','gamma']){
     $(id)?.addEventListener('input',updateResolutionPlaneWarning);
     $(id)?.addEventListener('change',updateResolutionPlaneWarning);
