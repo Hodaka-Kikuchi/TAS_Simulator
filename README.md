@@ -169,3 +169,9 @@ Resolution Single updates automatically; Resolution Scan remains Calculate-drive
 
 ## v118
 - Resolution Single now uses four equal-width H/K/L/ħω fields across one row.
+
+### Plot display recovery
+The main Plotly views (Constant E, Q vector–E, Single/Scan TAS geometry, and Resolution plots) are refreshed when their hidden tab/pane becomes visible, preventing blank plots caused by rendering while the container had no display size.
+
+## v120
+Q vector–E display keeps the ħω axis anchored at 0 meV regardless of BG overlays, and grid lines remain visible in non-accessible white regions.

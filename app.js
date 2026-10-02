@@ -3334,7 +3334,7 @@ function renderQEVectorMap(cache){
     const traces=[{
       type:'heatmap',x:xVals,y:cache.hwList,z,
       zmin:0,zmax:1,showscale:false,hoverinfo:'text',text:hover,
-      colorscale:[[0,'rgba(255,255,255,1)'],[0.499,'rgba(255,255,255,1)'],[0.5,'rgba(255,222,105,0.72)'],[1,'rgba(255,222,105,0.72)']],
+      colorscale:[[0,'rgba(255,255,255,0)'],[0.499,'rgba(255,255,255,0)'],[0.5,'rgba(255,222,105,0.72)'],[1,'rgba(255,222,105,0.72)']],
       name:'Accessible Q–E',showlegend:false
     },{
       type:'scatter',mode:'markers',x:[null],y:[null],hoverinfo:'skip',
@@ -3421,7 +3421,7 @@ function renderQEVectorMap(cache){
       plot_bgcolor:'#fff',paper_bgcolor:'#fff',
       title:{text:qeMapHeaderTitle(cache),x:0.5,xanchor:'center',font:{size:16}},
       xaxis:{title:{text:'HKL along selected Q vector',font:{size:15}},tickmode:'array',tickvals:tickVals,ticktext:tickText,tickangle:0,zeroline:true,zerolinecolor:'#777',showgrid:true,gridcolor:'#c3c9cf',gridwidth:1,showline:true,linecolor:'#555',linewidth:1.2,mirror:true},
-      yaxis:{title:{text:'ℏω (meV)',font:{size:15}},showgrid:true,gridcolor:'#c3c9cf',gridwidth:1,zeroline:true,zerolinecolor:'#777',showline:true,linecolor:'#555',linewidth:1.2,mirror:true},
+      yaxis:{title:{text:'ℏω (meV)',font:{size:15}},range:[0,Math.max(0,...cache.hwList)],showgrid:true,gridcolor:'#aeb6bf',gridwidth:1,zeroline:true,zerolinecolor:'#777',showline:true,linecolor:'#555',linewidth:1.2,mirror:true},
       shapes:[
         {type:'line',x0:0,x1:0,y0:0,y1:1,yref:'paper',line:{color:'black',width:1,dash:'dot'}},
         {type:'line',x0:endX,x1:endX,y0:0,y1:1,yref:'paper',line:{color:'black',width:1,dash:'dot'}}
@@ -3449,10 +3449,21 @@ function setQEMapTab(name){
   $('qeConstantMapPane')?.classList.toggle('hidden',vector);
   $('qeVectorMapPane')?.classList.toggle('hidden',!vector);
   try{localStorage.setItem('tas-qe-map-tab-v1',vector?'vector':'constant');}catch(_e){}
-  requestAnimationFrame(()=>{
-    if(vector && singleCache) renderQEVectorMap(singleCache);
-    else { safeResizePlot($('singlePlot')); safeResizePlot($('powderPlot')); }
-  });
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    // Re-render the newly visible Q-E plot rather than relying on resize.
+    // Plotly cannot resize a graph that was intentionally skipped while its
+    // pane was hidden.  Reusing the current cache keeps this display-only.
+    if(vector){
+      if(singleCache) renderQEVectorMap(singleCache);
+    }else if(checkedValue('sampleMode')==='single'){
+      if(singleCache) renderSingle(singleCache,Number($('hwSlider')?.value)||0);
+    }else if(powderCache){
+      // Powder Constant-E has no separate render-only function; its cached plot
+      // should already exist, so resize it once visible.  If it does not, the
+      // common visible-plot recovery below will request one recalculation.
+      safeResizePlot($('powderPlot'));
+    }
+  }));
 }
 
 function renderSingle(cache,index=0){
@@ -3820,7 +3831,7 @@ function setGeometryScanOutputTab(name){
   $('geometryScanTablePane')?.classList.toggle('hidden',plot);
   $('geometryScanPlotPane')?.classList.toggle('hidden',!plot);
   if(plot && singleCache && checkedValue('sampleMode')==='single'){
-    requestAnimationFrame(()=>renderGeometry(singleCache,Number($('hwSlider')?.value)||0));
+    requestAnimationFrame(()=>requestAnimationFrame(()=>renderGeometry(singleCache,Number($('hwSlider')?.value)||0)));
   }
 }
 
@@ -3839,7 +3850,7 @@ function setGeometryCalculationMode(mode){
   $('geometryModeScan')?.setAttribute('aria-selected',String(scan));
   updateGeometryCalculationModeVisibility();
   if(singleCache && checkedValue('sampleMode')==='single'){
-    renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>renderGeometry(singleCache,Number($('hwSlider')?.value)||0)));
   }
 }
 
@@ -5073,21 +5084,19 @@ function setGeometryCardTab(name){
   }
   // Both tabs share the same card width. Resize Plotly after switching panes
   // so it follows any responsive layout change without changing column widths.
-  requestAnimationFrame(()=>{
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
     const powder=checkedValue('sampleMode')==='powder';
     safeResizePlot($(powder?'powderPlot':'singlePlot'));
     if(!time && (powder ? powderCache : singleCache)){
-      // A recalculation performed while Time estimate is visible intentionally
-      // skips Plotly.react() for the hidden geometry div.  Resizing alone cannot
-      // create a plot that was never rendered, so rebuild it when the user
-      // returns to Angle calculation & TAS geometry.
+      // Rebuild the newly visible TAS geometry after layout has settled.
+      // This covers both Single and Scan geometry panes.
       if(powder) renderGeometry(powderCache,0);
       else renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
     }
     if(time){
       updateTimeScanScrollState();
     }
-  });
+  }));
 }
 
 function currentGeometryCardTab(){
@@ -9565,6 +9574,57 @@ function safeResizePlot(el){
   }catch(_err){}
 }
 
+function plotHasLayout(el){
+  return !!(el && (el._fullLayout || el.classList?.contains('js-plotly-plot')));
+}
+
+function ensureVisiblePrimaryPlots(){
+  if(typeof Plotly === "undefined") return;
+
+  const qePanel=$('qePanel');
+  if(qePanel && !qePanel.classList.contains('hidden')){
+    const vector=!$('qeVectorMapPane')?.classList.contains('hidden');
+    if(vector){
+      if(singleCache) renderQEVectorMap(singleCache);
+    }else if(checkedValue('sampleMode')==='single'){
+      if(singleCache) renderSingle(singleCache,Number($('hwSlider')?.value)||0);
+    }else{
+      const powderPlot=$('powderPlot');
+      if(plotHasLayout(powderPlot)) safeResizePlot(powderPlot);
+      else scheduleRecalc(0);
+    }
+
+    // renderSingle() also refreshes geometry.  If Time estimate is selected it
+    // intentionally remains hidden; otherwise guarantee the currently selected
+    // Single/Scan TAS geometry after the pane is measurable.
+    if(currentGeometryCardTab()==='angles'){
+      if(checkedValue('sampleMode')==='powder' && powderCache) renderGeometry(powderCache,0);
+      else if(singleCache) renderGeometry(singleCache,Number($('hwSlider')?.value)||0);
+    }
+  }
+
+  const resolutionPanel=$('resolutionPanel');
+  if(resolutionPanel && !resolutionPanel.classList.contains('hidden')){
+    if($('calcMode')?.value==='single'){
+      // Single Resolution is automatic; render only after the panel is visible.
+      scheduleRecalc(0);
+    }else if(scanResults.length && !$('result')?.classList.contains('hidden')){
+      // Never launch the expensive scan calculation here.  Repaint only an
+      // already-calculated result when returning to the tab.
+      renderResolutionScan(Number($('scanSlider')?.value)||1);
+    }else{
+      ['plotUE','plotVE','plotUV','plotWE'].forEach(id=>safeResizePlot($(id)));
+    }
+  }
+}
+
+function scheduleVisiblePrimaryPlotRecovery(){
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    ensureVisiblePrimaryPlots();
+    resizeVisiblePlots();
+  }));
+}
+
 function resizeVisiblePlots(){
   if(typeof Plotly === "undefined" || !Plotly.Plots) return;
   const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel"),$("cifGeneratorPanel"),$("scriptPanel")].find(p=>p && !p.classList.contains("hidden"));
@@ -9621,17 +9681,16 @@ function setActiveTab(name){
     $(id).setAttribute('aria-selected',String(on));
   }
   if(isResolution){
-    // Single Resolution is automatic, but wait until the panel has become
-    // visible before asking Plotly to render.  Scan remains Calculate-driven.
-    if($("calcMode")?.value==="single") requestAnimationFrame(()=>scheduleRecalc(0));
-    else markResolutionScanDirty();
+    // Scan remains Calculate-driven.  Single is recovered after the visible
+    // panel has completed layout by scheduleVisiblePrimaryPlotRecovery().
+    if($("calcMode")?.value==="scan" && !scanResults.length) markResolutionScanDirty();
   }else if(isQE){
     // Q-E may have been intentionally left stale while the heavy Resolution
     // tab was active; rebuild it only when the user actually returns here.
     scheduleRecalc(0);
   }
   try{ localStorage.setItem(ACTIVE_TAB_STORAGE_KEY,name); }catch(_e){}
-  requestAnimationFrame(()=>requestAnimationFrame(resizeVisiblePlots));
+  scheduleVisiblePrimaryPlotRecovery();
 }
 function updateCalcMode(){
   const scan=$('calcMode').value==='scan';
@@ -9639,7 +9698,7 @@ function updateCalcMode(){
   $('scanInputs').classList.toggle('hidden',!scan);
   updateResolutionPlaneWarning();
   if(scan) markResolutionScanDirty();
-  else if(resolutionPanelIsVisible()) requestAnimationFrame(()=>scheduleRecalc(0));
+  else if(resolutionPanelIsVisible()) scheduleVisiblePrimaryPlotRecovery();
 }
 
 // ==================== App chrome + right-panel persistence ====================
