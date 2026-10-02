@@ -152,3 +152,6 @@ BG material row count and selections are persisted locally and restored on reloa
 
 ## Local parameters
 PLANE-TAS restores browser-local UI settings after configuration data are loaded. This includes dynamic BG and Dark-angle layouts, ordinary editable controls, checkboxes/selects, and the principal tab selections. Local file inputs are not restorable by the browser and must be selected again after reload.
+
+## v114
+- Resolution uses explicit `Calculate` buttons in both Single and Scan modes for stable, predictable updates and lighter UI interaction.

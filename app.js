@@ -4694,12 +4694,13 @@ function markResolutionScanDirty(){
 }
 function markCurrentResolutionDirty(){
   if($("calcMode")?.value==="scan") markResolutionScanDirty();
+  else markResolutionSingleDirty();
 }
 function runScheduledRecalc(){
   timer=null;
-  // Resolution Scan is intentionally explicit via Calculate because it is the
-  // expensive path.  Resolution Single is only one point, so keep it responsive
-  // with the same debounced input flow used elsewhere.
+  // Resolution is intentionally explicit via Calculate in both Single and
+  // Scan modes.  This keeps input/UI updates independent from the comparatively
+  // expensive resolution calculation and avoids event-order dependent results.
   if(resolutionPanelIsVisible()){
     clearError();
     updateEnergyLabel();
@@ -4707,11 +4708,7 @@ function runScheduledRecalc(){
     updateModeVisibility();
     updateAutoW();
     updateResolutionPlaneWarning();
-    if($("calcMode")?.value==="scan"){
-      markResolutionScanDirty();
-    }else{
-      doSingleResolution();
-    }
+    markCurrentResolutionDirty();
     return;
   }
   recalculate();
@@ -9045,9 +9042,9 @@ function bindResolutionManualCalculation(){
   panel.dataset.manualResolutionBound='1';
   for(const control of panel.querySelectorAll('input, select')){
     if(control.id==='scanSlider') continue;
-    const markScanOnly=()=>{ if($('calcMode')?.value==='scan') markResolutionScanDirty(); };
-    control.addEventListener('input',markScanOnly);
-    control.addEventListener('change',markScanOnly);
+    const markCurrent=()=>markCurrentResolutionDirty();
+    control.addEventListener('input',markCurrent);
+    control.addEventListener('change',markCurrent);
   }
 }
 
@@ -9631,7 +9628,7 @@ function updateCalcMode(){
   $('scanInputs').classList.toggle('hidden',!scan);
   updateResolutionPlaneWarning();
   if(scan) markResolutionScanDirty();
-  else if(resolutionPanelIsVisible()) scheduleRecalc(0);
+  else markResolutionSingleDirty();
 }
 
 // ==================== App chrome + right-panel persistence ====================
@@ -10194,7 +10191,7 @@ async function initialize(){
   setToolboxFrom('toolLambda'); syncPowderLinkedInputs();
   initializeResponsivePlotResize();
   setActiveTab(savedActiveTab());
-  $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);bindResolutionManualCalculation();$('calcScanResolution')?.addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
+  $('gm1').addEventListener('change',updateSupermirrorUI);$('calcMode').addEventListener('change',updateCalcMode);bindResolutionManualCalculation();$('calcSingleResolution')?.addEventListener('click',doSingleResolution);$('calcScanResolution')?.addEventListener('click',doScanResolution);$('scanSlider').addEventListener('input',()=>renderResolutionScan(num('scanSlider')));$('prev').addEventListener('click',()=>renderResolutionScan(num('scanSlider')-1));$('next').addEventListener('click',()=>renderResolutionScan(num('scanSlider')+1));
   for(const id of ['h','k','l','h0','k0','l0','h1','k1','l1','npts','Uh','Uk','Ul','Vh','Vk','Vl','a','b','c','alpha','beta','gamma']){
     $(id)?.addEventListener('input',updateResolutionPlaneWarning);
     $(id)?.addEventListener('change',updateResolutionPlaneWarning);
