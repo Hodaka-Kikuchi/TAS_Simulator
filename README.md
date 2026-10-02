@@ -175,3 +175,6 @@ The main Plotly views (Constant E, Q vector–E, Single/Scan TAS geometry, and R
 
 ## v120
 Q vector–E display keeps the ħω axis anchored at 0 meV regardless of BG overlays, and grid lines remain visible in non-accessible white regions.
+
+## v122
+Q vector–E map grid lines are now rendered above colored overlays for consistent visibility across the entire plot.

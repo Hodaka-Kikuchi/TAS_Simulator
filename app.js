@@ -3416,15 +3416,40 @@ function renderQEVectorMap(cache){
     addDarkOverlay(darkKfZ,'Dark angle (kf side)','rgba(75,170,235,0.55)',21);
     addDarkOverlay(darkFixedZ,'Dark angle (fixed)','rgba(95,105,220,0.50)',22);
 
+    // Plotly's native axis grid is rendered behind data traces, so colored
+    // heatmap overlays can obscure it.  Build a matching set of grid lines as
+    // top-layer shapes so the grid stays readable over Accessible-Q, BG and
+    // dark-angle colors as well as the white background.
+    const hwMax=Math.max(0,...cache.hwList);
+    const niceGridStep=max=>{
+      if(!(max>0)) return 1;
+      const raw=max/8, power=Math.pow(10,Math.floor(Math.log10(raw)));
+      const scaled=raw/power;
+      const candidates=[1,2,5,10];
+      const nice=candidates.reduce((best,value)=>
+        Math.abs(value-scaled)<Math.abs(best-scaled)?value:best
+      ,candidates[0]);
+      return nice*power;
+    };
+    const yGridStep=niceGridStep(hwMax);
+    const yGridVals=[];
+    for(let y=0;y<=hwMax+1e-9;y+=yGridStep) yGridVals.push(Number(y.toFixed(12)));
+    if(hwMax>0 && !yGridVals.some(y=>Math.abs(y-hwMax)<1e-9)) yGridVals.push(hwMax);
+    const frontGridShapes=[
+      ...tickVals.map(x=>({type:'line',xref:'x',yref:'paper',x0:x,x1:x,y0:0,y1:1,layer:'above',line:{color:'rgba(105,115,125,0.50)',width:1}})),
+      ...yGridVals.map(y=>({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:y,y1:y,layer:'above',line:{color:'rgba(105,115,125,0.50)',width:1}}))
+    ];
+
     Plotly.react(plot,traces,{
       uirevision:'qeVector-hkl',
       plot_bgcolor:'#fff',paper_bgcolor:'#fff',
       title:{text:qeMapHeaderTitle(cache),x:0.5,xanchor:'center',font:{size:16}},
-      xaxis:{title:{text:'HKL along selected Q vector',font:{size:15}},tickmode:'array',tickvals:tickVals,ticktext:tickText,tickangle:0,zeroline:true,zerolinecolor:'#777',showgrid:true,gridcolor:'#c3c9cf',gridwidth:1,showline:true,linecolor:'#555',linewidth:1.2,mirror:true},
-      yaxis:{title:{text:'ℏω (meV)',font:{size:15}},range:[0,Math.max(0,...cache.hwList)],showgrid:true,gridcolor:'#aeb6bf',gridwidth:1,zeroline:true,zerolinecolor:'#777',showline:true,linecolor:'#555',linewidth:1.2,mirror:true},
+      xaxis:{title:{text:'HKL along selected Q vector',font:{size:15}},tickmode:'array',tickvals:tickVals,ticktext:tickText,tickangle:0,zeroline:false,showgrid:false,showline:true,linecolor:'#555',linewidth:1.2,mirror:true},
+      yaxis:{title:{text:'ℏω (meV)',font:{size:15}},range:[0,hwMax],tickmode:'array',tickvals:yGridVals,zeroline:false,showgrid:false,showline:true,linecolor:'#555',linewidth:1.2,mirror:true},
       shapes:[
-        {type:'line',x0:0,x1:0,y0:0,y1:1,yref:'paper',line:{color:'black',width:1,dash:'dot'}},
-        {type:'line',x0:endX,x1:endX,y0:0,y1:1,yref:'paper',line:{color:'black',width:1,dash:'dot'}}
+        ...frontGridShapes,
+        {type:'line',x0:0,x1:0,y0:0,y1:1,yref:'paper',layer:'above',line:{color:'black',width:1,dash:'dot'}},
+        {type:'line',x0:endX,x1:endX,y0:0,y1:1,yref:'paper',layer:'above',line:{color:'black',width:1,dash:'dot'}}
       ],
       annotations:[
         {x:0,xref:'x',y:1.002,yref:'paper',text:'HKL 1',showarrow:false,yanchor:'bottom',font:{size:12}},
