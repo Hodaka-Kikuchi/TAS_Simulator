@@ -155,3 +155,10 @@ PLANE-TAS restores browser-local UI settings after configuration data are loaded
 
 ## v114
 - Resolution uses explicit `Calculate` buttons in both Single and Scan modes for stable, predictable updates and lighter UI interaction.
+
+## v115
+- User Manual layout now expands responsively on wide screens instead of being limited to 980 px.
+
+
+### v116 UI note
+- The bundled user manual now expands to the full browser-tab width with responsive side padding.

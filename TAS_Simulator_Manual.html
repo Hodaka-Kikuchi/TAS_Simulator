@@ -4,7 +4,7 @@
 :root[data-theme="dark"]{--bg:#14171a;--fg:#e6e8ea;--mut:#9aa4ad;--line:#2f353b;--soft:#1c2024;--acc:#6cb2ff;--code:#23282d}
 html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-main{max-width:980px;margin:0 auto;padding:24px 18px 80px}
+main{width:100%;max-width:none;margin:0;padding:24px clamp(14px,2vw,36px) 80px;box-sizing:border-box}
 h1{font-size:2rem;line-height:1.2;margin:.2em 0 .4em}
 h2{margin-top:2.4em;padding-bottom:.25em;border-bottom:1px solid var(--line)}
 h3{margin-top:1.8em}
