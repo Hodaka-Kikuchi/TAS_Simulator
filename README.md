@@ -138,3 +138,7 @@ Resolution Single displays H, K, L, ħω, and Calculate on one row.
 - Resolution Single updates automatically after a short input debounce.
 - Resolution Scan is calculated only when **Calculate** is pressed.
 - Q vector–E HKL1/HKL2 updates are debounced while typing and apply immediately when the edit is committed.
+
+
+### v110 UI note
+Dark-angle enable checkboxes now use one blue accent consistently, and Dark angle labels use normal font weight.

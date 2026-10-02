@@ -335,19 +335,17 @@ textarea:disabled {
 }
 .dark-asset .dynamic-add-wide{margin-top:6px}
 
-/* All Dark-angle cards and controls use one neutral black UI color. */
+/* Dark-angle cards keep neutral borders, while every enable checkbox uses
+   the same blue accent. Asset labels use normal text weight. */
 .dark-asset{
   border:1.5px solid #111 !important;
 }
 .dark-asset input[type=checkbox]{
-  accent-color:#111;
-}
-/* Dark angle 1 is the primary enabled asset and uses a blue check indicator. */
-#darkEnable1{
   accent-color:#1677ff !important;
 }
 .dark-asset .checkbox-label span{
   color:#111 !important;
+  font-weight:400 !important;
 }
 
 @media(max-width:760px){
