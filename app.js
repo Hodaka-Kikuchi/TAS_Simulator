@@ -2245,6 +2245,375 @@ function darkQFromVirtualPlaneForUiSense(q,uiSense){
   return uiSense==='+++' ? [q[0],-q[1]] : q;
 }
 
+
+// +++ moving Dark-angle geometry.
+//
+// For +++ the TAS-geometry drawing is the canonical source of truth for the
+// physical obstacle position.  Build the Q-E ki/kf blocked polygons from the
+// exact same angular construction instead of borrowing another configuration's
+// polygon or routing the boundary through the historical calcQDark() mapping.
+//
+// Work in the unrotated canonical TAS frame used by renderGeometry():
+//   theta_ki = 0
+//   theta_kf = -|S2|       (+++ drawing branch)
+//   Q_lab = ki - kf
+// A sample-attached Dark direction has
+//   beta = phi_Qlab + phi_ref - phi_target + baseExtra + d
+// where d is the entered Dark-angle value.  Setting beta equal to the incoming
+// source ray (180 deg) or the outgoing kf ray gives the exact blocked boundary
+// in the plotted crystal azimuth phi_target.
+function plusPlusDarkGeometryReference(asset,rl,ex,ey,energyMode,Ei,Ef){
+  const qPlanePhi=hkl=>{
+    const q=hklToQ(rl,hkl), x=dot(q,ex), y=dot(q,ey);
+    if(Math.hypot(x,y)<1e-12) return null;
+    return Math.atan2(y,x);
+  };
+
+  if(asset.ref==="Reference Q"){
+    const phi=qPlanePhi(asset.refHkl||[0,0,0]);
+    if(phi===null) return null;
+    return {referencePhi:phi,baseExtra:0,rangeCorrectionDeg:0};
+  }
+
+  if(asset.ref==="Direct beam"){
+    const fixedEnergy=energyMode==="Ei fixed" ? Ei : Ef;
+    if(!(Number(fixedEnergy)>0)) return null;
+    const effectiveRef=effectiveOrientationReference(rl,fixedEnergy,"+++");
+    const phi=qPlanePhi(effectiveRef.hkl);
+    if(phi===null) return null;
+    const qRef=hklToQ(rl,effectiveRef.hkl), qRefNorm=norm(qRef);
+    const kRef=Math.sqrt(Number(fixedEnergy)/2.072);
+    if(!(qRefNorm>1e-12) || !(kRef>0)) return null;
+    const arg=qRefNorm/(2*kRef);
+    if(arg>1+1e-10) return null;
+    const thetaRef=Math.asin(clamp(arg,-1,1));
+    const qToKi=Math.PI/2-thetaRef;
+
+    // renderGeometry(): +++ has legacy/display sense "+-+", so Direct-beam
+    // zero is shifted by -(90-theta).  Its numerical half-S2 correction is
+    // then added to the entered Dark range.
+    const rangeCorrectionDeg=directBeamOrientationCorrection(
+      rl,energyMode,Ei,Ef,"+++"
+    );
+    return {referencePhi:phi,baseExtra:-qToKi,rangeCorrectionDeg};
+  }
+
+  return null;
+}
+
+function plusPlusDarkGeometryBoundaryPoint(
+  context,s2Deg,ki,kf,darkDeg,beamKind
+){
+  const s2=deg2rad(Number(s2Deg));
+  const qMag=Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(s2)));
+
+  // renderGeometry() constructs the +++ canonical arm with theta_kf=-|S2|.
+  // With theta_ki=0 this gives the following Q_lab azimuth.
+  const qLabPhi=Math.atan2(
+    kf*Math.sin(s2),
+    ki-kf*Math.cos(s2)
+  );
+  const beamPhi=beamKind==="kf" ? -s2 : Math.PI;
+  const phiTarget=qLabPhi
+    +context.referencePhi
+    +context.baseExtra
+    +deg2rad(Number(darkDeg)+context.rangeCorrectionDeg)
+    -beamPhi;
+
+  return [qMag*Math.cos(phiTarget),qMag*Math.sin(phiTarget)];
+}
+
+function plusPlusDarkGeometryPolygon(
+  asset,rawRange,beamKind,rl,ex,ey,energyMode,Ei,Ef,ki,kf,S2min,S2max
+){
+  const context=plusPlusDarkGeometryReference(asset,rl,ex,ey,energyMode,Ei,Ef);
+  if(!context) return null;
+  let [from,to,offset]=rawRange.map(Number);
+  if(![from,to,offset].every(Number.isFinite) || (from===0 && to===0)) return null;
+
+  let d0=offset+from, d1=offset+to;
+  if(d1<d0) d1+=360;
+  const s2dark=linspace(S2min,S2max,200);
+  const point=(s2,d)=>plusPlusDarkGeometryBoundaryPoint(
+    context,s2,ki,kf,d,beamKind
+  );
+
+  const edge0=s2dark.map(s2=>point(s2,d0));
+  const edge1=s2dark.map(s2=>point(s2,d1));
+  const top=linspace(d0,d1,100).map(d=>point(S2max,d));
+  const bottom=linspace(d1,d0,100).map(d=>point(S2min,d));
+  return [...edge0,...top,...[...edge1].reverse(),...bottom];
+}
+
+function angleDegInsidePeriodicRange(angleDeg,startDeg,endDeg){
+  let a=Number(startDeg), b=Number(endDeg), x=Number(angleDeg);
+  if(![a,b,x].every(Number.isFinite)) return false;
+  if(b<a) b+=360;
+  for(const shift of [-720,-360,0,360,720]){
+    const xx=x+shift;
+    if(xx>=a-1e-9 && xx<=b+1e-9) return true;
+  }
+  return false;
+}
+
+// Independent +++ point check using the same TAS-geometry construction as the
+// polygon generator above.  Keeping this separate from point-in-polygon makes
+// the TAS-geometry Warning a direct physical check and provides a consistency
+// guard for future Q-E rendering changes.
+function plusPlusDarkGeometryWarningsForHKLE(cache,hkl,hw){
+  if(!cache?.addDark || !Array.isArray(hkl) || hkl.length!==3) return [];
+  const energy=Number(hw);
+  if(!Number.isFinite(energy)) return [];
+  const Ei=cache.energyMode==="Ef fixed" ? Number(cache.Ef)+energy : Number(cache.Ei);
+  const Ef=cache.energyMode==="Ef fixed" ? Number(cache.Ef) : Number(cache.Ei)-energy;
+  if(!(Ei>0) || !(Ef>0)) return [];
+
+  const q=hklToQ(cache.rl,hkl.map(Number));
+  const qMag=norm(q);
+  if(!(qMag>1e-12)) return [];
+  const cosS2=(Ei/2.072+Ef/2.072-qMag*qMag)/
+    (2*Math.sqrt(Ei/2.072)*Math.sqrt(Ef/2.072));
+  if(cosS2<-1-1e-10 || cosS2>1+1e-10) return [];
+  const s2Deg=rad2deg(Math.acos(clamp(cosS2,-1,1)));
+  const s2=deg2rad(s2Deg);
+  const ki=Math.sqrt(Ei/2.072), kf=Math.sqrt(Ef/2.072);
+  const x=dot(q,cache.ex), y=dot(q,cache.ey);
+  if(Math.hypot(x,y)<1e-12) return [];
+  const phiTarget=Math.atan2(y,x);
+  const qLabPhi=Math.atan2(kf*Math.sin(s2),ki-kf*Math.cos(s2));
+
+  let kiBlocked=false, kfBlocked=false;
+  for(const asset of (cache.darkAssets||[])){
+    if(asset.ref==="Fixed") continue;
+    const context=plusPlusDarkGeometryReference(
+      asset,cache.rl,cache.ex,cache.ey,cache.energyMode,cache.Ei,cache.Ef
+    );
+    if(!context) continue;
+    const baseDeg=rad2deg(
+      qLabPhi+context.referencePhi-phiTarget+context.baseExtra
+    );
+    for(const rawRange of asset.ranges||[]){
+      let [from,to,offset]=rawRange.map(Number);
+      if(![from,to,offset].every(Number.isFinite) || (from===0 && to===0)) continue;
+      let a=offset+from+context.rangeCorrectionDeg;
+      let b=offset+to+context.rangeCorrectionDeg;
+      if(b<a) b+=360;
+      if(angleDegInsidePeriodicRange(180,baseDeg+a,baseDeg+b)) kiBlocked=true;
+      if(angleDegInsidePeriodicRange(-s2Deg,baseDeg+a,baseDeg+b)) kfBlocked=true;
+    }
+  }
+  const warnings=[];
+  if(kiBlocked) warnings.push("ki blocked");
+  if(kfBlocked) warnings.push("kf blocked");
+  return warnings;
+}
+
+
+// --- moving Dark-angle geometry.
+//
+// As for +++, the TAS-geometry drawing is the source of truth.  The ---
+// configuration uses the mirrored TAS drawing and a clockwise-positive Dark
+// angle (darkDrawSign = -1).  Generate its Q-E ki/kf blocked polygons directly
+// from those displayed beam / obstacle directions rather than borrowing the
+// +-+ polygon.  This keeps Q-E, TAS geometry and the direct block warning on
+// exactly the same angular convention.
+function tripleMinusDarkGeometryReference(asset,rl,ex,ey,energyMode,Ei,Ef){
+  const qPlanePhi=hkl=>{
+    const q=hklToQ(rl,hkl), x=dot(q,ex), y=dot(q,ey);
+    if(Math.hypot(x,y)<1e-12) return null;
+    return Math.atan2(y,x);
+  };
+
+  if(asset.ref==="Reference Q"){
+    const phi=qPlanePhi(asset.refHkl||[0,0,0]);
+    if(phi===null) return null;
+    return {referencePhi:phi,baseExtra:0,rangeCorrectionDeg:0};
+  }
+
+  if(asset.ref==="Direct beam"){
+    const fixedEnergy=energyMode==="Ei fixed" ? Ei : Ef;
+    if(!(Number(fixedEnergy)>0)) return null;
+    const effectiveRef=effectiveOrientationReference(rl,fixedEnergy,"---");
+    const phi=qPlanePhi(effectiveRef.hkl);
+    if(phi===null) return null;
+    const qRef=hklToQ(rl,effectiveRef.hkl), qRefNorm=norm(qRef);
+    const kRef=Math.sqrt(Number(fixedEnergy)/2.072);
+    if(!(qRefNorm>1e-12) || !(kRef>0)) return null;
+    const arg=qRefNorm/(2*kRef);
+    if(arg>1+1e-10) return null;
+    const thetaRef=Math.asin(clamp(arg,-1,1));
+    const qToKi=Math.PI/2-thetaRef;
+
+    // renderGeometry(): --- uses the mirrored (-+- display-side) Direct-beam
+    // zero, hence +(90-theta).  Unlike the literal -+- UI branch, the current
+    // --- drawing does not flip the numerical Direct-beam correction.
+    const rangeCorrectionDeg=directBeamOrientationCorrection(
+      rl,energyMode,Ei,Ef,"---"
+    );
+    return {referencePhi:phi,baseExtra:+qToKi,rangeCorrectionDeg};
+  }
+
+  return null;
+}
+
+function tripleMinusDarkGeometryFrame(s2Deg,ki,kf){
+  const s2=deg2rad(Math.abs(Number(s2Deg)));
+
+  // Canonical drawing before the display transform:
+  //   theta_ki = 0, theta_kf = -S2
+  // then renderGeometry() rotates every angle by -90 deg and reflects x for
+  // --- (angle -> pi-angle).  Reproduce that exact transform here.
+  const qCanonical=Math.atan2(
+    kf*Math.sin(s2),
+    ki-kf*Math.cos(s2)
+  );
+  const transform=a=>Math.PI-(a-Math.PI/2);
+  const thetaKi=transform(0);
+  const thetaKf=transform(-s2);
+  const qAngle=transform(qCanonical);
+  return {
+    s2,
+    qMag:Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(s2))),
+    qAngle,
+    sourceRay:thetaKi+Math.PI,
+    kfRay:thetaKf
+  };
+}
+
+function tripleMinusDarkGeometryBoundaryPoint(
+  context,s2Deg,ki,kf,darkDeg,beamKind
+){
+  const frame=tripleMinusDarkGeometryFrame(s2Deg,ki,kf);
+  const beamPhi=beamKind==="kf" ? frame.kfRay : frame.sourceRay;
+
+  // renderGeometry() draws --- sample-attached Dark angles with sign -1:
+  //   darkRay = qAngle + phi_ref - phi_target + baseExtra
+  //             - (dark + rangeCorrection)
+  // Solve darkRay = beamPhi for the plotted crystal azimuth phi_target.
+  const phiTarget=frame.qAngle
+    +context.referencePhi
+    +context.baseExtra
+    -deg2rad(Number(darkDeg)+context.rangeCorrectionDeg)
+    -beamPhi;
+
+  return [frame.qMag*Math.cos(phiTarget),frame.qMag*Math.sin(phiTarget)];
+}
+
+function tripleMinusDarkGeometryPolygon(
+  asset,rawRange,beamKind,rl,ex,ey,energyMode,Ei,Ef,ki,kf,S2min,S2max
+){
+  const context=tripleMinusDarkGeometryReference(asset,rl,ex,ey,energyMode,Ei,Ef);
+  if(!context) return null;
+  let [from,to,offset]=rawRange.map(Number);
+  if(![from,to,offset].every(Number.isFinite) || (from===0 && to===0)) return null;
+
+  let d0=offset+from, d1=offset+to;
+  if(d1<d0) d1+=360;
+  const s2dark=linspace(S2min,S2max,200);
+  const point=(s2,d)=>tripleMinusDarkGeometryBoundaryPoint(
+    context,s2,ki,kf,d,beamKind
+  );
+
+  const edge0=s2dark.map(s2=>point(s2,d0));
+  const edge1=s2dark.map(s2=>point(s2,d1));
+  const top=linspace(d0,d1,100).map(d=>point(S2max,d));
+  const bottom=linspace(d1,d0,100).map(d=>point(S2min,d));
+  return [...edge0,...top,...[...edge1].reverse(),...bottom];
+}
+
+function rebuildTripleMinusMovingDarkPolygons(cache){
+  if(!cache?.addDark || !Array.isArray(cache.hwList)) return cache;
+  const S2min=Number(num("S2min"));
+  const darkKI=[], darkKF=[];
+
+  for(let i=0;i<cache.hwList.length;i++){
+    const hw=Number(cache.hwList[i]);
+    const Ei=cache.energyMode==="Ef fixed" ? Number(cache.Ef)+hw : Number(cache.Ei);
+    const Ef=cache.energyMode==="Ef fixed" ? Number(cache.Ef) : Number(cache.Ei)-hw;
+    const ki=Math.sqrt(Ei/2.072), kf=Math.sqrt(Ef/2.072);
+    const S2max=Math.abs(Number(cache.S2list?.[i]));
+    const hwKI=[], hwKF=[];
+
+    if(Ei>0 && Ef>0 && Number.isFinite(S2min) && Number.isFinite(S2max)){
+      for(const asset of (cache.darkAssets||[])){
+        if(asset.ref==="Fixed") continue;
+        for(const rawRange of (asset.ranges||[])){
+          const polyKF=tripleMinusDarkGeometryPolygon(
+            asset,rawRange,"kf",cache.rl,cache.ex,cache.ey,
+            cache.energyMode,cache.Ei,cache.Ef,ki,kf,S2min,S2max
+          );
+          const polyKI=tripleMinusDarkGeometryPolygon(
+            asset,rawRange,"ki",cache.rl,cache.ex,cache.ey,
+            cache.energyMode,cache.Ei,cache.Ef,ki,kf,S2min,S2max
+          );
+          if(polyKF) hwKF.push(polyKF);
+          if(polyKI) hwKI.push(polyKI);
+        }
+      }
+    }
+    darkKF.push(hwKF);
+    darkKI.push(hwKI);
+  }
+
+  cache.darkKF=darkKF;
+  cache.darkKI=darkKI;
+  return cache;
+}
+
+// Direct --- point check using the identical angular construction as the
+// polygon generator above.  This makes the geometry Warning an independent
+// physical check instead of deriving it from polygon containment.
+function tripleMinusDarkGeometryWarningsForHKLE(cache,hkl,hw){
+  if(!cache?.addDark || !Array.isArray(hkl) || hkl.length!==3) return [];
+  const energy=Number(hw);
+  if(!Number.isFinite(energy)) return [];
+  const Ei=cache.energyMode==="Ef fixed" ? Number(cache.Ef)+energy : Number(cache.Ei);
+  const Ef=cache.energyMode==="Ef fixed" ? Number(cache.Ef) : Number(cache.Ei)-energy;
+  if(!(Ei>0) || !(Ef>0)) return [];
+
+  const q=hklToQ(cache.rl,hkl.map(Number));
+  const qMag=norm(q);
+  if(!(qMag>1e-12)) return [];
+  const ki=Math.sqrt(Ei/2.072), kf=Math.sqrt(Ef/2.072);
+  const cosS2=(ki*ki+kf*kf-qMag*qMag)/(2*ki*kf);
+  if(cosS2<-1-1e-10 || cosS2>1+1e-10) return [];
+  const s2Deg=rad2deg(Math.acos(clamp(cosS2,-1,1)));
+  const frame=tripleMinusDarkGeometryFrame(s2Deg,ki,kf);
+  const x=dot(q,cache.ex), y=dot(q,cache.ey);
+  if(Math.hypot(x,y)<1e-12) return [];
+  const phiTarget=Math.atan2(y,x);
+
+  let kiBlocked=false, kfBlocked=false;
+  for(const asset of (cache.darkAssets||[])){
+    if(asset.ref==="Fixed") continue;
+    const context=tripleMinusDarkGeometryReference(
+      asset,cache.rl,cache.ex,cache.ey,cache.energyMode,cache.Ei,cache.Ef
+    );
+    if(!context) continue;
+    const baseDeg=rad2deg(
+      frame.qAngle+context.referencePhi-phiTarget+context.baseExtra
+    );
+    for(const rawRange of asset.ranges||[]){
+      let [from,to,offset]=rawRange.map(Number);
+      if(![from,to,offset].every(Number.isFinite) || (from===0 && to===0)) continue;
+      let a=offset+from+context.rangeCorrectionDeg;
+      let b=offset+to+context.rangeCorrectionDeg;
+      if(b<a) b+=360;
+
+      // --- draws increasing entered Dark angle clockwise.  Therefore the
+      // occupied angular sector runs from base-b to base-a in CCW coordinates.
+      const sectorStart=baseDeg-b;
+      const sectorEnd=baseDeg-a;
+      if(angleDegInsidePeriodicRange(rad2deg(frame.sourceRay),sectorStart,sectorEnd)) kiBlocked=true;
+      if(angleDegInsidePeriodicRange(rad2deg(frame.kfRay),sectorStart,sectorEnd)) kfBlocked=true;
+    }
+  }
+  const warnings=[];
+  if(kiBlocked) warnings.push("ki blocked");
+  if(kfBlocked) warnings.push("kf blocked");
+  return warnings;
+}
+
 function darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef,uiSense=null){
   // Dark-angle Reference Q uses the original Reference-Q convention: the
   // entered (h,k,l) defines the crystal-space direction about which the
@@ -2671,36 +3040,32 @@ function singleNuclearLabelStyle(fullSpan,visibleSpan){
 
 // Configuration isolation for Q-E Range.
 //
-// The original uploaded implementation is already validated for +-+ and -+-.
-// Keep those configurations on that exact calculation path.  Only +++ uses
-// the handedness-corrected Q-E implementation below.  This deliberate split
-// prevents +++ S1 / dark-angle conventions from changing the validated -+-
-// accessible region or dark-angle polygons.
+// +++ and --- keep their existing Q-E accessibility / S1-range branches, but
+// each now generates MOVING (ki/kf) Dark-angle polygons directly from the same
+// angular construction used by TAS geometry.  The validated +-+ and -+- legacy
+// Q-E paths remain unchanged.  Fixed Dark angles stay on each configuration's
+// existing laboratory-fixed calculation.
 function calculateSingleCrystal(){
   const uiSense=checkedValue("sense");
-  if(uiSense==="+++") return calculateSingleCrystalPatched();
 
-  // --- is physically the same scattering configuration as -+-.
-  // Its only intended difference is the S1 encoder convention (CW-positive
-  // instead of CCW-positive).  Q-E accessibility and all dark-angle regions
-  // are physical reciprocal-space regions, so they must be identical to -+-.
-  // Evaluate the validated legacy Q-E path exactly as -+- and restore the UI
-  // selection immediately afterwards.  Programmatic select.value changes do
-  // not dispatch change events, so Angle calculation / TAS geometry keep the
-  // independent --- S1 convention outside this calculation.
+  if(uiSense==="+++"){
+    // +++ uses its handedness-corrected Q-E/S1 calculation.  Its moving
+    // Dark-angle polygons are now generated inside calculateSingleCrystalPatched()
+    // from the exact TAS-geometry beam/obstacle angles, so do not borrow a
+    // polygon from another configuration here.
+    return calculateSingleCrystalPatched();
+  }
+
+  // --- uses the same physical Q-E scattering branch as -+-, but its sample
+  // encoder runs in the opposite direction (CW-positive instead of CCW-positive).
+  // Keep the already-validated --- S1-range mapping below.  Moving Dark-angle
+  // polygons are rebuilt afterwards from the exact mirrored TAS-geometry angles.
   if(uiSense==="---"){
     const senseSelect=$("sense");
     const s1MinInput=$("S1min"), s1MaxInput=$("S1max");
     const savedSense=senseSelect?.value;
     const savedS1min=s1MinInput?.value, savedS1max=s1MaxInput?.value;
 
-    // --- has the same physical Q-E / Dark-angle geometry as -+-, but its
-    // sample encoder runs in the opposite direction (CW-positive instead of
-    // CCW-positive).  Dark-angle polygons therefore use the validated -+-
-    // path unchanged, while the user-entered S1 motor limits must be mapped
-    // onto the equivalent -+- encoder values before generating the accessible
-    // Q-E boundary.
-    //
     // For the same physical sample orientation:
     //   cDash*(S1dash-refDash) = cMinus*(S1minus-refMinus)
     // with cDash=-1 and cMinus=+1, hence
@@ -2715,6 +3080,7 @@ function calculateSingleCrystal(){
     const fixedReferenceEnergy=$("lambdaHalf")?.checked ? 4*energyInput : energyInput;
     const dashRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"---").s1;
 
+    let cache;
     if(senseSelect) senseSelect.value="-+-";
     try{
       const minusRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"-+-").s1;
@@ -2725,14 +3091,20 @@ function calculateSingleCrystal(){
         s1MinInput.value=String(Math.min(mappedA,mappedB));
         s1MaxInput.value=String(Math.max(mappedA,mappedB));
       }
-      return calculateSingleCrystalLegacy();
+      cache=calculateSingleCrystalLegacy();
     }finally{
       if(s1MinInput && savedS1min!=null) s1MinInput.value=savedS1min;
       if(s1MaxInput && savedS1max!=null) s1MaxInput.value=savedS1max;
       if(senseSelect && savedSense!=null) senseSelect.value=savedSense;
     }
+    // Build --- moving Dark-angle regions directly from the same mirrored
+    // TAS-geometry beam/obstacle angles used by the schematic.  Do not borrow
+    // the +-+ Q polygon: --- has its own clockwise-positive sample encoder and
+    // its displayed Dark sector rotates in the opposite angular direction.
+    return rebuildTripleMinusMovingDarkPolygons(cache);
   }
 
+  // +-+ and -+- remain exactly on their validated legacy Q-E paths.
   return calculateSingleCrystalLegacy();
 }
 
@@ -2891,9 +3263,13 @@ function calculateSingleCrystalPatched(){
       for(const asset of darkAssets){
         const darkRef=asset.ref;
         const darkCal=darkRef==="Reference Q" ? darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef,uiSense) : null;
-        if(darkRef==="Reference Q" && !darkCal) continue;
+        // +++ moving Dark-angle geometry no longer needs the historical
+        // Bragg-theta darkCal mapping; only a non-zero reference direction is
+        // required, exactly as in TAS geometry.  Other configurations keep the
+        // established validation unchanged.
+        if(darkRef==="Reference Q" && !darkCal && uiSense!=="+++") continue;
         if(darkRef!=="Fixed" && darkRef!=="Reference Q" && QrefNorm<=1e-10) continue;
-        const Qoffset=darkRef==="Reference Q" ? darkCal.Qoffset : 2*thetaRef;
+        const Qoffset=darkRef==="Reference Q" ? (darkCal?.Qoffset ?? 0) : 2*thetaRef;
         if(darkRef==="Fixed"){
           // Laboratory-fixed obstacle: compare the SIGNED physical S2 motor angle
           // directly with the fixed angular interval.  Do not use abs(S2): a
@@ -2942,6 +3318,25 @@ function calculateSingleCrystalPatched(){
         const s2dark=linspace(S2min,S2max,200);
         for(const rawRange of asset.ranges){
           const [from,to,offset]=rawRange; if(from===0 && to===0) continue;
+
+          if(uiSense==="+++"){
+            // Generate both moving blocked regions directly from the same
+            // angular construction used by TAS geometry.  This is the key
+            // consistency rule: a boundary point is where the drawn Dark arc
+            // endpoint lies exactly on the ki source ray or kf outgoing ray.
+            const polyKF=plusPlusDarkGeometryPolygon(
+              asset,rawRange,"kf",rl,ex,ey,energyMode,Ei,Ef,
+              ki,kf,S2min,S2max
+            );
+            const polyKI=plusPlusDarkGeometryPolygon(
+              asset,rawRange,"ki",rl,ex,ey,energyMode,Ei,Ef,
+              ki,kf,S2min,S2max
+            );
+            if(polyKF) hwKF.push(polyKF);
+            if(polyKI) hwKI.push(polyKI);
+            continue;
+          }
+
           const directBeamCorrection=darkRef==="Direct beam"
             ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,uiSense) : 0;
           const correctedOffset=offset+directBeamCorrection;
@@ -3825,10 +4220,21 @@ function qeDarkBlockWarningsForHKLE(cache,hkl,hw){
     }
     const blocked=(polygons)=>Array.isArray(polygons) && polygons.some(poly=>qePointInPolygon(p,poly));
     const warnings=[];
-    if(blocked(cache.darkKI?.[index])) warnings.push('ki blocked');
-    if(blocked(cache.darkKF?.[index])) warnings.push('kf blocked');
+    const uiSense=checkedValue("sense");
+    if(uiSense==="+++"){
+      // +++ moving Dark warnings use the same TAS-geometry angular test as
+      // their directly generated Q-E polygons.
+      warnings.push(...plusPlusDarkGeometryWarningsForHKLE(cache,hkl,hw));
+    }else if(uiSense==="---"){
+      // --- follows the same rule: use the mirrored TAS-geometry angular test
+      // directly, rather than inferring the warning from polygon containment.
+      warnings.push(...tripleMinusDarkGeometryWarningsForHKLE(cache,hkl,hw));
+    }else{
+      if(blocked(cache.darkKI?.[index])) warnings.push('ki blocked');
+      if(blocked(cache.darkKF?.[index])) warnings.push('kf blocked');
+    }
     if(blocked(cache.darkFixed?.[index])) warnings.push('fixed blocked');
-    return warnings;
+    return [...new Set(warnings)];
   }catch(_err){ return []; }
 }
 
