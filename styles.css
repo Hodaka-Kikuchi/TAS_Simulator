@@ -308,6 +308,8 @@ textarea:disabled {
 .geometry-angles{min-height:46px;}
 .geometry-result-line{display:block;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:normal;}
 .geometry-result-line + .geometry-result-line{margin-top:2px;}
+/* Reserve the Dark-angle warning row so Single/Scan TAS geometry does not jump vertically. */
+.geometry-warning-line{min-height:1.45em;}
 
 /* Sidebar input sizing: use the full available grid-cell width consistently. */
 .sidebar input[type=number],

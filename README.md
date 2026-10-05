@@ -52,7 +52,26 @@ The instrument JSON `configuration.sign` value is used directly.
 
 - `+++`: validated branch inherited from the former application `+-+` behavior.
 - `+-+`: pure `+-+` branch; S1 positive is clockwise and S2 positive is clockwise in TAS geometry.
-- `-+-`: validated `-+-` branch.
+- `-+-`: validated `-+-` branch; S1 positive is counter-clockwise.
+- `---`: same physical `-+-` branch for Q-E / Dark-angle geometry, with the S1 encoder reversed so clockwise is positive.
+
+
+## Code organization
+
+The browser entry point remains `app.js`, but large independent responsibilities are split into ES modules so numerical behavior can be maintained without growing one monolithic file.
+
+- `app.js`: application orchestration, Q-E calculation/rendering, TAS geometry rendering, Resolution UI, and browser event wiring.
+- `tas-core.js`: reciprocal-lattice / UB / vector numerical routines.
+- `tas-conventions.js`: the validated `+++`, `+-+`, `-+-`, `---` sign-routing and S1/Q conversion helpers. This module is UI-free.
+- `resolution-core.js`: resolution numerical calculation.
+- `cif-structure.js`: CIF parsing, neutron structure factors, and attenuation data calculations.
+- `cif-symmetry.js`: pure reciprocal-space symmetry/star helpers used by the CIF generator.
+- `data-loader.js`: JSON/CIF directory discovery and loading for localhost, GitHub Pages, and other static hosts.
+- `toolbox.js`: neutron unit conversion, X-ray-to-neutron S2 conversion, and CIF-based attenuation UI.
+- `script-workspace.js`: Time estimate, SPICE conversion, ASET editing, and related diagnostics.
+- `matrix.js`: small matrix-algebra helpers used by the resolution code.
+
+The modularization is intentionally conservative: the already validated Q-E and TAS-geometry behavior is not re-derived or unified in this refactor; code is moved behind explicit module boundaries first.
 
 ## Instrument data
 
