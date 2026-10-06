@@ -115,6 +115,7 @@
     <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution</button>
     <button id="tabToolbox" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="toolboxPanel" data-tab="toolbox">Toolbox</button>
     <button id="tabCifGenerator" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="cifGeneratorPanel" data-tab="cif-generator">CIF Generator</button>
+    <button id="tabStructure" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="structurePanel" data-tab="structure">Structure</button>
     <button id="tabScript" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scriptPanel" data-tab="script">Script</button>
   </nav>
 
@@ -448,6 +449,87 @@
                 <tbody id="cifReflectionRows"><tr><td colspan="7" class="cif-reflection-empty">No generated reflections yet.</td></tr></tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="structurePanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabStructure">
+    <section class="calc-card structure-viewer-card">
+      <div class="structure-viewer-layout">
+        <div class="structure-viewer-controls">
+          <div class="structure-control-section structure-cif-section">
+            <h3>CIF</h3>
+            <div class="structure-cif-row">
+              <input id="structureCifName" type="text" value="No CIF selected" readonly aria-label="Selected CIF for structure viewer">
+              <button id="structureCifSelect" type="button">Select CIF</button>
+              <button id="structureCifClear" type="button">Clear</button>
+            </div>
+          </div>
+          <div class="structure-control-section">
+            <h3>View</h3>
+            <div class="cif-structure-view-buttons structure-view-buttons-six">
+              <button type="button" data-cif-structure-view="a">a</button>
+              <button type="button" data-cif-structure-view="b">b</button>
+              <button type="button" data-cif-structure-view="c">c</button>
+              <button type="button" data-cif-structure-view="astar">a*</button>
+              <button type="button" data-cif-structure-view="bstar">b*</button>
+              <button type="button" data-cif-structure-view="cstar">c*</button>
+            </div>
+            <div class="structure-range-grid structure-range-six">
+              <label class="structure-entry-field"><span class="structure-entry-label">x min</span><input id="cifRangeXMin" type="number" step="0.1" value="0"></label>
+              <label class="structure-entry-field"><span class="structure-entry-label">x max</span><input id="cifRangeXMax" type="number" step="0.1" value="1"></label>
+              <label class="structure-entry-field"><span class="structure-entry-label">y min</span><input id="cifRangeYMin" type="number" step="0.1" value="0"></label>
+              <label class="structure-entry-field"><span class="structure-entry-label">y max</span><input id="cifRangeYMax" type="number" step="0.1" value="1"></label>
+              <label class="structure-entry-field"><span class="structure-entry-label">z min</span><input id="cifRangeZMin" type="number" step="0.1" value="0"></label>
+              <label class="structure-entry-field"><span class="structure-entry-label">z max</span><input id="cifRangeZMax" type="number" step="0.1" value="1"></label>
+              <input id="cifRangeX" type="hidden" value="0 1">
+              <input id="cifRangeY" type="hidden" value="0 1">
+              <input id="cifRangeZ" type="hidden" value="0 1">
+            </div>
+          </div>
+          <div class="structure-control-section">
+            <div class="structure-section-heading">
+              <h3>Magnetic ion moments</h3>
+              <button id="cifDefaultMoments" type="button">Default</button>
+            </div>
+            <div class="structure-moment-axis-row">
+              <label class="structure-entry-field"><span class="structure-entry-label">Structure type</span><select id="cifMomentStructureType">
+                <option value="collinear" selected>Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option>
+              </select></label>
+              <label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
+                <option value="a">a</option><option value="b">b</option><option value="c" selected>c</option>
+              </select></label>
+              <label class="structure-entry-field"><span class="structure-entry-label">Chirality</span><select id="cifMomentChirality">
+                <option value="CCW" selected>CCW</option><option value="CW">CW</option>
+              </select></label>
+            </div>
+            <div id="cifMagMomentRows" class="structure-rows-list"></div>
+          </div>
+          <div class="structure-control-section">
+            <div class="structure-section-heading">
+              <h3>Atoms</h3>
+              <button id="cifDefaultAtoms" type="button">Default</button>
+            </div>
+            <div id="cifAtomColorRows" class="structure-rows-list"></div>
+          </div>
+          <div class="structure-control-section">
+            <div class="structure-section-heading">
+              <h3>Bonds</h3>
+              <button id="cifDefaultBonds" type="button">Default</button>
+            </div>
+            <div id="cifBondRows" class="structure-rows-list"></div>
+            <button id="cifAddBondRule" class="structure-add-bond-button" type="button">+ Add bond</button>
+            <div class="structure-help-text">Examples: Ni–Ni 0–5 Å, Ni–O 0–3 Å.</div>
+          </div>
+        </div>
+        <div class="structure-viewer-main">
+          <div id="cifStructureStatus" class="cif-structure-status" aria-live="polite">Open the Structure tab to visualize the generated or selected CIF.</div>
+          <div class="structure-plot-wrap">
+            <div id="cifStructurePlot" class="cif-structure-plot"></div>
+            <svg id="cifDirectTriad" class="structure-triad structure-triad-left" viewBox="0 0 160 160" aria-hidden="true"></svg>
+            <svg id="cifReciprocalTriad" class="structure-triad structure-triad-right" viewBox="0 0 160 160" aria-hidden="true"></svg>
           </div>
         </div>
       </div>

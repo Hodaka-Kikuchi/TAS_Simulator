@@ -2173,3 +2173,822 @@ main{
   .cif-heading-actions{justify-content:stretch}
   .cif-heading-actions button{flex:1 1 150px}
 }
+
+.structure-viewer-layout{
+  display:grid;
+  grid-template-columns:minmax(260px, 340px) minmax(0, 1fr);
+  gap:16px;
+  min-height:640px;
+}
+.structure-viewer-controls{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  min-width:0;
+}
+.structure-control-section{
+  border:1px solid #d9d9d9;
+  border-radius:10px;
+  padding:12px;
+  background:#fafafa;
+}
+.structure-control-section h3{
+  margin:0 0 8px 0;
+  font-size:15px;
+}
+.structure-section-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:8px;
+}
+.structure-inline-note,
+.structure-help-text,
+.cif-structure-status{
+  font-size:13px;
+  color:#555;
+}
+.structure-help-text{
+  margin-top:8px;
+  line-height:1.4;
+}
+.structure-rows-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.structure-rows-empty{
+  color:#777;
+  font-size:13px;
+  padding:4px 0;
+}
+.cif-structure-view-buttons,
+.cif-structure-spin-inputs{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.cif-structure-view-buttons button{
+  min-width:42px;
+}
+.cif-structure-spin-inputs input{
+  width:72px;
+}
+.structure-viewer-main{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  min-height:640px;
+}
+.cif-structure-status{
+  margin-bottom:8px;
+  min-height:1.4em;
+}
+.cif-structure-plot{
+  width:100%;
+  min-height:560px;
+  flex:1 1 auto;
+  border:1px solid #ddd;
+  border-radius:8px;
+  background:#fff;
+}
+.structure-color-row,
+.structure-bond-row{
+  display:grid;
+  gap:8px;
+  align-items:center;
+}
+.structure-color-row{
+  grid-template-columns:minmax(0,1fr) 70px;
+}
+.structure-color-swatch{
+  width:100%;
+  min-height:34px;
+  padding:0;
+  border:1px solid #bbb;
+  border-radius:6px;
+  background:none;
+}
+.structure-bond-row{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr) 90px auto;
+}
+.structure-bond-row input,
+.structure-bond-row select{
+  width:100%;
+}
+#structurePanel{
+  display:flex;
+  flex-direction:column;
+}
+#structurePanel.hidden{
+  display:none;
+}
+@media (max-width: 1180px){
+  .structure-viewer-layout{
+    grid-template-columns:1fr;
+  }
+  .structure-viewer-main{
+    min-height:480px;
+  }
+  .cif-structure-plot{
+    min-height:440px;
+  }
+}
+
+
+/* Structure viewer v2 */
+#structurePanel .structure-viewer-card{
+  margin-top:0;
+  min-height:calc(100vh - 118px);
+  padding:10px;
+}
+.structure-viewer-layout{
+  grid-template-columns:minmax(360px, 440px) minmax(0,1fr);
+  min-height:calc(100vh - 142px);
+  align-items:stretch;
+}
+.structure-viewer-controls{
+  gap:10px;
+  align-self:start;
+}
+.structure-control-section{
+  padding:10px;
+}
+.structure-repeat-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;
+  margin-top:9px;
+}
+.structure-repeat-grid input{
+  width:100%!important;
+}
+.structure-color-row{
+  grid-template-columns:46px 64px minmax(145px,1fr) 44px;
+  gap:7px;
+}
+.structure-color-row>strong{
+  align-self:center;
+}
+.structure-color-row>input[type=number]{
+  width:64px;
+}
+.structure-color-palette{
+  display:grid;
+  grid-template-columns:repeat(6,22px);
+  gap:3px;
+  align-items:center;
+}
+.structure-color-chip{
+  width:22px;
+  min-width:22px;
+  height:22px;
+  padding:0;
+  border:2px solid transparent;
+  border-radius:4px;
+}
+.structure-color-chip.selected{
+  border-color:#111;
+  box-shadow:0 0 0 1px #fff inset;
+}
+.structure-color-swatch,
+.structure-moment-row input[type=color],
+.structure-bond-row input[type=color]{
+  width:40px;
+  min-width:40px;
+  height:30px;
+  padding:2px;
+}
+.structure-moment-row{
+  display:grid;
+  grid-template-columns:auto minmax(125px,1fr) 150px 58px minmax(145px,1fr) 42px;
+  gap:6px;
+  align-items:center;
+  padding:7px;
+  border:1px solid #ddd;
+  border-radius:7px;
+  background:#fff;
+}
+.structure-moment-enable{
+  flex-direction:row;
+  align-items:center;
+  gap:4px;
+  white-space:nowrap;
+}
+.structure-moment-site{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  font-size:12px;
+}
+.structure-moment-site span{
+  color:#666;
+  font-size:11px;
+  overflow-wrap:anywhere;
+}
+.structure-moment-vector{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:4px;
+}
+.structure-moment-vector input{
+  width:100%!important;
+  min-width:0!important;
+}
+.structure-moment-row>input[type=number]{
+  width:58px;
+}
+.structure-bond-row{
+  grid-template-columns:minmax(62px,1fr) minmax(62px,1fr) 80px 44px auto;
+}
+.structure-viewer-main{
+  min-height:calc(100vh - 142px);
+}
+.cif-structure-plot{
+  min-height:calc(100vh - 182px);
+  height:calc(100vh - 182px);
+}
+@media (max-width: 1450px){
+  .structure-viewer-layout{grid-template-columns:minmax(330px,390px) minmax(0,1fr)}
+  .structure-color-palette{grid-template-columns:repeat(4,22px)}
+  .structure-moment-row{grid-template-columns:auto minmax(110px,1fr);}
+  .structure-moment-row .structure-moment-vector,
+  .structure-moment-row .structure-color-palette{grid-column:1/-1;}
+}
+@media (max-width:1180px){
+  #structurePanel .structure-viewer-card,
+  .structure-viewer-layout,
+  .structure-viewer-main{min-height:auto}
+  .cif-structure-plot{height:560px;min-height:560px}
+}
+.structure-moment-header{
+  display:grid;
+  grid-template-columns:auto minmax(125px,1fr) 150px 58px minmax(185px,1fr);
+  gap:6px;
+  font-size:11px;
+  color:#666;
+  margin-bottom:5px;
+  padding:0 7px;
+}
+.structure-help-top{margin:0 0 7px 0}
+@media (max-width:1450px){
+  .structure-moment-header{display:none}
+}
+
+/* Structure viewer v3 refinements */
+.structure-control-section{
+  background:#fff;
+}
+.structure-moment-header{
+  grid-template-columns:28px 52px 138px 58px minmax(78px,1fr);
+  padding:0 5px;
+}
+.structure-moment-row{
+  grid-template-columns:28px 52px 138px 58px minmax(78px,1fr);
+  gap:5px;
+  padding:6px 6px 6px 8px;
+  border-left:4px solid var(--moment-site-color,#888);
+}
+.structure-moment-row>input[type=checkbox]{
+  justify-self:center;
+}
+.structure-moment-site{
+  display:block;
+  font-size:12px;
+  font-weight:700;
+  color:var(--moment-site-color,#333);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.structure-moment-vector{
+  grid-template-columns:repeat(3,42px);
+}
+.structure-moment-vector input{
+  width:42px!important;
+}
+.structure-moment-color-picker{
+  position:relative;
+  min-width:0;
+}
+.structure-moment-color-picker>summary{
+  list-style:none;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-height:30px;
+  padding:3px 7px;
+  border:1px solid #bbb;
+  border-radius:6px;
+  background:#fff;
+  cursor:pointer;
+  font-size:11px;
+  user-select:none;
+}
+.structure-moment-color-picker>summary::-webkit-details-marker{
+  display:none;
+}
+.structure-moment-color-summary-swatch{
+  width:18px;
+  height:18px;
+  border:1px solid #777;
+  border-radius:4px;
+  flex:0 0 auto;
+}
+.structure-moment-color-popover{
+  position:absolute;
+  z-index:30;
+  top:34px;
+  right:0;
+  min-width:172px;
+  padding:8px;
+  border:1px solid #bbb;
+  border-radius:8px;
+  background:#fff;
+  box-shadow:0 4px 14px rgba(0,0,0,.16);
+}
+.structure-moment-color-popover .structure-color-palette{
+  grid-template-columns:repeat(6,22px);
+  margin-bottom:7px;
+}
+.structure-moment-color-popover input[type=color]{
+  width:100%;
+  height:30px;
+}
+@media (max-width:1450px){
+  .structure-moment-row{
+    grid-template-columns:28px 52px minmax(138px,1fr) 58px minmax(78px,110px);
+  }
+  .structure-moment-row .structure-moment-vector{
+    grid-column:auto;
+  }
+}
+
+/* Structure viewer v4 refinements */
+.structure-cif-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:6px;
+  align-items:center;
+}
+.structure-cif-row input{
+  width:100%;
+  min-width:0;
+}
+.structure-bond-row{
+  grid-template-columns:minmax(58px,1fr) minmax(58px,1fr) 68px 68px 40px auto;
+  gap:6px;
+}
+.structure-add-bond-button{
+  width:100%;
+  margin-top:8px;
+}
+@media (max-width:1450px){
+  .structure-bond-row{
+    grid-template-columns:minmax(58px,1fr) minmax(58px,1fr) 64px 64px 40px auto;
+  }
+}
+
+/* Structure viewer v5 refinements */
+.structure-range-grid{
+  display:grid;
+  grid-template-columns:28px minmax(70px,1fr) minmax(70px,1fr);
+  gap:6px;
+  align-items:center;
+  margin-top:9px;
+  font-size:12px;
+}
+.structure-range-grid>span{
+  color:#666;
+  text-align:center;
+}
+.structure-range-grid>label{
+  margin:0;
+  font-weight:600;
+}
+.structure-range-grid input{
+  width:100%!important;
+}
+.structure-moment-header{
+  grid-template-columns:28px 52px 138px 58px 58px minmax(78px,1fr);
+}
+.structure-moment-row{
+  grid-template-columns:28px 52px 138px 58px 58px minmax(78px,1fr);
+}
+@media (max-width:1450px){
+  .structure-moment-row{grid-template-columns:auto minmax(110px,1fr);}
+}
+
+/* Structure viewer v6 refinements */
+.structure-viewer-layout{
+  grid-template-columns:minmax(390px, 470px) minmax(0, 1fr);
+}
+.structure-range-compact{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin-top:9px;
+}
+.structure-range-compact label{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:6px;
+  margin:0;
+  font-size:12px;
+  font-weight:600;
+}
+.structure-range-compact input{
+  width:100%!important;
+  min-width:0;
+}
+.structure-moment-header{
+  grid-template-columns:28px 48px 150px 66px 58px 66px minmax(165px,1fr);
+}
+.structure-moment-row{
+  grid-template-columns:28px 48px 150px 66px 58px 66px minmax(165px,1fr);
+  gap:6px;
+}
+.structure-moment-row>input[type=number]{
+  width:100%!important;
+  min-width:0;
+}
+.structure-moment-color-inline{
+  display:grid;
+  grid-template-columns:minmax(145px,1fr) 40px;
+  gap:5px;
+  align-items:center;
+  min-width:0;
+}
+.structure-moment-color-inline .structure-color-palette{
+  grid-template-columns:repeat(6,22px);
+}
+.structure-moment-color-inline input[type=color]{
+  width:40px;
+  min-width:40px;
+  height:30px;
+  padding:2px;
+}
+.structure-bond-row{
+  grid-template-columns:minmax(62px,1fr) minmax(62px,1fr) 72px 72px 58px 40px auto;
+  gap:6px;
+}
+@media (max-width:1450px){
+  .structure-viewer-layout{grid-template-columns:minmax(360px,430px) minmax(0,1fr);}
+  .structure-moment-header{display:none;}
+  .structure-moment-row{
+    grid-template-columns:28px 48px repeat(4,minmax(58px,1fr));
+  }
+  .structure-moment-row .structure-moment-vector,
+  .structure-moment-row .structure-moment-color-inline{
+    grid-column:1/-1;
+  }
+  .structure-bond-row{
+    grid-template-columns:minmax(58px,1fr) minmax(58px,1fr) 66px 66px 54px 40px auto;
+  }
+}
+@media (max-width:1180px){
+  .structure-viewer-layout{grid-template-columns:1fr;}
+}
+
+/* Compact Structure controls */
+.structure-moment-header,
+.structure-moment-row{
+  grid-template-columns:44px minmax(58px,72px) minmax(150px,1fr) minmax(150px,190px) minmax(170px,1fr) !important;
+}
+.structure-moment-geometry{
+  width:100%;
+  min-width:150px;
+  box-sizing:border-box;
+}
+.structure-help-top{
+  font-size:12px;
+}
+
+/* Structure viewer v8 compact refinements */
+.structure-translation-label{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:6px;
+  margin-top:8px;
+  font-size:12px;
+  font-weight:600;
+}
+.structure-translation-label input{
+  width:100%;
+  min-width:0;
+}
+.structure-moment-header,
+.structure-moment-row{
+  grid-template-columns:44px minmax(58px,72px) minmax(150px,1fr) 90px 42px !important;
+}
+.structure-moment-geometry{
+  width:90px!important;
+  min-width:90px!important;
+  max-width:90px!important;
+}
+.structure-moment-color-swatch{
+  width:40px!important;
+  min-width:40px!important;
+  height:30px!important;
+  padding:2px!important;
+}
+.structure-bond-row{
+  grid-template-columns:minmax(62px,1fr) minmax(62px,1fr) 92px 58px 40px auto!important;
+  gap:6px;
+}
+.structure-bond-row [data-bond-field="distanceRange"]{
+  width:92px;
+  min-width:92px;
+}
+@media (max-width:1450px){
+  .structure-moment-header{display:none!important;}
+  .structure-moment-row{
+    grid-template-columns:44px minmax(58px,72px) minmax(150px,1fr) 90px 42px!important;
+  }
+  .structure-bond-row{
+    grid-template-columns:minmax(58px,1fr) minmax(58px,1fr) 88px 54px 40px auto!important;
+  }
+}
+
+/* Structure viewer v9 refinements */
+.structure-moment-row{
+  border:1px solid #333!important;
+  border-left:1px solid #333!important;
+}
+.structure-moment-site{
+  color:#111!important;
+}
+.structure-color-row{
+  grid-template-columns:28px minmax(42px,70px) 70px minmax(0,1fr) 40px!important;
+  align-items:center;
+}
+.structure-color-row>input[type=checkbox]{
+  justify-self:center;
+}
+
+/* Structure viewer v9 refinements */
+.structure-color-row{
+  grid-template-columns:28px 46px 64px minmax(145px,1fr) 44px!important;
+}
+.structure-color-row>input[type=checkbox]{
+  justify-self:center;
+}
+.structure-moment-row{
+  border:0!important;
+  border-left:0!important;
+  border-radius:0!important;
+  padding:4px 2px!important;
+  background:#fff!important;
+}
+.structure-moment-site{
+  color:#111!important;
+}
+.structure-plot-wrap{
+  position:relative;
+  flex:1 1 auto;
+  min-height:0;
+}
+.structure-plot-wrap .cif-structure-plot{
+  height:100%!important;
+  min-height:calc(100vh - 182px);
+}
+.structure-triad{
+  position:absolute;
+  bottom:10px;
+  width:150px;
+  height:150px;
+  pointer-events:none;
+  z-index:5;
+  background:rgba(255,255,255,0.72);
+  border-radius:8px;
+}
+.structure-triad-left{left:10px;}
+.structure-triad-right{right:10px;}
+@media(max-width:1180px){
+  .structure-plot-wrap .cif-structure-plot{min-height:560px;}
+  .structure-triad{width:120px;height:120px;}
+}
+
+
+/* Structure viewer v9 cleanup */
+.structure-moment-row{
+  border:none!important;
+  border-left:none!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+  background:#fff!important;
+  padding:4px 2px!important;
+}
+.structure-moment-site{
+  color:#111!important;
+}
+.structure-color-row{
+  grid-template-columns:28px 46px 64px minmax(145px,1fr) 44px!important;
+}
+.structure-color-row>input[type=checkbox]{
+  justify-self:center;
+  margin:0;
+}
+
+/* Structure Viewer final layout: keep controls explicit and avoid runtime CSS overrides. */
+#structurePanel .structure-section-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:8px;
+}
+#structurePanel .structure-section-heading h3{
+  margin:0;
+}
+#structurePanel .structure-section-heading > button{
+  flex:0 0 auto;
+  margin-left:auto;
+  white-space:nowrap;
+}
+
+/* View: six equal direction buttons and six equal min/max entry boxes. */
+#structurePanel .cif-structure-view-buttons.structure-view-buttons-six{
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  gap:6px!important;
+  width:100%!important;
+}
+#structurePanel .cif-structure-view-buttons.structure-view-buttons-six > button{
+  width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+}
+#structurePanel .structure-range-six{
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  gap:6px!important;
+  width:100%!important;
+  margin-top:9px;
+  align-items:end;
+}
+#structurePanel .structure-entry-field{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  min-width:0;
+  margin:0;
+  font-weight:400;
+}
+#structurePanel .structure-entry-label{
+  display:block;
+  font-size:11px;
+  line-height:1.15;
+  color:#555;
+  white-space:nowrap;
+}
+#structurePanel .structure-range-six .structure-entry-field,
+#structurePanel .structure-range-six input[type=number]{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  box-sizing:border-box;
+}
+#structurePanel .structure-range-six input[type=number]{
+  padding-left:4px;
+  padding-right:4px;
+}
+
+/* Magnetic moments: checkbox + site use only a narrow fixed area.  The M-vector
+   group and Length/Width/Head group receive the remaining width. */
+#structurePanel .structure-moment-row{
+  display:grid!important;
+  grid-template-columns:20px minmax(42px,58px) minmax(135px,1fr) minmax(165px,1.25fr) 40px!important;
+  column-gap:6px!important;
+  row-gap:4px!important;
+  width:100%!important;
+  align-items:end!important;
+  padding:4px 2px!important;
+  border:0!important;
+  background:#fff!important;
+}
+#structurePanel .structure-moment-row > input[type=checkbox]{
+  width:auto!important;
+  min-width:0!important;
+  margin:0!important;
+  justify-self:center!important;
+  align-self:center!important;
+}
+#structurePanel .structure-moment-site{
+  width:auto!important;
+  min-width:0!important;
+  max-width:58px!important;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  align-self:center;
+}
+#structurePanel .structure-moment-vector,
+#structurePanel .structure-moment-geometry{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:6px!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+#structurePanel .structure-moment-vector .structure-entry-field,
+#structurePanel .structure-moment-geometry .structure-entry-field,
+#structurePanel .structure-moment-vector input[type=number],
+#structurePanel .structure-moment-geometry input[type=number]{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  box-sizing:border-box;
+}
+#structurePanel .structure-moment-color-swatch{
+  width:40px!important;
+  min-width:40px!important;
+  height:30px!important;
+  padding:2px!important;
+  align-self:end;
+}
+
+/* Bonds: min and max are independent entry boxes. */
+#structurePanel .structure-bond-row{
+  display:grid!important;
+  grid-template-columns:minmax(54px,.8fr) minmax(54px,.8fr) minmax(136px,1.6fr) 58px 40px 66px!important;
+  gap:6px!important;
+  align-items:end!important;
+  width:100%!important;
+}
+#structurePanel .structure-bond-range-pair{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+  min-width:0;
+  width:100%;
+}
+#structurePanel .structure-bond-range-pair .structure-entry-field,
+#structurePanel .structure-bond-range-pair input[type=number],
+#structurePanel .structure-bond-row .structure-entry-field,
+#structurePanel .structure-bond-row .structure-entry-field input[type=number]{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  box-sizing:border-box;
+}
+#structurePanel .structure-bond-row select{
+  min-width:0!important;
+  width:100%!important;
+}
+
+/* Coordinate indicators are independent SVG overlays.  They never receive
+   pointer events and therefore cannot steal orbit/zoom gestures from Plotly. */
+#structurePanel .structure-plot-wrap{
+  position:relative;
+  flex:1 1 auto;
+  min-height:0;
+}
+#structurePanel .structure-plot-wrap .cif-structure-plot{
+  height:100%!important;
+  min-height:calc(100vh - 182px);
+}
+#structurePanel .structure-triad{
+  position:absolute;
+  bottom:12px;
+  width:160px;
+  height:160px;
+  pointer-events:none!important;
+  z-index:5;
+  overflow:visible;
+  background:rgba(255,255,255,.72);
+  border-radius:8px;
+}
+#structurePanel .structure-triad-left{left:12px;}
+#structurePanel .structure-triad-right{right:12px;}
+
+@media(max-width:1450px){
+  #structurePanel .structure-moment-row{
+    grid-template-columns:20px minmax(40px,54px) minmax(120px,1fr) minmax(150px,1.25fr) 40px!important;
+  }
+}
+@media(max-width:1180px){
+  #structurePanel .structure-viewer-layout{grid-template-columns:1fr;}
+  #structurePanel .structure-plot-wrap .cif-structure-plot{min-height:560px;}
+}
+
+/* Spiral/helical magnetic display: one global rotation axis combined with the
+   enabled propagation vector(s) and each site's Mx/My/Mz reference moment. */
+#structurePanel .structure-moment-axis-row{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(120px,1fr));
+  gap:8px;
+  align-items:end;
+  margin:0 0 8px;
+}
+#structurePanel .structure-moment-axis-row select{
+  width:100%;
+  min-width:0;
+}
+@media(max-width:700px){
+  #structurePanel .structure-moment-axis-row{grid-template-columns:1fr;}
+}

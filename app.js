@@ -2774,6 +2774,7 @@ async function initialize(){
   $('tabResolution')?.addEventListener('click',()=>setActiveTab('resolution'));
   $('tabToolbox')?.addEventListener('click',()=>setActiveTab('toolbox'));
   $('tabCifGenerator')?.addEventListener('click',()=>setActiveTab('cif-generator'));
+  $('tabStructure')?.addEventListener('click',()=>setActiveTab('structure'));
   $('tabScript')?.addEventListener('click',()=>setActiveTab('script'));
 
   setStatus('neutron data / instrument / BG_material / sample_environments loading...');
@@ -3049,6 +3050,7 @@ async function initialize(){
   currentInstrument, dot, effectiveS2MaxAtEi, hklKey, hklToQ, makeSpiceScatteringPlaneBasis, norm,
   nuclearStructureFactorSquared, num, parseCifStructure, parseNumericValue, rad2deg, reciprocalSymmetryMatrices, reflectionStar,
   saveLeftPanelState:(...args)=>saveLeftPanelState(...args), scheduleRecalc, updateAutoW, updateModeVisibility, updateAbsorptionCalculator,
+  getPropagationVectors:()=>propagationVectorValues(),
   getSelectedCifStructure:()=>selectedCifStructure, getSelectedCifFileName:()=>selectedCifFileName,
   getSelectedCifText:()=>selectedCifText,
   setSelectedCifState:(structure,fileName,text)=>{ selectedCifStructure=structure; selectedCifFileName=fileName; selectedCifText=text; }

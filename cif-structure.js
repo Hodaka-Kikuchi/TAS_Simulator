@@ -310,10 +310,13 @@ export function parseCifStructure(text){
         unique.set(key,{p,U:U0?transformSymmetricTensor(U0,R):null});
       }
     }
+    const sourceSiteIndex=asymmetricSites.length-1;
     for(const item of unique.values()) atoms.push({
       element, occupancy:Number.isFinite(occupancy)?occupancy:1,
       Biso:Number.isFinite(Biso)?Biso:0, Uaniso:item.U,
-      x:item.p[0],y:item.p[1],z:item.p[2], bRe:b[0],bIm:b[1]
+      x:item.p[0],y:item.p[1],z:item.p[2], bRe:b[0],bIm:b[1],
+      sourceLabel:siteLabel, sourceSiteIndex,
+      sourceX:xyz[0], sourceY:xyz[1], sourceZ:xyz[2]
     });
   }
 

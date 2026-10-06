@@ -151,7 +151,7 @@ function initializeResponsivePlotResize(){
 }
 
 function setActiveTab(name){
-  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox', isCifGenerator=name==='cif-generator', isScript=name==='script';
+  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox', isCifGenerator=name==='cif-generator', isStructure=name==='structure', isScript=name==='script';
   mountTimeEstimateForScript(isScript);
   const sampleMode=$('sampleMode');
   if(isResolution){
@@ -169,8 +169,9 @@ function setActiveTab(name){
   $('resolutionPanel').classList.toggle('hidden',!isResolution);
   $('toolboxPanel').classList.toggle('hidden',!isToolbox);
   $('cifGeneratorPanel').classList.toggle('hidden',!isCifGenerator);
+  $('structurePanel')?.classList.toggle('hidden',!isStructure);
   $('scriptPanel')?.classList.toggle('hidden',!isScript);
-  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox],['tabCifGenerator',isCifGenerator],['tabScript',isScript]]){
+  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox],['tabCifGenerator',isCifGenerator],['tabStructure',isStructure],['tabScript',isScript]]){
     $(id).classList.toggle('active',on);
     $(id).setAttribute('aria-selected',String(on));
   }
@@ -296,7 +297,7 @@ function restoreRightPanelState(){
 function savedActiveTab(){
   try{
     const name=localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-    return ['qe','resolution','toolbox','cif-generator','script'].includes(name) ? name : 'qe';
+    return ['qe','resolution','toolbox','cif-generator','structure','script'].includes(name) ? name : 'qe';
   }catch(_e){ return 'qe'; }
 }
 
@@ -349,8 +350,8 @@ function saveGlobalUIState(){
       controls[el.id]=(el.type==='checkbox'||el.type==='radio') ? !!el.checked : el.value;
     }
     const tabs={
-      main:['qe','resolution','toolbox','cif-generator','script'].find(name=>{
-        const id={qe:'tabQe',resolution:'tabResolution',toolbox:'tabToolbox','cif-generator':'tabCifGenerator',script:'tabScript'}[name];
+      main:['qe','resolution','toolbox','cif-generator','structure','script'].find(name=>{
+        const id={qe:'tabQe',resolution:'tabResolution',toolbox:'tabToolbox','cif-generator':'tabCifGenerator',structure:'tabStructure',script:'tabScript'}[name];
         return $(id)?.classList.contains('active');
       }) || 'qe',
       qeMap:$('qeMapTabVector')?.classList.contains('active') ? 'vector' : 'constant',
@@ -383,7 +384,7 @@ function restoreGlobalUIState(){
     if(['single','scan'].includes(tabs.geometryMode)) setGeometryCalculationMode(tabs.geometryMode);
     if(['table','plot'].includes(tabs.geometryOutput)) setGeometryScanOutputTab(tabs.geometryOutput);
     if(['preview','reflections'].includes(tabs.cifOutput)) setCifOutputTab(tabs.cifOutput);
-    if(['qe','resolution','toolbox','cif-generator','script'].includes(tabs.main)) setActiveTab(tabs.main);
+    if(['qe','resolution','toolbox','cif-generator','structure','script'].includes(tabs.main)) setActiveTab(tabs.main);
     updateCalcMode(); updateModeVisibility(); updateOrientationReferenceUI();
     for(const slot of darkAssetSlots()) updateDarkReferenceUI(slot);
     updateBackgroundSelectAvailability();
