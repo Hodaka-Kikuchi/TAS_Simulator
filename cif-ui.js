@@ -331,7 +331,7 @@ let cifReflectionSort={key:"intensity",direction:"desc"};
 let lastGeneratedCifParsed=null;
 let lastGeneratedCifSpaceGroup=null;
 let lastGeneratedReflections=[];
-let cifStructureViewMode="cstar";
+let cifStructureViewMode="a";
 let cifStructureSourcePreference="generated";
 const STRUCTURE_VIEWER_STORAGE_KEY="tas-simulator-structure-viewer-v1";
 let restoringStructureViewer=false;
@@ -389,7 +389,9 @@ function restoreStructureViewerState(){
   if(!saved || saved.version!==1) return false;
   restoringStructureViewer=true;
   try{
-    if(["a","b","c","astar","bstar","cstar"].includes(saved.viewMode)) cifStructureViewMode=saved.viewMode;
+    // Always start the Structure viewer from the crystallographic a direction.
+    // Other viewer settings are restored, but the previous camera preset is intentionally not.
+    cifStructureViewMode="a";
     if(["generated","selected"].includes(saved.sourcePreference)) cifStructureSourcePreference=saved.sourcePreference;
     for(const axis of ["x","y","z"]){
       const cap=axis.toUpperCase();
@@ -790,7 +792,7 @@ function updateStructureAtomColorRows(elements,structure=null){
     visible.type="checkbox";
     visible.checked=structureAtomVisibility.get(element)!==false;
     visible.title="Show this atom element";
-    const name=document.createElement("strong");
+    const name=document.createElement("span");
     const siteLabels=[...new Set((structure?.asymmetricSites||[]).filter(site=>String(site.element||"")===element).map(site=>String(site.label||"").trim()).filter(Boolean))];
     name.textContent=siteLabels.length ? siteLabels.join(", ") : element;
     name.title=siteLabels.length ? `${element}: ${siteLabels.join(", ")}` : element;
@@ -880,7 +882,7 @@ function updateMagneticMomentRows(structure){
     enabled.dataset.momentField="enabled";
     enabled.title="Use this magnetic site";
 
-    const siteLabel=document.createElement("strong");
+    const siteLabel=document.createElement("span");
     siteLabel.className="structure-moment-site";
     siteLabel.textContent=site.label||site.element;
     siteLabel.title=`${site.element} @ (${Number(site.x).toFixed(5)}, ${Number(site.y).toFixed(5)}, ${Number(site.z).toFixed(5)})`;
@@ -2330,7 +2332,7 @@ async function initializeCifGenerator(){
     $("structureCifClear")?.addEventListener("click",clearSelectedCif);
     for(const button of document.querySelectorAll("[data-cif-structure-view]")){
       button.addEventListener("click",()=>{
-        cifStructureViewMode=button.dataset.cifStructureView || "cstar";
+        cifStructureViewMode=button.dataset.cifStructureView || "a";
         const source=currentStructureForViewer();
         const basis=directLatticeBasis(source?.structure?.lattice);
         if(basis){

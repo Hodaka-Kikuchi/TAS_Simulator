@@ -2992,3 +2992,184 @@ main{
 @media(max-width:700px){
   #structurePanel .structure-moment-axis-row{grid-template-columns:1fr;}
 }
+
+
+/* Magnetic ion site labels: match Atoms label sizing, but use normal weight. */
+#structurePanel .structure-moment-site{
+  font-size:inherit!important;
+  font-weight:400!important;
+}
+
+
+/* Structure Viewer: atom labels use the same normal weight as magnetic-ion site labels. */
+#structurePanel .structure-color-row > span{
+  font-weight:400!important;
+}
+
+/* Structure Viewer responsive refinement: react to the actual card width rather
+   than only the browser viewport.  This keeps controls usable when the app is
+   shown in a narrow split-screen/window beside the permanent sidebar. */
+#structurePanel .structure-viewer-card{
+  container-type:inline-size;
+  container-name:structure-viewer;
+}
+
+/* Fallback for browsers without container-query support: switch the overall
+   Structure layout to controls-above / plot-below earlier on narrow windows. */
+@media (max-width:1380px){
+  #structurePanel .structure-viewer-layout{
+    grid-template-columns:1fr!important;
+  }
+  #structurePanel .structure-viewer-controls,
+  #structurePanel .structure-viewer-main{
+    width:100%;
+    min-width:0;
+  }
+  #structurePanel .structure-plot-wrap .cif-structure-plot{
+    min-height:560px;
+  }
+}
+
+@container structure-viewer (max-width:1050px){
+  #structurePanel .structure-viewer-layout{
+    grid-template-columns:1fr!important;
+    gap:12px!important;
+  }
+  #structurePanel .structure-viewer-controls,
+  #structurePanel .structure-viewer-main{
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+  }
+  #structurePanel .structure-viewer-main{
+    min-height:560px!important;
+  }
+  #structurePanel .structure-plot-wrap .cif-structure-plot{
+    min-height:560px!important;
+  }
+}
+
+/* At medium/narrow control widths, avoid forcing every magnetic-moment control
+   into one compressed row.  Keep the checkbox/site/vector/color readable and
+   give Length/Width/Head a full-width second row. */
+@container structure-viewer (max-width:760px){
+  #structurePanel .structure-moment-row{
+    grid-template-columns:24px minmax(64px,96px) minmax(0,1fr) 40px!important;
+    grid-template-rows:auto auto!important;
+    column-gap:8px!important;
+    row-gap:7px!important;
+    align-items:end!important;
+    padding:6px 2px!important;
+  }
+  #structurePanel .structure-moment-row > input[type=checkbox]{
+    grid-column:1!important;
+    grid-row:1!important;
+    align-self:center!important;
+  }
+  #structurePanel .structure-moment-site{
+    grid-column:2!important;
+    grid-row:1!important;
+    max-width:none!important;
+    width:auto!important;
+    align-self:center!important;
+    overflow:visible!important;
+    text-overflow:clip!important;
+  }
+  #structurePanel .structure-moment-vector{
+    grid-column:3!important;
+    grid-row:1!important;
+    min-width:0!important;
+  }
+  #structurePanel .structure-moment-color-swatch,
+  #structurePanel .structure-moment-row > input[type=color]{
+    grid-column:4!important;
+    grid-row:1!important;
+    justify-self:end!important;
+  }
+  #structurePanel .structure-moment-geometry{
+    grid-column:1 / -1!important;
+    grid-row:2!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:8px!important;
+    width:100%!important;
+  }
+
+  /* Bonds wrap into logical rows so Remove never extends outside the card. */
+  #structurePanel .structure-bond-row{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    grid-template-rows:auto auto auto!important;
+    gap:8px!important;
+    width:100%!important;
+    min-width:0!important;
+  }
+  #structurePanel .structure-bond-row > select:nth-child(1){
+    grid-column:1!important;
+    grid-row:1!important;
+  }
+  #structurePanel .structure-bond-row > select:nth-child(2){
+    grid-column:2!important;
+    grid-row:1!important;
+  }
+  #structurePanel .structure-bond-range-pair{
+    grid-column:1 / -1!important;
+    grid-row:2!important;
+  }
+  #structurePanel .structure-bond-row > .structure-entry-field{
+    grid-column:1!important;
+    grid-row:3!important;
+  }
+  #structurePanel .structure-bond-row > input[type=color]{
+    grid-column:2!important;
+    grid-row:3!important;
+    justify-self:start!important;
+    align-self:end!important;
+  }
+  #structurePanel .structure-bond-row > button{
+    grid-column:1 / -1!important;
+    grid-row:4!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    box-sizing:border-box!important;
+  }
+}
+
+/* Very narrow split-screen/mobile: place moment identity on the first row, then
+   give Mx/My/Mz and Length/Width/Head their own full-width rows. */
+@container structure-viewer (max-width:520px){
+  #structurePanel .structure-range-six{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  #structurePanel .structure-moment-axis-row{
+    grid-template-columns:1fr!important;
+  }
+  #structurePanel .structure-moment-row{
+    grid-template-columns:24px minmax(0,1fr) 40px!important;
+    grid-template-rows:auto auto auto!important;
+  }
+  #structurePanel .structure-moment-row > input[type=checkbox]{
+    grid-column:1!important;
+    grid-row:1!important;
+  }
+  #structurePanel .structure-moment-site{
+    grid-column:2!important;
+    grid-row:1!important;
+  }
+  #structurePanel .structure-moment-color-swatch,
+  #structurePanel .structure-moment-row > input[type=color]{
+    grid-column:3!important;
+    grid-row:1!important;
+  }
+  #structurePanel .structure-moment-vector{
+    grid-column:1 / -1!important;
+    grid-row:2!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  #structurePanel .structure-moment-geometry{
+    grid-column:1 / -1!important;
+    grid-row:3!important;
+  }
+  #structurePanel .cif-structure-view-buttons.structure-view-buttons-six{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+}
