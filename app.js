@@ -2188,6 +2188,21 @@ function getDarkAssets(){
   return assets;
 }
 
+// Dark-angle Rotation/Offset follows the sample S1 sign convention for
+// sample-attached references.  The validated legacy -+- dark-polygon mapping
+// was historically parameterized with the opposite angular sign, so convert
+// only its user-entered angular interval before using that mapping.  This keeps
+// the zero/reference calibration unchanged while making +Rotation/+Offset mean
+// the same physical (CCW-positive) rotation as +S1 for -+-.
+//
+// Fixed-reference dark angles are laboratory-fixed directions compared against
+// signed S2, not sample rotations, and therefore must not be transformed here.
+function darkSampleRangeForUiSense(rawRange,uiSense){
+  const [from,to,offset]=rawRange.map(Number);
+  if(uiSense==="-+-") return [-to,-from,-offset];
+  return [from,to,offset];
+}
+
 // TAS S1/Q sign-convention math is implemented in tas-conventions.js.
 
 
@@ -2592,7 +2607,11 @@ function calculateSingleCrystalLegacy(){
         }
         const s2dark=linspace(S2min,S2max,200);
         for(const rawRange of asset.ranges){
-          const [from,to,offset]=rawRange; if(from===0 && to===0) continue;
+          // -+- sample-attached dark angles use the same positive direction as
+          // S1 (counter-clockwise).  Convert only the user angle; reference/
+          // Direct-beam calibration terms stay untouched so the zero does not move.
+          const [from,to,offset]=darkSampleRangeForUiSense(rawRange,uiSense);
+          if(from===0 && to===0) continue;
           const directBeamCorrection=darkRef==="Direct beam"
             ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,uiSense) : 0;
           const correctedOffset=offset+directBeamCorrection;
@@ -3074,7 +3093,11 @@ function calculateSingleCrystalPatched(){
         }
         const s2dark=linspace(S2min,S2max,200);
         for(const rawRange of asset.ranges){
-          const [from,to,offset]=rawRange; if(from===0 && to===0) continue;
+          // -+- sample-attached dark angles use the same positive direction as
+          // S1 (counter-clockwise).  Convert only the user angle; reference/
+          // Direct-beam calibration terms stay untouched so the zero does not move.
+          const [from,to,offset]=darkSampleRangeForUiSense(rawRange,uiSense);
+          if(from===0 && to===0) continue;
           const directBeamCorrection=darkRef==="Direct beam"
             ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,uiSense) : 0;
           const correctedOffset=offset+directBeamCorrection;
@@ -4412,13 +4435,23 @@ function renderGeometry(cache,index=0){
         ? -directBeamCorrection
         : directBeamCorrection;
 
-      let a0=offset+from+geometryDirectBeamCorrection,a1=offset+to+geometryDirectBeamCorrection; if(a1<a0)a1+=360;
-      // Dark-angle values are sample-rotation angles.  The +++ instrument's
-      // physical S1 encoder is counter-clockwise-positive, so draw increasing
-      // +++ dark angle counter-clockwise.  Other configurations retain their
-      // established display convention.
-      const darkDrawSign=(sense==="+++") ? +1 : -1;
-      const aa=linspace(a0,a1,120).map(d=>base+darkDrawSign*deg2rad(d));
+      // Keep the reference zero/calibration exactly where it is, but make the
+      // user-entered Rotation/Offset follow the sample S1 sign convention.
+      // For -+- that means +dark angle is counter-clockwise, while the existing
+      // Direct-beam correction remains on its validated (clockwise) calibration
+      // side.  Fixed-reference angles are laboratory-fixed and stay unchanged.
+      let aa;
+      if(sense==="-+-" && asset.ref!=="Fixed"){
+        let p0=(offset+from)-geometryDirectBeamCorrection;
+        let p1=(offset+to)-geometryDirectBeamCorrection;
+        if(p1<p0) p1+=360;
+        aa=linspace(p0,p1,120).map(d=>base+deg2rad(d));
+      }else{
+        let a0=offset+from+geometryDirectBeamCorrection,a1=offset+to+geometryDirectBeamCorrection;
+        if(a1<a0) a1+=360;
+        const darkDrawSign=(sense==="+++") ? +1 : -1;
+        aa=linspace(a0,a1,120).map(d=>base+darkDrawSign*deg2rad(d));
+      }
       // Display-only differentiation: every Dark angle is red.  Slots are
       // separated radially (1.0, 1.1, 1.2, ... x radius), so color no longer
       // needs to encode the slot number. Numerical dark-angle calculations are unchanged.
