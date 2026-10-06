@@ -204,6 +204,7 @@ let singleCache = null;
 let powderCache = null;
 let selectedCifStructure = null;
 let selectedCifFileName = "";
+let selectedCifText = "";
 
 function hasSelectedCif(){
   return checkedValue("sampleMode")==="single" && !!selectedCifStructure;
@@ -225,6 +226,8 @@ function updateCifUI(){
   }
   const clearButton=$("cifClearButton");
   if(clearButton) clearButton.disabled=!selectedCifStructure;
+  const showCurrentButton=$("cifShowCurrent");
+  if(showCurrentButton) showCurrentButton.disabled=!selectedCifText;
   $("sfColorMaxRow")?.classList.toggle("hidden",!hasSelectedCif());
   updateAbsorptionCalculator();
 }
@@ -258,6 +261,7 @@ function loadCifText(text,fileName="generated_structure.cif"){
   const parsed=parseCifStructure(text);
   selectedCifStructure=parsed;
   selectedCifFileName=fileName;
+  selectedCifText=String(text??"");
 
   // A selected/generated CIF defines the crystallographic unit cell. Keep the
   // existing U/V orientation indices, but synchronize the six lattice fields.
@@ -291,9 +295,16 @@ async function selectCifFile(file){
 function clearSelectedCif(){
   selectedCifStructure=null;
   selectedCifFileName="";
+  selectedCifText="";
   if($("cifFileInput")) $("cifFileInput").value="";
+  if(cifSpaceGroups.length) setSampleSpaceGroup(1,{recalc:false});
+  else{
+    if($("sampleSpaceGroup")) $("sampleSpaceGroup").value="1";
+    if($("sampleSpaceGroupNumber")) $("sampleSpaceGroupNumber").value="1";
+  }
   updateCifUI();
   clearError();
+  saveLeftPanelState();
   scheduleRecalc();
 }
 
@@ -416,7 +427,7 @@ function populateSampleSpaceGroupControls(){
   for(const sg of cifSpaceGroups){
     const opt=document.createElement("option");
     opt.value=String(sg.number);
-    opt.textContent=`${sg.number} — ${sg.hm}`;
+    opt.textContent=sg.hm;
     select.appendChild(opt);
   }
   restoreSampleSpaceGroupSelection();
@@ -1182,6 +1193,15 @@ async function initializeCifGenerator(){
     $("cifCopyLattice")?.addEventListener("click",()=>{
       copyCurrentLatticeToGenerator();
       invalidateGeneratedCif("Current sample lattice copied — press Generate to review the updated CIF.");
+    });
+    $("cifShowCurrent")?.addEventListener("click",()=>{
+      if(!selectedCifText){
+        setCifGeneratorMessage("No current CIF is selected.",true);
+        return;
+      }
+      if($("cifPreview")) $("cifPreview").textContent=selectedCifText;
+      setCifOutputTab("preview");
+      setCifGeneratorMessage(`Showing current selected CIF: ${selectedCifFileName||"selected CIF"}.`);
     });
     $("cifCopyAtom")?.addEventListener("click",copyLastCifAtomRow);
     $("cifAddAtom")?.addEventListener("click",()=>addCifAtomRow());
@@ -3589,10 +3609,12 @@ function qeVectorHKL(which){
 function qeMapHeaderTitle(cache){
   const energyText=cache.energyMode==="Ef fixed"?`Ef=${cache.Ef.toFixed(2)} meV`:`Ei=${cache.Ei.toFixed(2)} meV`;
   const lam=cache.lambdaHalf?" | λ/2":"";
-  return `${cache.inst.name||"Instrument"} | ${energyText}${lam}<br>`+
-    `a=${cache.lc.a.toFixed(3)}, b=${cache.lc.b.toFixed(3)}, c=${cache.lc.c.toFixed(3)} Å<br>`+
-    `α=${cache.lc.alpha.toFixed(1)}, β=${cache.lc.beta.toFixed(1)}, γ=${cache.lc.gamma.toFixed(1)}° | `+
-    `Space group: #${cache.sampleSpaceGroup?.number ?? 1} ${cache.sampleSpaceGroup?.hm ?? "P1"} (${cache.latticeCentering}) | Plane: (${cache.U.join(",")})-(${cache.V.join(",")})`;
+  const plane=`(${cache.U.join(",")})-(${cache.V.join(",")})`;
+  const spaceGroup=`#${cache.sampleSpaceGroup?.number ?? 1} ${cache.sampleSpaceGroup?.hm ?? "P1"}`;
+  const lattice=`a=${cache.lc.a.toFixed(3)}, b=${cache.lc.b.toFixed(3)}, c=${cache.lc.c.toFixed(3)} Å, `+
+    `α=${cache.lc.alpha.toFixed(1)}, β=${cache.lc.beta.toFixed(1)}, γ=${cache.lc.gamma.toFixed(1)}°`;
+  return `${cache.inst.name||"Instrument"} | ${energyText}${lam} | Scattering plane: ${plane}<br>`+
+    `${spaceGroup} | ${lattice}`;
 }
 
 function renderQEVectorMap(cache){
@@ -6477,6 +6499,9 @@ function saveLeftPanelState(){
     values.propagationCount=values.__propagationVectors.length;
     values.__darkAssets=darkAssetValues();
     values.darkAssetCount=values.__darkAssets.length;
+    // S1 sign is dynamically injected by setupTasConventionUI(); keep an explicit
+    // snapshot so future layout changes cannot accidentally omit it.
+    values.s1sign=selectedS1Sign();
     localStorage.setItem(LEFT_PANEL_STORAGE_KEY,JSON.stringify({version:3,values}));
   }catch(_e){ /* localStorage may be unavailable in a restricted browser context. */ }
 }

@@ -14,15 +14,17 @@
 <aside class="sidebar">
 <section>
   <h2>Instrument configuration</h2>
-  <label>Instrument<select id="instrument"><option>Loading...</option></select></label>
-  <div class="grid2">
-    <label>Energy mode<select id="energyMode"><option>Ei fixed</option><option selected>Ef fixed</option></select></label>
+  <div class="instrument-primary-row">
+    <label>Instrument<select id="instrument"><option>Loading...</option></select></label>
+    <label>Fixed<select id="energyMode"><option value="Ei fixed">Ei</option><option value="Ef fixed" selected>Ef</option></select></label>
     <label id="energyLabel">Ef (meV)<input id="energy" type="number" value="14.7" step="0.1"></label>
+  </div>
+  <div class="grid3" id="tasConventionRow">
     <label id="geometryRow">Geometry<select id="geometry"><option>W</option><option>anti-W</option></select></label>
-    <label id="senseRow">Sign<select id="sense"><option>+++</option><option>+-+</option><option selected>-+-</option><option>---</option></select></label>
+    <label id="senseRow">Sense<select id="sense"><option>+++</option><option>+-+</option><option selected>-+-</option><option>---</option></select></label>
   </div>
   <div class="grid2">
-    <label class="checkbox-label"><input id="lambdaHalf" type="checkbox"><span>λ/2 (range simulation)</span></label>
+    <label class="checkbox-label"><input id="lambdaHalf" type="checkbox"><span>λ/2 (only elastic)</span></label>
     <span></span>
   </div>
   <div class="grid3">
@@ -353,7 +355,7 @@
               <h3>Structure input</h3>
               
             </div>
-            <button id="cifCopyLattice" type="button">Copy current lattice</button>
+            <div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button><button id="cifShowCurrent" type="button">Show current CIF</button></div>
           </div>
 
           <div class="cif-generator-setup">

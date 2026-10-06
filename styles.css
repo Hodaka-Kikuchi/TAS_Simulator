@@ -2157,3 +2157,19 @@ main{
 /* v105: Resolution Scan is explicitly calculated to keep common editing responsive. */
 #calcScanResolution{align-self:end;min-height:38px}
 #calcScanResolution.needs-calc{font-weight:700}
+
+
+/* vUI: compact instrument setup and balanced sample selectors. */
+.instrument-primary-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:4px;align-items:end;min-width:0}
+.instrument-primary-row>label,.instrument-primary-row select,.instrument-primary-row input{min-width:0;width:100%;max-width:100%}
+.sample-spacegroup-row{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.cif-heading-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.cif-heading-actions button{white-space:nowrap}
+@media(max-width:760px){
+  .instrument-primary-row{grid-template-columns:1fr 1fr}
+  .instrument-primary-row>label:first-child{grid-column:1/-1}
+  .sample-spacegroup-row{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .sample-spacegroup-row label:last-child{grid-column:auto!important}
+  .cif-heading-actions{justify-content:stretch}
+  .cif-heading-actions button{flex:1 1 150px}
+}
