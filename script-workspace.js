@@ -15,7 +15,7 @@ export function createScriptWorkspace(deps){
     dot,
     effectiveS2MaxAtEi,
     hklToQ,
-    legacyTasSense,
+    tasConvention,
     norm,
     num,
     parseNumericValue,
@@ -1448,9 +1448,8 @@ export function createScriptWorkspace(deps){
   function timeSignedS2FromMagnitude(s2){
     const mag=Math.abs(Number(s2));
     if(!Number.isFinite(mag)) return NaN;
-    const uiSense=checkedValue('sense');
-    if(uiSense==='---') return -mag;
-    return legacyTasSense(uiSense)==='+-+' ? -mag : mag;
+    const convention=tasConvention(checkedValue('sense'),checkedValue('s1sign'));
+    return convention.s2EncoderSign*mag;
   }
 
   function timePreviousBrS2(row,index,context,structure){

@@ -9,11 +9,11 @@ import {
   parseCifStructure, nuclearStructureFactorSquared, setNeutronData
 } from "./cif-structure.js";
 import {
-  legacyTasSense, calculationTasSense,
+  normalizeTasSense, normalizeS1Sign, tasConvention,
   wrap180, angleDiffDeg,
-  tasPhiLabDeg, tasPhiLabDegForUiSense,
-  tasCrystalPhiDeg, tasPlotPhiFromCrystalPhi,
-  calcQ0, calcQDark
+  tasPhiLabDegForConvention,
+  tasCrystalPhiDegForConvention, tasPlotPhiFromCrystalPhiForConvention,
+  calcQ0
 } from "./tas-conventions.js";
 import {
   isGitHubPages, isLocalDirectoryListingHost,
@@ -1305,28 +1305,15 @@ function num(id){
 // SPICE/TAKIN scattering Sense and the sample-axis motor sign are independent
 // instrument properties.  The UI therefore exposes them separately:
 //
-//   Sense +-+ + S1 CCW -> legacy +++ branch
-//   Sense +-+ + S1 CW  -> legacy +-+ branch
-//   Sense -+- + S1 CCW -> legacy -+- branch
-//   Sense -+- + S1 CW  -> legacy --- branch
+// Legacy four-state values are accepted only while importing older settings.
 //
 // The legacy four-state branch remains internal only so the already-validated
 // Q-E, Angle calculation, TAS geometry and Dark-angle paths can be reused
 // without changing their numerical behavior.  Resolution receives only the
 // physical SPICE Sense and is intentionally independent of S1 motor polarity.
-function normalizeTasSense(value){
-  return (value==="-+-" || value==="---") ? "-+-" : "+-+";
-}
-function normalizeS1Sign(value){
-  return String(value??"").trim().toLowerCase()==="cw" ? "cw" : "ccw";
-}
-function legacyUiSenseFromTasConvention(sense,s1sign){
-  const physicalSense=normalizeTasSense(sense);
-  const motorSign=normalizeS1Sign(s1sign);
-  if(physicalSense==="+-+") return motorSign==="cw" ? "+-+" : "+++";
-  return motorSign==="cw" ? "---" : "-+-";
-}
 function tasConventionFromLegacyUiSense(value){
+  // Backward-compatibility parser for pre-refactor saved settings / instrument
+  // files.  Legacy four-state labels are converted once at the input boundary.
   if(value==="+++") return {sense:"+-+",s1sign:"ccw"};
   if(value==="+-+") return {sense:"+-+",s1sign:"cw"};
   if(value==="---") return {sense:"-+-",s1sign:"cw"};
@@ -1334,8 +1321,6 @@ function tasConventionFromLegacyUiSense(value){
 }
 function selectedTasSense(){ return normalizeTasSense(checkedValue("sense")); }
 function selectedS1Sign(){ return normalizeS1Sign(checkedValue("s1sign")); }
-function currentUiTasSense(){ return legacyUiSenseFromTasConvention(selectedTasSense(),selectedS1Sign()); }
-function assertImplementedUiSense(){ return currentUiTasSense(); }
 
 function setupTasConventionUI(){
   const senseSelect=$("sense"), senseRow=$("senseRow"), geometryRow=$("geometryRow");
@@ -1474,7 +1459,7 @@ function canonicalOrientationMode(rl, rawMode=null){
 // the usual theta--2theta geometry the sample is theta=S2/2 away from the
 // ki-perpendicular condition.  Therefore, if ki perpendicular U/V is defined as
 // the new S1=0, that virtual Bragg observation has S1_ref = -S2_ref/2.
-function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=null){
+function effectiveOrientationReference(rl, fixedEnergyMeV=null, conventionOverride=null){
   const rawMode=$('orientationReference')?.value || 'bragg';
   const mode=canonicalOrientationMode(rl,rawMode);
   if(mode==='bragg'){
@@ -1494,11 +1479,20 @@ function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=
   if(arg>1+1e-10) throw new Error(`${usesV?'V':'U'} Bragg peak is inaccessible at the selected reference energy.`);
   const s2Ref=2*rad2deg(Math.asin(clamp(arg,-1,1)));
 
-  // Preserve the validated +++ / -+- orientation calibration exactly as in v66.
-  // Only the real/pure +-+ instrument uses a clockwise-positive S1 encoder.
-  // For that branch the virtual Bragg reference therefore reverses sign.
-  const uiSense=uiSenseOverride ?? currentUiTasSense();
-  const c2Sign=(uiSense==="+-+") ? -1 : (uiSense==="---" ? +1 : (legacyTasSense(uiSense)==="+-+" ? +1 : -1));
+  // The virtual Bragg reference follows the selected physical Sense and encoder polarity.
+  let convention;
+  if(conventionOverride && typeof conventionOverride==="object" && "sense" in conventionOverride){
+    convention=tasConvention(conventionOverride.sense,conventionOverride.s1sign);
+  }else if(typeof conventionOverride==="string"){
+    const legacy=tasConventionFromLegacyUiSense(conventionOverride);
+    convention=tasConvention(legacy.sense,legacy.s1sign);
+  }else{
+    convention=tasConvention(selectedTasSense(),selectedS1Sign());
+  }
+  // The virtual Bragg reference follows the same S2 motor polarity as the
+  // selected instrument convention.  Keep the reference zero and motor sign
+  // separate instead of routing through the historical four-state labels.
+  const c2Sign=-convention.s2EncoderSign;
   let s1Ref=-c2Sign*0.5*s2Ref;
   // ki ∥ U/V uses the same virtual elastic Bragg reference as ki ⟂ U/V,
   // but moves the S1=0 sample orientation by +90 degrees about the plane normal.
@@ -1823,7 +1817,7 @@ function applyInstrumentDefaults(){
     tasConvention={sense:normalizeTasSense(rawSense),s1sign:"ccw"};
   }else{
     // Backward compatibility for old JSON files whose `sign` stored one of the
-    // four legacy combined states (+++, +-+, -+-, ---).
+    // pre-refactor combined Sense/S1 labels.
     tasConvention=tasConventionFromLegacyUiSense(rawSense);
   }
   setSelect("sense",tasConvention.sense);
@@ -2298,9 +2292,15 @@ function getDarkAssets(){
 //
 // Fixed-reference dark angles are laboratory-fixed directions compared against
 // signed S2, not sample rotations, and therefore must not be transformed here.
-function darkSampleRangeForUiSense(rawRange,uiSense){
+function darkSampleRangeForConvention(rawRange,convention){
   const [from,to,offset]=rawRange.map(Number);
-  if(uiSense==="-+-") return [-to,-from,-offset];
+  // Dark-angle values are S1 motor positions at which a sample-attached
+  // obstruction intersects a beam.  Dark-angle ranges are entered in the same signed motor coordinate as S1.
+  // Keep that polarity unchanged here so Dark geometry/Q-E and the validated
+  // S1-range boundary use the same CW/CCW assignment.  Sense controls the
+  // scattering geometry separately; it must not swap the S1 motor polarity.
+  const crystalSign=convention.s1EncoderSign;
+  if(crystalSign<0) return [-to,-from,-offset];
   return [from,to,offset];
 }
 
@@ -2342,50 +2342,28 @@ function directBeamOrientationCorrection(rl,energyMode,Ei,Ef,sense){
   return +halfS2Ref+parallelOffset;
 }
 
-// Q-E Dark-angle handedness for +++.
-//
-// The real +++ instrument matches the original application when the entered
-// scattering plane is evaluated with V -> -V (or equivalently with U/V order
-// reversed).  The ordinary Q-E/S1 inversion already applies that handedness
-// correction, but the legacy dark-angle polygon path historically did not.
-// Evaluate only the dark-angle geometry in that virtual flipped-V basis, then
-// transform the resulting Q back to the user's unchanged plotting basis.
-// This leaves the displayed U/V axes, HKL coordinates and TAS geometry intact.
-function darkVirtualPlaneXYForUiSense(qxy,uiSense){
-  return uiSense==='+++' ? [qxy[0],-qxy[1]] : qxy.slice();
-}
-function darkVirtualPhiForUiSense(phiDeg,uiSense){
-  return uiSense==='+++' ? -Number(phiDeg) : Number(phiDeg);
-}
-function darkQFromVirtualPlaneForUiSense(q,uiSense){
-  return uiSense==='+++' ? [q[0],-q[1]] : q;
-}
 
 
-// Rebuild Q-E Dark-angle polygons for the two encoder/handedness variants
-// directly from the *current TAS Geometry drawing convention*.
-//
-// +++ and --- have both accumulated deliberate display/encoder corrections over
-// time.  Reusing the older calcQDark remapping for these two configurations can
-// therefore leave the Q-E overlay one convention behind the geometry drawing.
-// For these two UI senses only, construct the blocked-region boundaries from the
-// same geometric condition shown in renderGeometry(): a Dark-angle arc endpoint
-// lies on the outgoing kf ray or on the incoming-side ki ray.
-//
-// This changes only the Q-E Dark-angle overlay.  Angle calculation, TAS Geometry,
-// S1 limits and the normal accessible-Q boundary are untouched.  +-+ and -+- keep
-// their existing validated polygon paths exactly as before.
-function rebuildGeometryMatchedDarkPolygons(cache,uiSense){
-  if(!cache?.addDark || (uiSense!=="+++" && uiSense!=="---")) return cache;
+
+
+
+// Rebuild every sample-attached Q-E Dark-angle polygon from the same physical
+// geometry used by TAS Geometry.  Sense and S1 polarity enter only as fields of
+// one convention object; there is no four-state calculation branch.
+function rebuildGeometryMatchedDarkPolygons(cache,conventionInput){
+  const convention=(conventionInput && typeof conventionInput==="object" && "sense" in conventionInput)
+    ? tasConvention(conventionInput.sense,conventionInput.s1sign)
+    : tasConvention(selectedTasSense(),selectedS1Sign());
+  if(!cache?.addDark) return cache;
 
   const {rl,ex,ey,energyMode,Ei,Ef,hwList,S2list,darkAssets}=cache;
   if(!rl || !ex || !ey || !Array.isArray(hwList) || !Array.isArray(S2list)) return cache;
 
   const S2min=num("S2min");
   const fixedEnergy=energyMode==="Ei fixed" ? Ei : Ef;
-  const drawSign=uiSense==="+++" ? +1 : -1;       // exactly renderGeometry darkDrawSign
-  const reflectSign=uiSense==="---" ? -1 : +1;   // --- uses the mirrored -+- drawing
-  const directBaseSign=legacyTasSense(uiSense)==="+-+" ? -1 : +1;
+  const armSign=convention.sampleScatteringSign; // +-+: kf CW (-), -+-: kf CCW (+)
+  const darkCrystalSign=convention.s1EncoderSign;
+  const directBaseSign=convention.sense==="+-+" ? -1 : +1;
 
   const planePhi=hkl=>{
     const q=hklToQ(rl,hkl||[0,0,0]);
@@ -2395,7 +2373,7 @@ function rebuildGeometryMatchedDarkPolygons(cache,uiSense){
 
   let orientationPhi=null, directQToKi=0;
   try{
-    const orientationRef=effectiveOrientationReference(rl,fixedEnergy,uiSense);
+    const orientationRef=effectiveOrientationReference(rl,fixedEnergy,convention);
     orientationPhi=planePhi(orientationRef.hkl);
     const qRef=hklToQ(rl,orientationRef.hkl), qRefNorm=norm(qRef);
     if(qRefNorm>1e-12 && Number.isFinite(fixedEnergy) && fixedEnergy>0){
@@ -2427,24 +2405,29 @@ function rebuildGeometryMatchedDarkPolygons(cache,uiSense){
     }
     const s2dark=linspace(S2min,S2max,200);
 
-    // Q-E coordinates are in the unchanged (ex,ey) crystal plotting basis.
-    // For the canonical +++/--- schematic, kf is drawn at -S2 relative to ki.
-    // qRel is therefore the Q azimuth relative to ki before the final display
-    // rotation.  --- reflects the complete drawing, which negates every
-    // Q-minus-ray angular difference but does not change the crystal plot basis.
-    const boundaryPoint=(s2deg,darkDeg,phiBase,beam)=>{
+    // Solve the same physical blocking condition for both scattering senses:
+    //   theta_sample + phi_obstacle = theta_ray
+    //   theta_sample + phi_Q        = theta_Qlab
+    // -> phi_Q = theta_Qlab - theta_ray + phi_obstacle.
+    // `darkDeg` is the signed S1 motor coordinate used by the Dark-angle UI.
+    // Use the exact same encoder polarity as the S1-range calculation; the
+    // scattering-sense handedness is already contained in qLab/rayAngle.
+    const boundaryPoint=(s2deg,darkDeg,phiBase,beam,referenceCorrectionDeg=0)=>{
       const s2=deg2rad(s2deg);
-      const qx=ki-kf*Math.cos(s2);
-      const qy=kf*Math.sin(s2);
+      const kfRay=armSign*s2;
+      const qx=ki-kf*Math.cos(kfRay);
+      const qy=-kf*Math.sin(kfRay);
       const qMag=Math.hypot(qx,qy);
-      const qRel=Math.atan2(qy,qx);
-      const qMinusRay=reflectSign*(beam==="kf" ? (qRel+s2) : (qRel-Math.PI));
-      const phiTarget=qMinusRay+phiBase+drawSign*deg2rad(darkDeg);
+      const qLab=Math.atan2(qy,qx);
+      const rayAngle=beam==="kf" ? kfRay : Math.PI;
+      const phiTarget=qLab-rayAngle+phiBase
+        +deg2rad(referenceCorrectionDeg)
+        +darkCrystalSign*deg2rad(darkDeg);
       return [qMag*Math.cos(phiTarget),qMag*Math.sin(phiTarget)];
     };
 
     for(const asset of (darkAssets||[])){
-      if(asset.ref==="Fixed") continue; // laboratory-fixed regions already agree and stay unchanged
+      if(asset.ref==="Fixed") continue; // preserve the existing signed-S2 fixed calculation
 
       let phiBase=null;
       if(asset.ref==="Reference Q"){
@@ -2452,34 +2435,28 @@ function rebuildGeometryMatchedDarkPolygons(cache,uiSense){
         if(phiBase==null) continue;
       }else if(asset.ref==="Direct beam"){
         if(orientationPhi==null) continue;
-        // Same base used by renderGeometry(): referenceBase plus the displayed
-        // ki-perpendicular direction appropriate to the mirrored instrument.
         phiBase=orientationPhi+directBaseSign*directQToKi;
-      }else{
-        continue;
-      }
+      }else continue;
 
       for(const rawRange of asset.ranges||[]){
         let [from,to,offset]=rawRange.map(Number);
         if(from===0 && to===0) continue;
-        const rawDirectBeamCorrection=asset.ref==="Direct beam"
-          ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,uiSense)
-          : 0;
-        // +++ and --- are the mirrored-sign partners of +-+ and -+-.
-        // For Direct beam their physical dark-angle zero uses the opposite
-        // half-S2 calibration.  Without this, +++ is displaced CCW by one S2.
-        const geometryDirectBeamCorrection=(asset.ref==="Direct beam" && (uiSense==="+++" || uiSense==="---"))
-          ? -rawDirectBeamCorrection
-          : rawDirectBeamCorrection;
-        let d0=offset+from+geometryDirectBeamCorrection;
-        let d1=offset+to+geometryDirectBeamCorrection;
+        // Preserve interval width before applying the motor-to-crystal sign.
+        let d0=offset+from, d1=offset+to;
         if(d1<d0) d1+=360;
 
+        const rawDirectBeamCorrection=asset.ref==="Direct beam"
+          ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,convention)
+          : 0;
+        // This is a zero/reference calibration, not a user motor increment.
+        // Keep it geometric so changing CW/CCW never moves the zero itself.
+        const referenceCorrection=asset.ref==="Direct beam" ? -rawDirectBeamCorrection : 0;
+
         const makePolygon=beam=>{
-          const fromCurve=s2dark.map(s2=>boundaryPoint(s2,d0,phiBase,beam));
-          const toCurve=s2dark.map(s2=>boundaryPoint(s2,d1,phiBase,beam));
-          const top=linspace(d0,d1,100).map(d=>boundaryPoint(S2max,d,phiBase,beam));
-          const bottom=linspace(d1,d0,100).map(d=>boundaryPoint(S2min,d,phiBase,beam));
+          const fromCurve=s2dark.map(s2=>boundaryPoint(s2,d0,phiBase,beam,referenceCorrection));
+          const toCurve=s2dark.map(s2=>boundaryPoint(s2,d1,phiBase,beam,referenceCorrection));
+          const top=linspace(d0,d1,100).map(d=>boundaryPoint(S2max,d,phiBase,beam,referenceCorrection));
+          const bottom=linspace(d1,d0,100).map(d=>boundaryPoint(S2min,d,phiBase,beam,referenceCorrection));
           return [...fromCurve,...top,...[...toCurve].reverse(),...bottom];
         };
         hwKF.push(makePolygon("kf"));
@@ -2494,410 +2471,9 @@ function rebuildGeometryMatchedDarkPolygons(cache,uiSense){
   return cache;
 }
 
-function darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef,uiSense=null){
-  // Dark-angle Reference Q uses the original Reference-Q convention: the
-  // entered (h,k,l) defines the crystal-space direction about which the
-  // accessible dark-angle region is symmetric.  It is NOT a second S1
-  // calibration and therefore must not inherit or solve an S1 value from the
-  // Orientation reference.  The Bragg-peak-position S1 remains relevant only
-  // to the orientation / angle-calculation calibration.
-  const qhkl=asset.refHkl||[0,0,0], q=hklToQ(rl,qhkl), qn=norm(q);
-  if(qn<=1e-10) return null;
-  const qxyPlot=[dot(q,ex),dot(q,ey)];
-  // For +++, reproduce exactly the original-code V -> -V dark-angle
-  // calibration while keeping the actual plot basis unchanged.
-  const qxy=darkVirtualPlaneXYForUiSense(qxyPlot,uiSense);
-  const phi=rad2deg(Math.atan2(qxy[1],qxy[0]));
-  const wavelength=9.044/Math.sqrt(energyMode==="Ef fixed"?Ef:Ei);
-  const arg=wavelength*qn/(4*PI);
-  if(arg>1+1e-12) return null;
-  const theta=rad2deg(Math.asin(clamp(arg,-1,1)));
 
-  // Reproduce the original Reference-Q Q-E mapping, but using the Dark-angle
-  // Reference-Q HKL as its own independent reference.  No Orientation-reference
-  // HKL, S1, or orientation offset enters this calibration.
-  const s1Offset=-theta+180-phi;
-  return {qxy,theta,Qoffset:90+theta,s1Offset};
-}
 
-function calculateSingleCrystalLegacy(){
-  const inst=currentInstrument();
-  const lc=latticeParams();
-  // Lattice centering is derived from the selected Space group; there is no
-  // separate manual centering selector in the Sample UI.
-  const sampleSpaceGroup=selectedSampleSpaceGroup();
-  const latticeCentering=centeringFromSpaceGroup(sampleSpaceGroup);
-  const U=[num("Uh"),num("Uk"),num("Ul")];
-  const V=[num("Vh"),num("Vk"),num("Vl")];
-  const rl=RL_calc({...lc,sv1:U,sv2:V});
-  // Keep the same UB construction as the Python implementation, even though
-  // plotting below uses the explicit scattering-plane basis.
-  UB_calc({...lc,sv1:U,sv2:V},rl);
-  const {ex,ey,ez}=makeSpiceScatteringPlaneBasis(rl,U,V);
 
-  const energyMode=checkedValue("energyMode");
-  const lambdaHalf=$("lambdaHalf").checked;
-  const energyInput=num("energy");
-  let Ei,Ef;
-  if(energyMode==="Ef fixed") Ef=lambdaHalf?4*energyInput:energyInput;
-  else Ei=lambdaHalf?4*energyInput:energyInput;
-
-  const fixedReferenceEnergy=(energyMode==="Ef fixed"?Ef:Ei);
-  const orientationRef=effectiveOrientationReference(rl,fixedReferenceEnergy);
-  const ref=orientationRef.hkl;
-  const refS1=orientationRef.s1;
-  const Qref=hklToQ(rl,ref);
-  const QrefNorm=norm(Qref);
-  const QrefXY=[dot(Qref,ex),dot(Qref,ey)];
-  const phiRef=QrefNorm>1e-10?rad2deg(Math.atan2(QrefXY[1],QrefXY[0])):0;
-  const wavelength=9.044/Math.sqrt(energyMode==="Ef fixed"?Ef:Ei);
-  let thetaRef=0;
-  if(QrefNorm>1e-10){
-    const dRef=2*PI/QrefNorm;
-    const arg=wavelength/(2*dRef);
-    if(arg>1+1e-12) throw new Error("Reference Q is not accessible at the selected reference energy.");
-    thetaRef=rad2deg(Math.asin(clamp(arg,-1,1)));
-  }
-
-  const darkAssets=getDarkAssets();
-  // Each enabled asset keeps its own reference convention. Existing single-asset
-  // formulas are reused independently, then their blocked regions are overlaid.
-  const s1Offset=-thetaRef+180-phiRef;
-
-  const S2min=num("S2min"), S1min=num("S1min"), S1max=num("S1max");
-  let hwList;
-  if(lambdaHalf) hwList=[0];
-  else if(energyMode==="Ef fixed"){
-    const EiMax=maxArray(rangeTable(inst).map(x=>Number(x.Ei)));
-    hwList=arange(0,EiMax-Ef,0.1);
-  } else {
-    hwList=arange(0,Ei,0.1);
-  }
-  if(hwList.length===0) hwList=[0];
-
-  const regions=[], S2list=[], QmaxList=[];
-  const darkKF=[],darkKI=[],darkFixed=[];
-  const addDark=$("addDark").checked && darkAssets.length>0;
-  const uiSense=currentUiTasSense();
-  const sense=calculationTasSense(uiSense);
-
-  // Keep the numerical S1 inversion on its original calibration.  S1 is an
-  // absolute physical motor value; do not change its calibration sign merely
-  // to alter the displayed Q-E arc direction.
-  const s1C2Sign=(uiSense==="+-+" || uiSense==="---") ? -1 : ((sense==="+-+") ? +1 : -1);
-  const kRef=Math.sqrt(fixedReferenceEnergy/2.072);
-  let s1RangeCalibration=QrefNorm>1e-10
-    ? {
-        refS1,
-        c2Sign:s1C2Sign,
-        omegaRef:wrap180(tasPhiLabDegForUiSense(kRef,kRef,2*thetaRef,uiSense)-phiRef),
-        uiSense
-      }
-    : null;
-
-  // Pure +-+ now uses the same exact S1/Q_lab inverse as Angle calculation.
-  // This keeps its Q-E boundary consistent with the measured positive-S2,
-  // clockwise-positive-S1 geometry.
-
-  // Build the already-validated former +-+ (now +++) S1 calibration explicitly.
-  // This lets the -+- Dark region inherit the actual +-+ blocking condition in
-  // MOTOR S1 space rather than guessing it from a separate Q-space formula.
-  const plusOrientationRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"+++");
-  const plusInternalSense=calculationTasSense("+++");
-  const plusS1Calibration=QrefNorm>1e-10
-    ? {
-        refS1:plusOrientationRef.s1,
-        c2Sign:(plusInternalSense==="+-+") ? +1 : -1,
-        omegaRef:wrap180(tasPhiLabDeg(kRef,kRef,2*thetaRef)-phiRef),
-        uiSense:"+++"
-      }
-    : null;
-
-  // Exact forward partner of calcQ0() / tasMotorAngles() for an in-plane Q.
-  // Given a plotted Q and |S2|, recover the absolute physical S1 motor value
-  // using the same calibration equation as Angle calculation.
-  const motorS1FromPlaneQ=(q,s2,ki,kf,calibration)=>{
-    if(!calibration || norm(q)<=1e-12) return null;
-    const phiTarget=rad2deg(Math.atan2(q[1],q[0]));
-    const omegaTarget=wrap180(tasPhiLabDegForUiSense(ki,kf,s2,calibration.uiSense)-phiTarget);
-    return calibration.refS1
-      + angleDiffDeg(omegaTarget,calibration.omegaRef)/calibration.c2Sign;
-  };
-
-  // Q-E S1 RANGE:
-  // use the exact inverse of Angle calculation directly for BOTH configurations.
-  // S1 is an absolute motor value, so no extra display reflection is allowed.
-  // The previous -+- reflection about S1=0 reversed an already-correct inverse
-  // mapping and could send a point such as (0,0,3) toward the (0,0,-3) side.
-  const calcQRangePoint=(s1,s2,ki,kf)=>
-    calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration);
-
-  for(const hw of hwList){
-    let EiHw,EfHw;
-    if(energyMode==="Ef fixed"){ EiHw=Ef+hw; EfHw=Ef; }
-    else { EiHw=Ei; EfHw=Ei-hw; }
-    if(EiHw<=0 || EfHw<=0) continue;
-    const ki=0.6947*Math.sqrt(EiHw), kf=0.6947*Math.sqrt(EfHw);
-    const S2max=validateEffectiveS2Max(effectiveS2MaxAtEi(inst,EiHw,lambdaHalf),S2min,EiHw);
-
-    // S1min/S1max are physical motor limits. The Q-E boundary is generated
-    // from the exact inverse of the same S1 calibration used by Angle calculation.
-    const s1range=linspace(S1min,S1max,200);
-    const s2range=linspace(S2min,S2max,200);
-
-    const p1=s1range.map(s1=>calcQRangePoint(s1,S2min,ki,kf));
-    const p2=s2range.map(s2=>calcQRangePoint(S1max,s2,ki,kf));
-    const p3=[...s1range].reverse().map(s1=>calcQRangePoint(s1,S2max,ki,kf));
-    const p4=[...s2range].reverse().map(s2=>calcQRangePoint(S1min,s2,ki,kf));
-    const boundary=[...p1,...p2,...p3,...p4];
-    regions.push(boundary); S2list.push(S2max);
-    QmaxList.push(Math.max(...boundary.map(norm)));
-
-    const hwKF=[],hwKI=[],hwFixed=[];
-    if(addDark){
-      for(const asset of darkAssets){
-        const darkRef=asset.ref;
-        const darkCal=darkRef==="Reference Q" ? darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef) : null;
-        if(darkRef==="Reference Q" && !darkCal) continue;
-        if(darkRef!=="Fixed" && darkRef!=="Reference Q" && QrefNorm<=1e-10) continue;
-        const Qoffset=darkRef==="Reference Q" ? darkCal.Qoffset : 2*thetaRef;
-        if(darkRef==="Fixed"){
-          // Laboratory-fixed obstacle: compare the SIGNED physical S2 motor angle
-          // directly with the fixed angular interval.  Do not use abs(S2): a
-          // stopper at +30 deg must not block a -30 deg scattering arm (and vice
-          // versa).  The Q-E simulation currently scans the physical S2 branch
-          // from S2min to S2max, so a fixed interval on the unused negative branch
-          // naturally produces no blocked region.
-          for(const rawRange of asset.ranges){
-            let [from,to,offset]=rawRange;
-            if(from===0 && to===0) continue;
-            let a=offset+from, b=offset+to;
-            if(b<a) b+=360;
-
-            // Treat the fixed direction periodically, but intersect only with the
-            // actually scanned signed S2 interval.  This also handles ranges that
-            // cross 0 deg without mirroring the negative side onto the positive side.
-            // A laboratory-fixed obstacle can intercept either the outgoing kf
-            // arm or the incident ki beam.  The fixed-angle drawing uses the
-            // sample as the origin: rotation = 0 deg points along the direct
-            // (outgoing) beam, while the incident ki source direction is the
-            // opposite ray, 180 deg.  Therefore a range around 0 deg is handled
-            // below as an ordinary kf/S2 block; only a range containing 180 deg
-            // (modulo 360 deg) blocks ki and makes every Q geometry inaccessible.
-            const blocksKi=[-360,0,360].some(shift=>{
-              const aa=a+shift, bb=b+shift;
-              return aa<=180 && 180<=bb;
-            });
-            if(blocksKi){
-              hwFixed.push(boundary.slice());
-              continue;
-            }
-
-            // Otherwise the obstacle only blocks the outgoing kf arm.  Intersect
-            // its signed angular interval with the actually scanned S2 range.
-            for(const shift of [-360,0,360]){
-              const lo=Math.max(a+shift,S2min);
-              const hi=Math.min(b+shift,S2max);
-              if(!(hi>lo)) continue;
-              const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
-              const r0=qRadius(lo), r1=qRadius(hi), aa=linspace(0,2*Math.PI,241);
-              hwFixed.push([...aa.map(t=>[r1*Math.cos(t),r1*Math.sin(t)]),...[...aa].reverse().map(t=>[r0*Math.cos(t),r0*Math.sin(t)])]);
-            }
-          }
-          continue;
-        }
-        const s2dark=linspace(S2min,S2max,200);
-        for(const rawRange of asset.ranges){
-          // -+- sample-attached dark angles use the same positive direction as
-          // S1 (counter-clockwise).  Convert only the user angle; reference/
-          // Direct-beam calibration terms stay untouched so the zero does not move.
-          const [from,to,offset]=darkSampleRangeForUiSense(rawRange,uiSense);
-          if(from===0 && to===0) continue;
-          const directBeamCorrection=darkRef==="Direct beam"
-            ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,uiSense) : 0;
-          const correctedOffset=offset+directBeamCorrection;
-          const s1from=correctedOffset+from-Qoffset, s1to=correctedOffset+to-Qoffset;
-
-          // Reference-Q dark angles use exactly the old Reference-Q Q-E mapping,
-          // rebased on the HKL entered in this dark-angle slot.  In particular,
-          // Orientation reference (including Bragg-position S1) is deliberately
-          // excluded.  Direct-beam keeps the existing orientation-based mapping.
-          const darkS1Offset=darkRef==="Reference Q" ? darkCal.s1Offset : s1Offset;
-          const darkQrefXY=darkRef==="Reference Q" ? darkCal.qxy : QrefXY;
-
-          const kiShift=s2=>(180-s2);
-
-          if(uiSense!=="-+-" && uiSense!=="---"){
-            // Preserve the validated +-+ blocked regions byte-for-byte in
-            // numerical behavior: continue using the existing calcQDark path.
-            const fromKF=s2dark.map(s2=>calcQDark(s1from,s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            const toKF=s2dark.map(s2=>calcQDark(s1to,s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            const topKF=linspace(s1from,s1to,100).map(s1=>calcQDark(s1,S2max,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDark(s1,S2min,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
-
-            const fromKI=s2dark.map(s2=>calcQDark(s1from-kiShift(s2),s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            const toKI=s2dark.map(s2=>calcQDark(s1to-kiShift(s2),s2,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100).map(s1=>calcQDark(s1,S2max,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100).map(s1=>calcQDark(s1,S2min,ki,kf,darkS1Offset,darkQrefXY,sense,energyMode));
-            hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
-            continue;
-          }
-
-          // -+-: derive the block boundaries from the validated +-+ result in
-          // ABSOLUTE MOTOR S1, then map them back to Q with calcQ0(), which is
-          // the exact inverse of Angle calculation.
-          //
-          // 1) ki block: same physical S1 condition as +-+.
-          // 2) kf block: same +-+ physical S1 condition + 2*|S2|, because kf is
-          //    rotated CCW by 2*S2 while positive S1 is CCW in both configs.
-          //
-          // This makes every plotted -+- Dark boundary round-trip through
-          // Angle calculation to the intended S1/S2 motor condition.
-          const plusDarkQ=(darkS1Param,s2)=>calcQDark(
-            darkS1Param,s2,ki,kf,darkS1Offset,darkQrefXY,plusInternalSense,energyMode
-          );
-          const plusPhysicalS1=(darkS1Param,s2)=>motorS1FromPlaneQ(
-            plusDarkQ(darkS1Param,s2),s2,ki,kf,plusS1Calibration
-          );
-          const minusQFromPhysicalS1=(physicalS1,s2)=>calcQ0(
-            physicalS1,s2,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration
-          );
-
-          const mapKi=(darkS1Param,s2)=>minusQFromPhysicalS1(
-            plusPhysicalS1(darkS1Param-kiShift(s2),s2),s2
-          );
-          // kf is rotated relative to ki by 2*S2.  The original -+- branch
-          // uses CCW-positive S1, hence +2*S2.  --- reverses only the S1
-          // encoder sense (CW-positive), so the same physical kf direction
-          // must use the opposite motor-S1 shift.
-          const kfS1ShiftSign=(uiSense==="---") ? -1 : +1;
-          const mapKf=(darkS1Param,s2)=>minusQFromPhysicalS1(
-            plusPhysicalS1(darkS1Param,s2)+kfS1ShiftSign*2*s2,s2
-          );
-
-          const fromKF=s2dark.map(s2=>mapKf(s1from,s2));
-          const toKF=s2dark.map(s2=>mapKf(s1to,s2));
-          const topKF=linspace(s1from,s1to,100).map(p=>mapKf(p,S2max));
-          const bottomKF=linspace(s1to,s1from,100).map(p=>mapKf(p,S2min));
-          hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
-
-          const fromKI=s2dark.map(s2=>mapKi(s1from,s2));
-          const toKI=s2dark.map(s2=>mapKi(s1to,s2));
-          const topKI=linspace(s1from,s1to,100).map(p=>mapKi(p,S2max));
-          const bottomKI=linspace(s1to,s1from,100).map(p=>mapKi(p,S2min));
-          hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
-        }
-      }
-    }
-    darkKF.push(hwKF); darkKI.push(hwKI); darkFixed.push(hwFixed);
-  }
-
-  if(regions.length===0) throw new Error("No accessible energy-transfer points were generated.");
-
-  // Generate Bragg peaks over the same radial range shown by the Single Crystal plot.
-  // Using QmaxList[0] here made the index search depend on the first energy point
-  // and could truncate one reciprocal-space direction.  Search out to 1.2 times
-  // the instrument's maximum reachable Q over the full calculated energy range.
-  const instrumentQmax=Math.max(...QmaxList);
-  const QplotLattice=1.2*instrumentQmax;
-  const Uq=hklToQ(rl,U), Vq=hklToQ(rl,V);
-  const Ulen=norm(Uq), Vlen=norm(Vq);
-  const Mmax=Math.ceil(QplotLattice/Ulen)+2, Nmax=Math.ceil(QplotLattice/Vlen)+2;
-  const Gpoints=[], magPoints=[];
-  // Magnetic satellites are observable in this 2D TAS view only when their
-  // propagation vector itself lies in the selected scattering plane.
-  const propagationVectors=enabledPropagationVectors().filter(q=>{
-    const qCart=hklToQ(rl,q.hkl);
-    const scaleQ=Math.max(norm(qCart),1);
-    return Math.abs(dot(qCart,ez)) <= 1e-8*scaleQ;
-  });
-
-  for(let m=-Mmax;m<=Mmax;m++){
-    for(let n=-Nmax;n<=Nmax;n++){
-      const hkl=add(scale(U,m),scale(V,n));
-      const G=hklToQ(rl,hkl);
-
-      if(norm(G)>QplotLattice) continue;
-      if(!isAllowedByCentering(hkl,latticeCentering)) continue;
-
-      const h = Math.round(hkl[0]);
-      const k = Math.round(hkl[1]);
-      const l = Math.round(hkl[2]);
-
-      const isOrigin=hkl.every(v=>Math.abs(v)<1e-10);
-      const sf2=selectedCifStructure && !isOrigin
-        ? nuclearStructureFactorSquared(selectedCifStructure,hkl,norm(G))
-        : null;
-      Gpoints.push({
-        x:dot(G,ex),y:dot(G,ey),hkl,label:isOrigin?"":`(${formatHKL(hkl)})`,
-        sf2:Number.isFinite(sf2)?sf2:null,sfNorm:null
-      });
-    }
-  }
-
-  if(selectedCifStructure){
-    const sfMax=Math.max(0,...Gpoints.map(p=>Number.isFinite(p.sf2)?p.sf2:0));
-    for(const p of Gpoints) p.sfNorm=(sfMax>0 && Number.isFinite(p.sf2)) ? p.sf2/sfMax : 0;
-    // Remove effectively extinct reflections.  The threshold is relative to the
-    // strongest displayed reflection, so exact/systematic extinctions disappear
-    // without hiding genuinely weak peaks.
-    if(sfMax>0){
-      for(let j=Gpoints.length-1;j>=0;j--){
-        const p=Gpoints[j];
-        if(p.label && Number.isFinite(p.sf2) && p.sf2<=sfMax*1e-10) Gpoints.splice(j,1);
-      }
-    }
-  }
-
-  // Generate magnetic satellites only after nuclear systematic/extinction
-  // filtering is complete.  This prevents k-satellites from remaining around
-  // a parent nuclear reflection that has disappeared.  The origin is retained
-  // intentionally, so +/-k around (0,0,0) continue to be shown.
-  for(const parent of Gpoints){
-    const hkl=parent.hkl;
-    for(const q of propagationVectors){
-      const kvec=q.hkl;
-      for(const s of [1,-1]){
-        const hm=add(hkl,scale(kvec,s));
-        const Gm=hklToQ(rl,hm);
-
-        if(norm(Gm)<=QplotLattice){
-          magPoints.push({
-            x:dot(Gm,ex),
-            y:dot(Gm,ey),
-            qIndex:q.index,
-            label:`k${q.index}: (${hm.map(x=>x.toFixed(2)).join(",")})`
-          });
-        }
-      }
-    }
-  }
-
-  const ringData=[];
-  const qlimit=Math.max(...QmaxList);
-  for(const bg of selectedBackgrounds()){
-    const material=backgroundMaterials.get(bg.key);
-    const peaks=backgroundPowderPeaks(material,qlimit);
-    for(const p of peaks){
-      const phi=linspace(0,2*PI,361);
-      const ratio=p.relativeIntensity;
-      ringData.push({
-        x:phi.map(t=>p.q*Math.cos(t)), y:phi.map(t=>p.q*Math.sin(t)),
-        color:backgroundColor(bg.slot,0.20+0.75*ratio),
-        hover:`BG${bg.index+1}: ${bg.key}<br>${representativePowderHklText(p)}<br>Q = ${p.q.toFixed(3)} Å⁻¹<br>S2(elastic) = ${p.elasticS2.toFixed(3)}°<br>I/Imax = ${ratio.toFixed(3)}`
-      });
-    }
-  }
-
-  return {
-    inst,lc,latticeCentering,sampleSpaceGroup,U,V,rl,ex,ey,ez,
-    energyMode,Ei,Ef,lambdaHalf,hwList,
-    regions,S2list,QmaxList,darkKF,darkKI,darkFixed,addDark,
-    Gpoints,magPoints,ringData,darkAssets,QrefXY,sense,
-    cifStructure:selectedCifStructure,cifFileName:selectedCifFileName
-  };
-}
 
 function singleMarkerSizes(fullSpan,visibleSpan,peakCount){
   // Keep dense thermal maps readable at the full view, then grow markers smoothly
@@ -2922,76 +2498,13 @@ function singleNuclearLabelStyle(fullSpan,visibleSpan){
 }
 
 
-// Configuration isolation for Q-E Range.
-//
-// The original uploaded implementation is already validated for +-+ and -+-.
-// Keep those configurations on that exact calculation path.  Only +++ uses
-// the handedness-corrected Q-E implementation below.  This deliberate split
-// prevents +++ S1 / dark-angle conventions from changing the validated -+-
-// accessible region or dark-angle polygons.
+// Unified Q-E Range calculation.
 function calculateSingleCrystal(){
-  const uiSense=currentUiTasSense();
-  if(uiSense==="+++") return rebuildGeometryMatchedDarkPolygons(calculateSingleCrystalPatched(),"+++");
-
-  // --- is physically the same scattering configuration as -+-.
-  // Its only intended difference is the S1 encoder convention (CW-positive
-  // instead of CCW-positive).  Q-E accessibility and all dark-angle regions
-  // are physical reciprocal-space regions, so they must be identical to -+-.
-  // Evaluate the validated legacy Q-E path exactly as -+- and restore the UI
-  // selection immediately afterwards.  Programmatic select.value changes do
-  // not dispatch change events, so Angle calculation / TAS geometry keep the
-  // independent --- S1 convention outside this calculation.
-  if(uiSense==="---"){
-    const senseSelect=$("sense"), s1SignSelect=$("s1sign");
-    const s1MinInput=$("S1min"), s1MaxInput=$("S1max");
-    const savedSense=senseSelect?.value, savedS1Sign=s1SignSelect?.value;
-    const savedS1min=s1MinInput?.value, savedS1max=s1MaxInput?.value;
-
-    // --- has the same physical Q-E / Dark-angle geometry as -+-, but its
-    // sample encoder runs in the opposite direction (CW-positive instead of
-    // CCW-positive).  Dark-angle polygons therefore use the validated -+-
-    // path unchanged, while the user-entered S1 motor limits must be mapped
-    // onto the equivalent -+- encoder values before generating the accessible
-    // Q-E boundary.
-    //
-    // For the same physical sample orientation:
-    //   cDash*(S1dash-refDash) = cMinus*(S1minus-refMinus)
-    // with cDash=-1 and cMinus=+1, hence
-    //   S1minus = refMinus - (S1dash-refDash).
-    // This also handles non-zero Bragg-reference S1 and the perpendicular /
-    // parallel orientation-reference modes correctly.
-    const lc=latticeParams();
-    const U=[num("Uh"),num("Uk"),num("Ul")];
-    const V=[num("Vh"),num("Vk"),num("Vl")];
-    const rl=RL_calc({...lc,sv1:U,sv2:V});
-    const energyInput=num("energy");
-    const fixedReferenceEnergy=$("lambdaHalf")?.checked ? 4*energyInput : energyInput;
-    const dashRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"---").s1;
-
-    if(senseSelect) senseSelect.value="-+-";
-    if(s1SignSelect) s1SignSelect.value="ccw";
-    try{
-      const minusRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"-+-").s1;
-      const dashMin=Number(savedS1min), dashMax=Number(savedS1max);
-      if(s1MinInput && s1MaxInput && Number.isFinite(dashMin) && Number.isFinite(dashMax)){
-        const mappedA=minusRef-(dashMin-dashRef);
-        const mappedB=minusRef-(dashMax-dashRef);
-        s1MinInput.value=String(Math.min(mappedA,mappedB));
-        s1MaxInput.value=String(Math.max(mappedA,mappedB));
-      }
-      return rebuildGeometryMatchedDarkPolygons(calculateSingleCrystalLegacy(),"---");
-    }finally{
-      if(s1MinInput && savedS1min!=null) s1MinInput.value=savedS1min;
-      if(s1MaxInput && savedS1max!=null) s1MaxInput.value=savedS1max;
-      if(senseSelect && savedSense!=null) senseSelect.value=savedSense;
-      if(s1SignSelect && savedS1Sign!=null) s1SignSelect.value=savedS1Sign;
-    }
-  }
-
-  return calculateSingleCrystalLegacy();
+  const convention=tasConvention(selectedTasSense(),selectedS1Sign());
+  return rebuildGeometryMatchedDarkPolygons(calculateSingleCrystalCore(convention),convention);
 }
 
-function calculateSingleCrystalPatched(){
+function calculateSingleCrystalCore(convention){
   const inst=currentInstrument();
   const lc=latticeParams();
   // Lattice centering is derived from the selected Space group; there is no
@@ -3049,68 +2562,32 @@ function calculateSingleCrystalPatched(){
   const regions=[], S2list=[], QmaxList=[];
   const darkKF=[],darkKI=[],darkFixed=[];
   const addDark=$("addDark").checked && darkAssets.length>0;
-  const uiSense=currentUiTasSense();
-  const sense=calculationTasSense(uiSense);
+  const sense=convention.sense;
 
-  // Dark-angle polygons must use the same +++ handedness as the corrected S1
-  // calibration.  For +++ this is exactly the old-code result with V -> -V.
-  // Keep a separate dark-only reference so the ordinary Q-E plot coordinates
-  // and all other configurations remain unchanged.
-  const darkQrefXY=darkVirtualPlaneXYForUiSense(QrefXY,uiSense);
-  const darkPhiRef=darkVirtualPhiForUiSense(phiRefPlot,uiSense);
-  const darkBaseS1Offset=-thetaRef+180-darkPhiRef;
-  const calcQDarkForUi=(s1,s2,ki,kf,offset,qref)=>
-    darkQFromVirtualPlaneForUiSense(
-      calcQDark(s1,s2,ki,kf,offset,qref,sense,energyMode),uiSense
-    );
-
-  // S1 calibration uses the instrument's crystal-azimuth handedness, whereas
-  // QrefXY / plots remain in the user's entered U,V display basis.
-  const phiRef=tasPlotPhiFromCrystalPhi(phiRefPlot,uiSense);
+  // One physical convention drives the S1/Q mapping for both scattering senses.
+  // The plot basis remains the entered U/V basis; only the crystal azimuth
+  // handedness belongs to the instrument convention.
+  const phiRef=tasPlotPhiFromCrystalPhiForConvention(
+    phiRefPlot,convention.sense,convention.s1sign
+  );
 
   // Keep the numerical S1 inversion on its original calibration.  S1 is an
   // absolute physical motor value; do not change its calibration sign merely
   // to alter the displayed Q-E arc direction.
-  const s1C2Sign=(uiSense==="+-+" || uiSense==="---") ? -1 : ((sense==="+-+") ? +1 : -1);
+  const s1C2Sign=convention.c2ToOmegaSign;
   const kRef=Math.sqrt(fixedReferenceEnergy/2.072);
   let s1RangeCalibration=QrefNorm>1e-10
     ? {
         refS1,
         c2Sign:s1C2Sign,
-        omegaRef:wrap180(tasPhiLabDegForUiSense(kRef,kRef,2*thetaRef,uiSense)-phiRef),
-        uiSense
+        omegaRef:wrap180(
+          tasPhiLabDegForConvention(kRef,kRef,2*thetaRef,convention.sense,convention.s1sign)-phiRef
+        ),
+        sense:convention.sense,
+        s1sign:convention.s1sign,
+        crystalAzimuthHandedness:convention.crystalAzimuthHandedness
       }
     : null;
-
-  // Pure +-+ now uses the same exact S1/Q_lab inverse as Angle calculation.
-  // This keeps its Q-E boundary consistent with the measured positive-S2,
-  // clockwise-positive-S1 geometry.
-
-  // Build the already-validated former +-+ (now +++) S1 calibration explicitly.
-  // This lets the -+- Dark region inherit the actual +-+ blocking condition in
-  // MOTOR S1 space rather than guessing it from a separate Q-space formula.
-  const plusOrientationRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"+++");
-  const plusInternalSense=calculationTasSense("+++");
-  const plusS1Calibration=QrefNorm>1e-10
-    ? {
-        refS1:plusOrientationRef.s1,
-        c2Sign:(plusInternalSense==="+-+") ? +1 : -1,
-        omegaRef:wrap180(tasPhiLabDeg(kRef,kRef,2*thetaRef)-tasPlotPhiFromCrystalPhi(phiRefPlot,"+++")),
-        uiSense:"+++"
-      }
-    : null;
-
-  // Exact forward partner of calcQ0() / tasMotorAngles() for an in-plane Q.
-  // Given a plotted Q and |S2|, recover the absolute physical S1 motor value
-  // using the same calibration equation as Angle calculation.
-  const motorS1FromPlaneQ=(q,s2,ki,kf,calibration)=>{
-    if(!calibration || norm(q)<=1e-12) return null;
-    const phiPlot=rad2deg(Math.atan2(q[1],q[0]));
-    const phiTarget=tasPlotPhiFromCrystalPhi(phiPlot,calibration.uiSense);
-    const omegaTarget=wrap180(tasPhiLabDegForUiSense(ki,kf,s2,calibration.uiSense)-phiTarget);
-    return calibration.refS1
-      + angleDiffDeg(omegaTarget,calibration.omegaRef)/calibration.c2Sign;
-  };
 
   // Q-E S1 RANGE:
   // use the exact inverse of Angle calculation directly for BOTH configurations.
@@ -3118,7 +2595,7 @@ function calculateSingleCrystalPatched(){
   // The previous -+- reflection about S1=0 reversed an already-correct inverse
   // mapping and could send a point such as (0,0,3) toward the (0,0,-3) side.
   const calcQRangePoint=(s1,s2,ki,kf)=>
-    calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration);
+    calcQ0(s1,s2,ki,kf,s1Offset,refS1,QrefXY,convention.sense,s1RangeCalibration);
 
   for(const hw of hwList){
     let EiHw,EfHw;
@@ -3144,12 +2621,10 @@ function calculateSingleCrystalPatched(){
     const hwKF=[],hwKI=[],hwFixed=[];
     if(addDark){
       for(const asset of darkAssets){
-        const darkRef=asset.ref;
-        const darkCal=darkRef==="Reference Q" ? darkReferenceCalibration(asset,rl,ex,ey,energyMode,Ei,Ef,uiSense) : null;
-        if(darkRef==="Reference Q" && !darkCal) continue;
-        if(darkRef!=="Fixed" && darkRef!=="Reference Q" && QrefNorm<=1e-10) continue;
-        const Qoffset=darkRef==="Reference Q" ? darkCal.Qoffset : 2*thetaRef;
-        if(darkRef==="Fixed"){
+        // Sample-attached Dark regions are rebuilt once by the common geometry
+        // path after this function.  Only laboratory-fixed obstacles belong here.
+        if(asset.ref!=="Fixed") continue;
+        {
           // Laboratory-fixed obstacle: compare the SIGNED physical S2 motor angle
           // directly with the fixed angular interval.  Do not use abs(S2): a
           // stopper at +30 deg must not block a -30 deg scattering arm (and vice
@@ -3181,101 +2656,26 @@ function calculateSingleCrystalPatched(){
               continue;
             }
 
-            // Otherwise the obstacle only blocks the outgoing kf arm.  Intersect
-            // its signed angular interval with the actually scanned S2 range.
+            // Otherwise the obstacle only blocks the outgoing kf arm. Intersect
+            // with the actual signed S2 motor branch selected by Sense + S1 sign.
+            const signedA=convention.s2EncoderSign*S2min;
+            const signedB=convention.s2EncoderSign*S2max;
+            const scannedLo=Math.min(signedA,signedB), scannedHi=Math.max(signedA,signedB);
             for(const shift of [-360,0,360]){
-              const lo=Math.max(a+shift,S2min);
-              const hi=Math.min(b+shift,S2max);
+              const lo=Math.max(a+shift,scannedLo);
+              const hi=Math.min(b+shift,scannedHi);
               if(!(hi>lo)) continue;
-              const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(s2))));
+              const qRadius=s2=>Math.sqrt(Math.max(0,ki*ki+kf*kf-2*ki*kf*Math.cos(deg2rad(Math.abs(s2)))));
               const r0=qRadius(lo), r1=qRadius(hi), aa=linspace(0,2*Math.PI,241);
               hwFixed.push([...aa.map(t=>[r1*Math.cos(t),r1*Math.sin(t)]),...[...aa].reverse().map(t=>[r0*Math.cos(t),r0*Math.sin(t)])]);
             }
           }
           continue;
         }
-        const s2dark=linspace(S2min,S2max,200);
-        for(const rawRange of asset.ranges){
-          // -+- sample-attached dark angles use the same positive direction as
-          // S1 (counter-clockwise).  Convert only the user angle; reference/
-          // Direct-beam calibration terms stay untouched so the zero does not move.
-          const [from,to,offset]=darkSampleRangeForUiSense(rawRange,uiSense);
-          if(from===0 && to===0) continue;
-          const directBeamCorrection=darkRef==="Direct beam"
-            ? directBeamOrientationCorrection(rl,energyMode,Ei,Ef,uiSense) : 0;
-          const correctedOffset=offset+directBeamCorrection;
-          const s1from=correctedOffset+from-Qoffset, s1to=correctedOffset+to-Qoffset;
-
-          // Reference-Q dark angles use exactly the old Reference-Q Q-E mapping,
-          // rebased on the HKL entered in this dark-angle slot.  In particular,
-          // Orientation reference (including Bragg-position S1) is deliberately
-          // excluded.  Direct-beam keeps the existing orientation-based mapping.
-          const darkS1Offset=darkRef==="Reference Q" ? darkCal.s1Offset : darkBaseS1Offset;
-          const darkQrefForCalc=darkRef==="Reference Q" ? darkCal.qxy : darkQrefXY;
-
-          const kiShift=s2=>(180-s2);
-
-          if(uiSense!=="-+-" && uiSense!=="---"){
-            // Preserve the validated +-+ blocked regions byte-for-byte in
-            // numerical behavior: continue using the existing calcQDark path.
-            const fromKF=s2dark.map(s2=>calcQDarkForUi(s1from,s2,ki,kf,darkS1Offset,darkQrefForCalc));
-            const toKF=s2dark.map(s2=>calcQDarkForUi(s1to,s2,ki,kf,darkS1Offset,darkQrefForCalc));
-            const topKF=linspace(s1from,s1to,100).map(s1=>calcQDarkForUi(s1,S2max,ki,kf,darkS1Offset,darkQrefForCalc));
-            const bottomKF=linspace(s1to,s1from,100).map(s1=>calcQDarkForUi(s1,S2min,ki,kf,darkS1Offset,darkQrefForCalc));
-            hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
-
-            const fromKI=s2dark.map(s2=>calcQDarkForUi(s1from-kiShift(s2),s2,ki,kf,darkS1Offset,darkQrefForCalc));
-            const toKI=s2dark.map(s2=>calcQDarkForUi(s1to-kiShift(s2),s2,ki,kf,darkS1Offset,darkQrefForCalc));
-            const topKI=linspace(s1from-kiShift(S2max),s1to-kiShift(S2max),100).map(s1=>calcQDarkForUi(s1,S2max,ki,kf,darkS1Offset,darkQrefForCalc));
-            const bottomKI=linspace(s1to-kiShift(S2min),s1from-kiShift(S2min),100).map(s1=>calcQDarkForUi(s1,S2min,ki,kf,darkS1Offset,darkQrefForCalc));
-            hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
-            continue;
-          }
-
-          // -+-: preserve the original implementation exactly.  In particular,
-          // do not use the +++ virtual-V handedness variables above.
-          const minusDarkS1Offset=darkRef==="Reference Q" ? darkCal.s1Offset : s1Offset;
-          const minusDarkQrefXY=darkRef==="Reference Q" ? darkCal.qxy : QrefXY;
-
-          // -+-: derive the block boundaries from the validated +-+ result in
-          // ABSOLUTE MOTOR S1, then map them back to Q with calcQ0(), which is
-          // the exact inverse of Angle calculation.
-          //
-          // 1) ki block: same physical S1 condition as +-+.
-          // 2) kf block: same +-+ physical S1 condition + 2*|S2|, because kf is
-          //    rotated CCW by 2*S2 while positive S1 is CCW in both configs.
-          //
-          // This makes every plotted -+- Dark boundary round-trip through
-          // Angle calculation to the intended S1/S2 motor condition.
-          const plusDarkQ=(darkS1Param,s2)=>calcQDark(
-            darkS1Param,s2,ki,kf,minusDarkS1Offset,minusDarkQrefXY,plusInternalSense,energyMode
-          );
-          const plusPhysicalS1=(darkS1Param,s2)=>motorS1FromPlaneQ(
-            plusDarkQ(darkS1Param,s2),s2,ki,kf,plusS1Calibration
-          );
-          const minusQFromPhysicalS1=(physicalS1,s2)=>calcQ0(
-            physicalS1,s2,ki,kf,s1Offset,refS1,QrefXY,sense,s1RangeCalibration
-          );
-
-          const mapKi=(darkS1Param,s2)=>minusQFromPhysicalS1(
-            plusPhysicalS1(darkS1Param-kiShift(s2),s2),s2
-          );
-          const mapKf=(darkS1Param,s2)=>minusQFromPhysicalS1(
-            plusPhysicalS1(darkS1Param,s2)+2*s2,s2
-          );
-
-          const fromKF=s2dark.map(s2=>mapKf(s1from,s2));
-          const toKF=s2dark.map(s2=>mapKf(s1to,s2));
-          const topKF=linspace(s1from,s1to,100).map(p=>mapKf(p,S2max));
-          const bottomKF=linspace(s1to,s1from,100).map(p=>mapKf(p,S2min));
-          hwKF.push([...fromKF,...topKF,...[...toKF].reverse(),...bottomKF]);
-
-          const fromKI=s2dark.map(s2=>mapKi(s1from,s2));
-          const toKI=s2dark.map(s2=>mapKi(s1to,s2));
-          const topKI=linspace(s1from,s1to,100).map(p=>mapKi(p,S2max));
-          const bottomKI=linspace(s1to,s1from,100).map(p=>mapKi(p,S2min));
-          hwKI.push([...fromKI,...topKI,...[...toKI].reverse(),...bottomKI]);
-        }
+        // Sample-attached Reference-Q / Direct-beam Dark regions are generated
+        // once, after the accessible-range calculation, by
+        // rebuildGeometryMatchedDarkPolygons().  Keeping one common physical
+        // geometry path avoids four-state sign remapping here.
       }
     }
     darkKF.push(hwKF); darkKI.push(hwKI); darkFixed.push(hwFixed);
@@ -4063,8 +3463,17 @@ function qeGeometryAngles(cache, senseOverride=null, uiSenseOverride=null, calcO
     b.config.Ef=cache.Ef;
     b.config.Ei=null;
   }
-  b.config.sign_config=senseOverride ?? cache.sense;
-  b.config.ui_sign=uiSenseOverride ?? currentUiTasSense();
+  let convention=tasConvention(selectedTasSense(),selectedS1Sign());
+  if(uiSenseOverride && typeof uiSenseOverride==="object" && "sense" in uiSenseOverride){
+    convention=tasConvention(uiSenseOverride.sense,uiSenseOverride.s1sign);
+  }else if(uiSenseOverride){
+    const legacy=tasConventionFromLegacyUiSense(uiSenseOverride);
+    convention=tasConvention(legacy.sense,legacy.s1sign);
+  }
+  b.config.sense=convention.sense;
+  b.config.s1sign=convention.s1sign;
+  b.config.sign_config=convention.sense;
+  void senseOverride; // legacy argument retained for call-site compatibility
   const angles=tasMotorAngles(calc,b);
   const Ei=cache.energyMode==="Ei fixed" ? cache.Ei : cache.Ef+calc.hw;
   const Ef=cache.energyMode==="Ei fixed" ? cache.Ei-calc.hw : cache.Ef;
@@ -4125,20 +3534,11 @@ function syncGeometryScanPointSlider(pointCount){
 }
 
 function geometryDisplayedMotorAngles(target,isPowder,sense,displaySense){
+  void sense; void displaySense;
   const a=target.angles;
-  // User-facing S2 encoder pairs:
-  //   +-+ : +|S2|    +++ : -|S2|
-  //   -+- : +|S2|    --- : -|S2|
-  // Keep the physical drawing/calculation branch unchanged; this is only the
-  // motor value shown to the user.
-  const s2=sense==="---"
-    ? -Math.abs(Number(a.s2))
-    : (sense==="+-+"
-      ? +Math.abs(Number(a.s2))
-      : (displaySense==="+-+" ? -Math.abs(Number(a.s2)) : +Math.abs(Number(a.s2))));
   return {
     m1:-Number(a.m1), m2:-Number(a.m2),
-    s1:isPowder ? 0 : Number(a.s1), s2,
+    s1:isPowder ? 0 : Number(a.s1), s2:Number(a.s2),
     a1:-Number(a.a1), a2:-Number(a.a2)
   };
 }
@@ -4325,10 +3725,10 @@ function renderGeometry(cache,index=0){
   // Powder has no crystallographic sample orientation, but the TAS scattering
   // sign still determines the displayed motor-angle branch exactly as it does
   // for Single crystal.
-  const sense=currentUiTasSense();
-  // +++ keeps the exact former +-+ schematic placement.  The native +-+ branch
-  // also uses the canonical plus-side drawing; only -+- is mirrored.
-  const displaySense=legacyTasSense(sense);
+  const convention=tasConvention(selectedTasSense(),selectedS1Sign());
+  const sense=convention.sense;
+  // Schematic placement depends on physical scattering Sense only.
+  const displaySense=convention.sense;
   const scanMode=!isPowder && geometryCalculationMode()==='scan';
   const scanPoints=scanMode ? geometryScanPoints() : [];
   updateGeometryPlaneWarning(scanPoints);
@@ -4373,15 +3773,25 @@ function renderGeometry(cache,index=0){
     // Single crystal. Powder's user-facing angle calculation still keeps the
     // established sign-label mapping; only the schematic bypasses that mapping
     // so the drawing mirrors exactly like the Single-crystal schematic.
-    const drawTarget=isPowder ? powderGeometryTarget("+-+",true) : qeGeometryAngles(cache,"+-+",sense,scanCalc);
+    // Always build one canonical physical +-+ / CCW-positive geometry here.
+    // The selected physical Sense is applied exactly once by the display mirror
+    // below.  Previously -+- was already selected inside qeGeometryAngles() and
+    // then mirrored again here, so +-+ and -+- collapsed to the same schematic.
+    const canonicalConvention=tasConvention("+-+","ccw");
+    const drawTarget=isPowder
+      ? powderGeometryTarget(canonicalConvention,true)
+      : qeGeometryAngles(cache,null,canonicalConvention,scanCalc);
     const {angles,ki,kf}=drawTarget;
     source=[-L,0];
     mono=[0,0];
     thetaKi=deg2rad(angles.m2);
     sample=[mono[0]+L*Math.cos(thetaKi),mono[1]+L*Math.sin(thetaKi)];
-    // Pure +-+: positive S2 is a clockwise detector-arm rotation in the
-    // TAS schematic.  Keep +++ / -+- drawing behavior unchanged.
-    const s2Draw=(sense==="+-+") ? -Math.abs(Number(angles.s2)) : Number(angles.s2);
+    // Build the detector arm in the canonical +-+ drawing frame. In that
+    // frame the physical S2 arm is clockwise. The -+- schematic is produced
+    // by the single display reflection below, which turns this same physical
+    // arm into the required counter-clockwise S2 geometry. Do not apply the
+    // Sense sign here as well, or -+- is reflected twice and appears clockwise.
+    const s2Draw=-Math.abs(Number(angles.s2));
     thetaKf=thetaKi+deg2rad(s2Draw);
     analyzer=[sample[0]+0.90*L*Math.cos(thetaKf),sample[1]+0.90*L*Math.sin(thetaKf)];
     thetaOut=thetaKf+deg2rad(angles.a2);
@@ -4435,7 +3845,7 @@ function renderGeometry(cache,index=0){
   anaPlaneAngle-=Math.PI/2;
   qAngle-=Math.PI/2;
 
-  if(sense==="-+-" || sense==="---") {
+  if(displaySense==="-+-") {
     const reflectX=([x,y])=>[-x,y];
     source=reflectX(source); mono=reflectX(mono); sample=reflectX(sample);
     analyzer=reflectX(analyzer); detector=reflectX(detector);
@@ -4477,13 +3887,10 @@ function renderGeometry(cache,index=0){
       const phiRef=qPlaneAngle(effectiveRef.hkl);
       const crystalDelta=phiRef-phiTarget;
       // Sample-attached directions follow the physical S1 rotation sense.
-      // For +++ the real instrument is counter-clockwise-positive, so its
-      // crystal/reference frame must use the same +crystalDelta orientation
-      // as a CCW-positive sample axis.  This is display-only and does not alter
-      // the calibrated numerical S1 returned by tasMotorAngles().
-      // --- has the same physical sample-attached Dark-angle orientation as -+-.
-      // Only the S1 encoder sign is reversed; the arc itself must follow the same
-      // crystal rotation direction as the U/V guides in TAS geometry.
+      // Sample-attached Dark directions use the same crystallographic azimuth as U/V.
+      // Use exactly the same relative crystallographic azimuth as the U/V guides
+      // below. qAngle already contains the TAS-sense mirror, so applying another
+      // handedness factor here makes the -+- Dark overlay rotate opposite to U/V.
       referenceBase=qAngle+crystalDelta;
       const refS1=effectiveRef.s1;
       if(Number.isFinite(target.angles?.s1)&&Number.isFinite(refS1)) deltaS1=angleDiffDeg(target.angles.s1,refS1);
@@ -4500,10 +3907,8 @@ function renderGeometry(cache,index=0){
         const phiTarget=qPlaneAngle([target.calc.h,target.calc.k,target.calc.l]);
         const phiDark=qPlaneAngle(asset.refHkl||[1,0,0]);
         const crystalDelta=phiDark-phiTarget;
-        // Same sample-axis convention as referenceBase above.  +++ is
-        // counter-clockwise-positive in the real instrument.
-        // Keep the Reference-Q Dark-angle arc attached to the crystal exactly
-        // as in -+-.  --- changes only the displayed S1 encoder sign.
+        // Keep the Reference-Q Dark-angle direction locked to the same
+        // crystallographic rotation used by the displayed U/V guides.
         base=qAngle+crystalDelta;
       }catch(_err){}
     }else if(asset.ref==="Direct beam"){
@@ -4531,12 +3936,8 @@ function renderGeometry(cache,index=0){
       const directBeamCorrection=asset.ref==="Direct beam"
         ? directBeamOrientationCorrection(cache.rl,cache.energyMode,cache.Ei,cache.Ef,sense) : 0;
 
-      // TAS Geometry display only:
-      // Direct-beam zero must follow the physical sample/environment frame,
-      // not the displayed motor-sign label.  +++, -+- and --- use the mirrored
-      // half-S2 calibration; pure +-+ keeps the original +half-S2 zero.
-      // This moves the +++ zero clockwise by one S2 to its physical position.
-      const geometryDirectBeamCorrection=(asset.ref==="Direct beam" && (sense==="+++" || sense==="-+-" || sense==="---"))
+      // TAS Geometry display only: keep the Direct-beam zero in the physical frame.
+      const geometryDirectBeamCorrection=asset.ref==="Direct beam"
         ? -directBeamCorrection
         : directBeamCorrection;
 
@@ -4545,18 +3946,20 @@ function renderGeometry(cache,index=0){
       // For -+- that means +dark angle is counter-clockwise, while the existing
       // Direct-beam correction remains on its validated (clockwise) calibration
       // side.  Fixed-reference angles are laboratory-fixed and stay unchanged.
-      let aa;
-      if(sense==="-+-" && asset.ref!=="Fixed"){
-        let p0=(offset+from)-geometryDirectBeamCorrection;
-        let p1=(offset+to)-geometryDirectBeamCorrection;
-        if(p1<p0) p1+=360;
-        aa=linspace(p0,p1,120).map(d=>base+deg2rad(d));
-      }else{
-        let a0=offset+from+geometryDirectBeamCorrection,a1=offset+to+geometryDirectBeamCorrection;
-        if(a1<a0) a1+=360;
-        const darkDrawSign=(sense==="+++") ? +1 : -1;
-        aa=linspace(a0,a1,120).map(d=>base+darkDrawSign*deg2rad(d));
-      }
+      // Unwrap the entered motor interval *before* applying its sign.  Applying
+      // CW polarity first turns [-15,+15] into [+15,-15]; the old a1<a0 rule
+      // then interpreted that as an almost-full 360-degree sector.
+      let motorFrom=offset+from;
+      let motorTo=offset+to;
+      if(motorTo<motorFrom) motorTo+=360;
+
+      // Dark-angle input is an S1 motor coordinate.  Use the same encoder polarity
+      // as the validated S1-range display.  Sense changes the base geometry, but
+      // must not swap CW and CCW here.  Fixed remains laboratory-fixed.
+      const inputSign=asset.ref==="Fixed" ? +1 : convention.s1EncoderSign;
+      const a0=inputSign*motorFrom+geometryDirectBeamCorrection;
+      const a1=inputSign*motorTo+geometryDirectBeamCorrection;
+      const aa=linspace(a0,a1,120).map(d=>base+deg2rad(d));
       // Display-only differentiation: every Dark angle is red.  Slots are
       // separated radially (1.0, 1.1, 1.2, ... x radius), so color no longer
       // needs to encode the slot number. Numerical dark-angle calculations are unchanged.
@@ -4603,23 +4006,12 @@ function renderGeometry(cache,index=0){
       const planePhi=hkl=>{const q=hklToQ(cache.rl,hkl),x=dot(q,ex),y=dot(q,ey);return Math.atan2(y,x);};
       const targetHKL=target ? [target.calc.h,target.calc.k,target.calc.l] : U;
       const phiT=planePhi(targetHKL), phiU=planePhi(U), phiV=planePhi(V);
-      if(displaySense==="+-+"){
-        const fixedRefEnergy=(cache.energyMode==="Ei fixed") ? cache.Ei : cache.Ef;
-        const orientationRef=effectiveOrientationReference(cache.rl,fixedRefEnergy);
-        const phiRef=planePhi(orientationRef.hkl);
-        // Display-only U/V handedness.  For +++ the real sample encoder is
-        // counter-clockwise-positive, so the crystal frame follows the same
-        // +phiRef-phiTarget orientation as the sample-attached Dark angle.
-        // The pure +-+ branch keeps its established display convention.
-        const crystalBase=(sense==="+-+" || sense==="+++")
-          ? qAngle+(phiRef-phiT)
-          : qAngle-(phiRef-phiT);
-        uArrowAngle=crystalBase+(phiU-phiRef);
-        vArrowAngle=crystalBase+(phiV-phiRef);
-      }else{
-        uArrowAngle=qAngle+(phiU-phiT);
-        vArrowAngle=qAngle+(phiV-phiT);
-      }
+      // qAngle already contains the selected TAS geometry mirror.  Keep the
+      // entered reciprocal-space U->V handedness relative to that mirrored Q;
+      // reflecting the relative azimuth a second time makes -+- appear
+      // left-handed.  The crystallographic plane itself remains right-handed.
+      uArrowAngle=qAngle+(phiU-phiT);
+      vArrowAngle=qAngle+(phiV-phiT);
     }catch(_err){}
     uEnd=vectorEnd(uArrowAngle);
     vEnd=vectorEnd(vArrowAngle);
@@ -5271,20 +4663,19 @@ function setGeometryKiOrientationCondition(mode){
     // virtual Bragg reference is +S2/2 rather than -S2/2.
     if(orient===mode && ['perpU','perpV','parallelU','parallelV'].includes(mode)){
       const fixedE=em==="Ei fixed" ? Number(b.config.Ei) : Number(b.config.Ef);
-      const uiSense=b.config.ui_sign ?? currentUiTasSense();
-      const orientationRef=effectiveOrientationReference(b.rl,fixedE,uiSense);
-      const c2Sign=(uiSense==="+-+" || uiSense==="---") ? -1 : ((b.config.sign_config==='+-+') ? +1 : -1);
+      const convention=tasConvention(b.config.sense ?? selectedTasSense(),b.config.s1sign ?? selectedS1Sign());
+      const orientationRef=effectiveOrientationReference(b.rl,fixedE,convention);
+      const c2Sign=convention.c2ToOmegaSign;
 
-      if(uiSense==="+++"){
-        // +++ uses the mirrored/right-handed crystal azimuth convention
-        // (equivalent to the validated angle-calculation path with V -> -V).
+      if(convention.sense==="+-+"){
+        // The physical Sense selects the crystal-azimuth handedness.
         // Solve the S1=0 condition in crystal-azimuth space first, then map
         // it back to the displayed U/V reciprocal-space coordinates.  Using
         // phiAxis directly here mirrors the generated HKL to the wrong side.
         const qAxis=usesV ? qV : qU;
-        const phiAxisCrystal=tasCrystalPhiDeg(qAxis,ex,ey,uiSense);
+        const phiAxisCrystal=tasCrystalPhiDegForConvention(qAxis,ex,ey,convention.sense,convention.s1sign);
         const phiTargetCrystal=wrap180(phiAxisCrystal+c2Sign*orientationRef.s1);
-        phiTargetDeg=tasPlotPhiFromCrystalPhi(phiTargetCrystal,uiSense);
+        phiTargetDeg=tasPlotPhiFromCrystalPhiForConvention(phiTargetCrystal,convention.sense,convention.s1sign);
       }else{
         phiTargetDeg=wrap180(phiAxis+c2Sign*orientationRef.s1);
       }
@@ -5304,16 +4695,19 @@ function setGeometryKiOrientationCondition(mode){
       aa*U[2]+bb*V[2]
     ];
 
-    // +++ / --- orientation presets are defined by the motor condition S1=0.
+    // Some encoder/sense combinations need extra HKL precision to round-trip to S1=0.
     // Rounding their generated HKL to three decimals before Angle calculation
     // can move the target slightly away from that condition (typically a few
     // hundredths of a degree).  Keep the shortest HKL precision that still
     // round-trips through the *same* tasMotorAngles() path to S1=0.000 deg.
     // This changes only the quick-target HKL written by Set; orientation
     // calibration and all Dark-angle zero/reference calculations are untouched.
-    const setSense=b.config.ui_sign ?? currentUiTasSense();
+    const setConvention=tasConvention(
+      b.config.sense ?? selectedTasSense(),
+      b.config.s1sign ?? selectedS1Sign()
+    );
     let targetHKL;
-    if(setSense==="+++" || setSense==="---"){
+    if(setConvention.s2EncoderSign<0){
       targetHKL=exactTargetHKL.slice();
       for(let digits=3;digits<=10;digits++){
         const candidate=exactTargetHKL.map(x=>Number(x.toFixed(digits)));
@@ -5429,7 +4823,6 @@ function recalculate(){
   updateS2MaxDisplay();
   updateModeVisibility();
   try{
-    assertImplementedUiSense();
     if(checkedValue("sampleMode")==="single"){
       singleCache=calculateSingleCrystal();
       $("hwSlider").min=0;
@@ -5602,8 +4995,14 @@ function flipScatteringPlaneUV(){
 }
 function collectResolutionBase(){
   const {lc,rl}=buildResolutionLattice(), em=$('energyMode').value,E=num('energy');
-  const uiSign=currentUiTasSense();
-  const config={energy_mode:em,Ei:em==='Ei fixed'?E:null,Ef:em==='Ef fixed'?E:null,geometry:$('geometry').value,sign_config:calculationTasSense(uiSign),ui_sign:uiSign};
+  const convention=tasConvention(selectedTasSense(),selectedS1Sign());
+  const config={
+    energy_mode:em,Ei:em==='Ei fixed'?E:null,Ef:em==='Ef fixed'?E:null,
+    geometry:$('geometry').value,
+    sense:convention.sense,s1sign:convention.s1sign,
+    // Retained only for compatibility with untouched peripheral code.
+    sign_config:convention.sense
+  };
   const approximation={method:$('method').value};
   const focusing={monochromator:{horizontal:{enabled:$('monoHF').checked,blades:num('monoHB')},vertical:{enabled:$('monoVF').checked,blades:num('monoVB')}},analyzer:{horizontal:{enabled:$('anaHF').checked,blades:num('anaHB')},vertical:{enabled:$('anaVF').checked,blades:num('anaVB')}}};
   const col={gm_1st:$('gm1').checked,div_1st_m:num('div1m'),div_1st_h:num('div1h'),div_1st_v:num('div1v'),div_2nd_h:num('div2h'),div_2nd_v:num('div2v'),div_3rd_h:num('div3h'),div_3rd_v:num('div3v'),div_4th_h:num('div4h'),div_4th_v:num('div4v')};
@@ -5642,20 +5041,13 @@ function tasMotorAngles(calc,b){
   let a1abs=braggAngle(Ef,b.mos.d_ana,'Analyzer');
   if(b.config.geometry==='anti-W') a1abs=-a1abs;
 
-  const uiSense=b.config.ui_sign ?? currentUiTasSense();
-
-  let senseM,senseS,senseA;
-  if(b.config.sign_config==='+-+'){
-    senseM=+1; senseS=-1; senseA=+1;
-  }else if(b.config.sign_config==='-+-'){
-    senseM=-1; senseS=+1; senseA=-1;
-  }else{
-    throw new Error(`Unsupported TAS sign configuration: ${b.config.sign_config}`);
-  }
-
-  const m1=senseM*m1abs;
+  const convention=tasConvention(
+    b.config.sense ?? selectedTasSense(),
+    b.config.s1sign ?? selectedS1Sign()
+  );
+  const m1=convention.monoSign*m1abs;
   const m2=2*m1;
-  const a1=senseA*a1abs;
+  const a1=convention.analyzerSign*a1abs;
   const a2=2*a1;
 
   const target=[Number(calc.h),Number(calc.k),Number(calc.l)];
@@ -5668,31 +5060,22 @@ function tasMotorAngles(calc,b){
     throw new Error('The requested Q and energy transfer are kinematically inaccessible.');
   }
   const s2abs=rad2deg(Math.acos(clamp(cosS2,-1,1)));
-  // HODACA / pure +-+ has a positive S2 encoder on its physical scattering arm.
-  // Do not alter the already-validated +++ and -+- displayed S2 conventions.
-  const s2=(uiSense==="+-+") ? +s2abs : senseS*s2abs;
+  // S2 encoder polarity is derived from physical Sense and S1 encoder polarity.
+  const s2=convention.s2EncoderSign*s2abs;
 
   // Reference-Q calibration of S1.
   // The entered Reference Q is observed at refs1 in the elastic condition.
   const U=b.lc.sv1, V=b.lc.sv2;
   const {ex,ey}=makeSpiceScatteringPlaneBasis(b.rl,U,V);
-  const qAngle=(q,{allowZeroProjection=false}={})=>{
-    if(uiSense==="-+-" || uiSense==="---"){
-      // Exact original -+- azimuth path (--- shares the same crystal geometry).
-      const x=dot(q,ex), y=dot(q,ey);
-      if(Math.hypot(x,y)<1e-12){
-        if(allowZeroProjection) return 0;
-        throw new Error('Calculation Q has no in-plane component and cannot define the TAS sample orientation.');
-      }
-      return rad2deg(Math.atan2(y,x));
-    }
-    return tasCrystalPhiDeg(q,ex,ey,uiSense,{allowZeroProjection});
-  };
+  const qAngle=(q,{allowZeroProjection=false}={})=>
+    tasCrystalPhiDegForConvention(
+      q,ex,ey,convention.sense,convention.s1sign,{allowZeroProjection}
+    );
 
   // Reference Q is needed only for the optional S1/S2 angle calibration.
   // A bad Reference Q must never suppress an otherwise valid resolution result.
   const fixedE=em==='Ei fixed' ? Number(b.config.Ei) : Number(b.config.Ef);
-  const orientationRef=effectiveOrientationReference(b.rl,fixedE,uiSense);
+  const orientationRef=effectiveOrientationReference(b.rl,fixedE,convention);
   const ref=orientationRef.hkl;
   const Qr=hklToQ(b.rl,ref);
   const QrNorm=norm(Qr);
@@ -5708,7 +5091,7 @@ function tasMotorAngles(calc,b){
     return {Ei,Ef,m1,m2,s1:null,s2,a1,a2,
       warning:'Reference Q is outside the measurable range at the selected reference energy; S1 is unavailable.'};
   }
-  const s2Ref=senseS*rad2deg(Math.acos(clamp(cosRef,-1,1)));
+  const s2Ref=convention.s2EncoderSign*rad2deg(Math.acos(clamp(cosRef,-1,1)));
 
   // S1 is a physical sample-axis encoder calibration and must not change when
   // the TAS sign configuration is switched.  The validated -+- convention
@@ -5731,8 +5114,8 @@ function tasMotorAngles(calc,b){
   // PDF x respectively, so atan2(ey,ex) is atan2(Q0_x,Q0_z).
   const phiTarget=qAngle(Qt);
   const phiRef=qAngle(Qr,{allowZeroProjection:true});
-  const omegaTarget=wrap180(tasPhiLabDegForUiSense(ki,kf,s2ForS1,uiSense)-phiTarget);
-  const omegaRef=wrap180(tasPhiLabDegForUiSense(k0,k0,s2RefForS1,uiSense)-phiRef);
+  const omegaTarget=wrap180(tasPhiLabDegForConvention(ki,kf,s2ForS1,convention.sense,convention.s1sign)-phiTarget);
+  const omegaRef=wrap180(tasPhiLabDegForConvention(k0,k0,s2RefForS1,convention.sense,convention.s1sign)-phiRef);
 
   // The validated Python simulation uses C2_TO_OMEGA_SIGN = +1 for its
   // native scattering sense.  The opposite TAS sign configuration is the
@@ -5743,10 +5126,8 @@ function tasMotorAngles(calc,b){
   //   omega = omega_ref + c2Sign * (S1-S1_ref)
   //   S1    = S1_ref + (omega-omega_ref)/c2Sign
   //
-  // Keep the validated +++ and -+- behavior byte-for-byte equivalent to v66.
-  // Only the real/pure +-+ branch reverses the sample encoder so positive S1
-  // is clockwise (e.g. hexagonal 100 @ 0 deg -> 010 @ +60 deg).
-  const c2Sign=(uiSense==="+-+" || uiSense==="---") ? -1 : ((b.config.sign_config==='+-+') ? +1 : -1);
+  // Sample encoder conversion is provided by the common convention object.
+  const c2Sign=convention.c2ToOmegaSign;
   const s1=orientationRef.s1 + angleDiffDeg(omegaTarget,omegaRef)/c2Sign;
 
   return {Ei,Ef,m1,m2,s1,s2,a1,a2,warning:''};
@@ -5757,11 +5138,12 @@ function calcOne(calc){
 
   // Resolution sense convention:
   // The resolution core already defines the physical +-+ / -+- branches.
-  // Pass the user-facing selection directly here.  Keep b.config unchanged,
-  // because Angle calculation / TAS geometry and Q-E calculations retain the
-  // previously validated internal sense mapping via calculationTasSense().
-  assertImplementedUiSense();
-  const resolutionConfig={...b.config,sign_config:selectedTasSense()};
+  // Pass the physical Sense directly. Angle/Q-E/TAS geometry now use the same
+  // Sense + S1-sign convention object instead of a legacy calculation label.
+  // Resolution depends on physical scattering Sense, not on the sample motor
+  // encoder polarity.  Deliberately omit s1sign from the resolution config.
+  const {s1sign:_s1signForMotorOnly,...resolutionBaseConfig}=b.config;
+  const resolutionConfig={...resolutionBaseConfig,sense:selectedTasSense(),sign_config:selectedTasSense()};
   const result=calcResolution(b.lc,b.rl,b.col,b.mos,resolutionConfig,b.approximation,b.focusing,b.geom,calc,b.unitMode);
   let angles;
   try{
@@ -5828,20 +5210,8 @@ function renderResolution(entry,indexInfo='',plotLimits=null){
 
   $('result').classList.remove('hidden');
 
-  // Display-only S2 convention for the derived Sense + S1-sign compatibility branch.
-  // Do not modify angles.s2 itself: the internal signed S2 is used by TAS
-  // geometry/calibration logic.  User-facing encoder pairs are:
-  //   +-+ : +|S2|    +++ : -|S2|
-  //   -+- : +|S2|    --- : -|S2|
-  const selectedSense=currentUiTasSense();
-  const uiSense=legacyTasSense(selectedSense);
-  const s2Display=Number.isFinite(Number(angles.s2))
-    ? (selectedSense==="---"
-        ? -Math.abs(Number(angles.s2))
-        : (selectedSense==="+-+"
-          ? +Math.abs(Number(angles.s2))
-          : (uiSense==="+-+" ? -Math.abs(Number(angles.s2)) : +Math.abs(Number(angles.s2)))))
-    : angles.s2;
+  // Display the signed S2 motor angle produced by the common convention.
+  const s2Display=angles.s2;
 
   $('summary').innerHTML=
     `<div><b>Calculation point</b> ℏω=${calc.hw.toFixed(3)} meV, `+
@@ -6027,9 +5397,8 @@ function powderQFromS2AtHW(s2,hw){
 function powderSignedS2FromQAtHW(q,hw){
   const s2abs=powderS2ForQAtHW(q,hw);
   if(!Number.isFinite(s2abs)) return NaN;
-  const uiSense=currentUiTasSense();
-  if(uiSense==='---') return -Math.abs(s2abs);
-  return legacyTasSense(uiSense)==='+-+' ? -Math.abs(s2abs) : Math.abs(s2abs);
+  const convention=tasConvention(selectedTasSense(),selectedS1Sign());
+  return convention.s2EncoderSign*Math.abs(s2abs);
 }
 
 function powderLinkDriver(){
@@ -6096,23 +5465,26 @@ function powderGeometryTarget(uiSenseOverride=null,rawSenseForDrawing=false){
   let a1abs=braggAngle(kf,num('dAna'),'Analyzer');
   if(checkedValue('geometry')==='anti-W') a1abs=-a1abs;
 
-  // Match the same internal Sense + S1-sign compatibility mapping used by Single-crystal Angle
-  // calculation. Powder has no sample orientation, so S1 is defined as 0.
-  const uiSense=uiSenseOverride ?? currentUiTasSense();
-  const requestedSense=legacyTasSense(uiSense);
-  const internalSense=rawSenseForDrawing ? requestedSense : calculationTasSense(uiSense);
-  let senseM,senseS,senseA;
-  if(internalSense==='+-+'){ senseM=+1; senseS=-1; senseA=+1; }
-  else if(internalSense==='-+-'){ senseM=-1; senseS=+1; senseA=-1; }
-  else throw new Error(`Unsupported TAS sign configuration: ${internalSense}`);
+  // Powder has no sample orientation, but its motor signs follow the same
+  // Sense/S1-sign convention as Single-crystal Angle calculation.
+  let convention=tasConvention(selectedTasSense(),selectedS1Sign());
+  if(uiSenseOverride && typeof uiSenseOverride==="object" && "sense" in uiSenseOverride){
+    convention=tasConvention(uiSenseOverride.sense,uiSenseOverride.s1sign);
+  }else if(uiSenseOverride){
+    const legacy=tasConventionFromLegacyUiSense(uiSenseOverride);
+    convention=tasConvention(legacy.sense,legacy.s1sign);
+  }
+  if(rawSenseForDrawing){
+    convention=tasConvention(convention.sense,"ccw");
+  }
 
   const angles={
-    m1:senseM*m1abs,
-    m2:2*senseM*m1abs,
+    m1:convention.monoSign*m1abs,
+    m2:2*convention.monoSign*m1abs,
     s1:0,
-    s2:senseS*s2abs,
-    a1:senseA*a1abs,
-    a2:2*senseA*a1abs,
+    s2:convention.s2EncoderSign*s2abs,
+    a1:convention.analyzerSign*a1abs,
+    a2:2*convention.analyzerSign*a1abs,
     warning:''
   };
   return {calc:{q,hw,s2:s2abs},q,s2:s2abs,angles,Ei,Ef,ki,kf};
@@ -6856,7 +6228,6 @@ async function initialize(){
   saveGlobalUIState();
   setStatus(`${nInstrument} instrument(s), ${nBG} BG CIF material(s), ${nSE} sample environment(s), ${nNeutron} neutron-data record(s) loaded${(restoredLocalState||restoredRightState||restoredGlobalState) ? ' / local parameters restored' : ''}`);recalculate();
 }
-const workspaceCheckedValue=name=>name==="sense" ? currentUiTasSense() : checkedValue(name);
 ({
   currentGeometryCardTab,
   hklInCurrentScatteringPlane,
@@ -6868,8 +6239,8 @@ const workspaceCheckedValue=name=>name==="sense" ? currentUiTasSense() : checked
   setScatteringPlaneWarning,
   validateAllTimeScanRows
 }=createScriptWorkspace({
-  $, add, buildResolutionLattice, calculateSingleCrystal, checkedValue:workspaceCheckedValue, clamp, cross,
-  currentInstrument, dot, effectiveS2MaxAtEi, hklToQ, legacyTasSense, norm, num,
+  $, add, buildResolutionLattice, calculateSingleCrystal, checkedValue, clamp, cross,
+  currentInstrument, dot, effectiveS2MaxAtEi, hklToQ, tasConvention, norm, num,
   parseNumericValue, qeDarkBlockWarningsForHKLE, rad2deg, renderGeometry,
   resizeVisiblePlots, safeResizePlot, scale, userFacingTasMessage,
   get singleCache(){ return singleCache; },
