@@ -1280,22 +1280,88 @@ function num(id){
   return raw.trim()==="" ? Number(raw) : parseNumericValue(raw);
 }
 
-// TAS sign routing.
+// TAS convention routing.
 //
-// +++ must reproduce exactly the user-facing behavior that this application
-// previously exposed under the label +-+.  That legacy UI branch intentionally
-// entered the opposite internal Q-E/Angle branch.
+// SPICE/TAKIN scattering Sense and the sample-axis motor sign are independent
+// instrument properties.  The UI therefore exposes them separately:
 //
-// The newly restored +-+ branch is the direct/native +-+ calculation from the
-// supplied reference implementation: M/S/A = (+,-,+), with c2Sign = +1 for S1.
-// This gives the requested clockwise-positive S1 convention.
+//   Sense +-+ + S1 CCW -> legacy +++ branch
+//   Sense +-+ + S1 CW  -> legacy +-+ branch
+//   Sense -+- + S1 CCW -> legacy -+- branch
+//   Sense -+- + S1 CW  -> legacy --- branch
 //
-// -+- keeps the previously validated user-facing behavior.
-// --- uses the same physical -+- branch, but reverses only the S1 encoder so CW is positive.
-// TAS sign/configuration routing is implemented in tas-conventions.js.
-function assertImplementedUiSense(){
-  return checkedValue("sense");
+// The legacy four-state branch remains internal only so the already-validated
+// Q-E, Angle calculation, TAS geometry and Dark-angle paths can be reused
+// without changing their numerical behavior.  Resolution receives only the
+// physical SPICE Sense and is intentionally independent of S1 motor polarity.
+function normalizeTasSense(value){
+  return (value==="-+-" || value==="---") ? "-+-" : "+-+";
 }
+function normalizeS1Sign(value){
+  return String(value??"").trim().toLowerCase()==="cw" ? "cw" : "ccw";
+}
+function legacyUiSenseFromTasConvention(sense,s1sign){
+  const physicalSense=normalizeTasSense(sense);
+  const motorSign=normalizeS1Sign(s1sign);
+  if(physicalSense==="+-+") return motorSign==="cw" ? "+-+" : "+++";
+  return motorSign==="cw" ? "---" : "-+-";
+}
+function tasConventionFromLegacyUiSense(value){
+  if(value==="+++") return {sense:"+-+",s1sign:"ccw"};
+  if(value==="+-+") return {sense:"+-+",s1sign:"cw"};
+  if(value==="---") return {sense:"-+-",s1sign:"cw"};
+  return {sense:"-+-",s1sign:"ccw"};
+}
+function selectedTasSense(){ return normalizeTasSense(checkedValue("sense")); }
+function selectedS1Sign(){ return normalizeS1Sign(checkedValue("s1sign")); }
+function currentUiTasSense(){ return legacyUiSenseFromTasConvention(selectedTasSense(),selectedS1Sign()); }
+function assertImplementedUiSense(){ return currentUiTasSense(); }
+
+function setupTasConventionUI(){
+  const senseSelect=$("sense"), senseRow=$("senseRow"), geometryRow=$("geometryRow");
+  if(!senseSelect || !senseRow || !geometryRow) return;
+
+  // Preserve the HTML default while migrating the old four-choice selector.
+  const initial=tasConventionFromLegacyUiSense(senseSelect.value);
+  senseSelect.replaceChildren();
+  for(const value of ["+-+","-+-"]){
+    const option=document.createElement("option");
+    option.value=value; option.textContent=value; senseSelect.appendChild(option);
+  }
+  senseSelect.value=initial.sense;
+  for(const node of senseRow.childNodes){
+    if(node.nodeType===Node.TEXT_NODE && node.nodeValue.trim()){ node.nodeValue="Sense"; break; }
+  }
+
+  let s1Select=$("s1sign");
+  let s1Row=$("s1SignRow");
+  if(!s1Select){
+    s1Row=document.createElement("label");
+    s1Row.id="s1SignRow";
+    s1Row.append("S1 sign");
+    s1Select=document.createElement("select");
+    s1Select.id="s1sign";
+    for(const [value,label] of [["ccw","CCW"],["cw","CW"]]){
+      const option=document.createElement("option");
+      option.value=value; option.textContent=label; s1Select.appendChild(option);
+    }
+    s1Select.value=initial.s1sign;
+    s1Row.appendChild(s1Select);
+  }
+
+  // Put Geometry / Sense / S1 sign on one dedicated three-column row.
+  let row=$("tasConventionRow");
+  if(!row){
+    row=document.createElement("div");
+    row.id="tasConventionRow"; row.className="grid3";
+    const oldParent=senseRow.parentElement;
+    oldParent?.after(row);
+  }
+  row.appendChild(geometryRow);
+  row.appendChild(senseRow);
+  row.appendChild(s1Row);
+}
+setupTasConventionUI();
 
 function checkedValue(name){
   const direct=$(name);
@@ -1411,7 +1477,7 @@ function effectiveOrientationReference(rl, fixedEnergyMeV=null, uiSenseOverride=
   // Preserve the validated +++ / -+- orientation calibration exactly as in v66.
   // Only the real/pure +-+ instrument uses a clockwise-positive S1 encoder.
   // For that branch the virtual Bragg reference therefore reverses sign.
-  const uiSense=uiSenseOverride ?? checkedValue("sense");
+  const uiSense=uiSenseOverride ?? currentUiTasSense();
   const c2Sign=(uiSense==="+-+") ? -1 : (uiSense==="---" ? +1 : (legacyTasSense(uiSense)==="+-+" ? +1 : -1));
   let s1Ref=-c2Sign*0.5*s2Ref;
   // ki ∥ U/V uses the same virtual elastic Bragg reference as ki ⟂ U/V,
@@ -1726,7 +1792,22 @@ function applyInstrumentDefaults(){
   setIf("energy",defaultEnergy);
   setIf("S2min",qr.S2_min ?? inst.S2_min ?? inst.default_S2min ?? 8.0);
   initializeS2MaxControl(inst);
-  setSelect("sense",cfg.sign || qr.sense || inst.sense || "-+-");
+  const hasNewSense=cfg.sense!==undefined || (cfg.sign===undefined && (qr.sense!==undefined || inst.sense!==undefined));
+  const rawSense=cfg.sense ?? cfg.sign ?? qr.sense ?? inst.sense ?? "-+-";
+  const rawS1Sign=cfg.s1sign ?? qr.s1sign ?? inst.s1sign;
+  let tasConvention;
+  if(rawS1Sign!==undefined){
+    tasConvention={sense:normalizeTasSense(rawSense),s1sign:normalizeS1Sign(rawS1Sign)};
+  }else if(hasNewSense && (rawSense==="+-+" || rawSense==="-+-")){
+    // New-format Sense without an explicit motor sign defaults to CCW.
+    tasConvention={sense:normalizeTasSense(rawSense),s1sign:"ccw"};
+  }else{
+    // Backward compatibility for old JSON files whose `sign` stored one of the
+    // four legacy combined states (+++, +-+, -+-, ---).
+    tasConvention=tasConventionFromLegacyUiSense(rawSense);
+  }
+  setSelect("sense",tasConvention.sense);
+  setSelect("s1sign",tasConvention.s1sign);
   setSelect("geometry",cfg.geometry || "W");
   setSelect("method",(inst.approximation||{}).method);
 
@@ -2477,7 +2558,7 @@ function calculateSingleCrystalLegacy(){
   const regions=[], S2list=[], QmaxList=[];
   const darkKF=[],darkKI=[],darkFixed=[];
   const addDark=$("addDark").checked && darkAssets.length>0;
-  const uiSense=checkedValue("sense");
+  const uiSense=currentUiTasSense();
   const sense=calculationTasSense(uiSense);
 
   // Keep the numerical S1 inversion on its original calibration.  S1 is an
@@ -2829,7 +2910,7 @@ function singleNuclearLabelStyle(fullSpan,visibleSpan){
 // prevents +++ S1 / dark-angle conventions from changing the validated -+-
 // accessible region or dark-angle polygons.
 function calculateSingleCrystal(){
-  const uiSense=checkedValue("sense");
+  const uiSense=currentUiTasSense();
   if(uiSense==="+++") return rebuildGeometryMatchedDarkPolygons(calculateSingleCrystalPatched(),"+++");
 
   // --- is physically the same scattering configuration as -+-.
@@ -2841,9 +2922,9 @@ function calculateSingleCrystal(){
   // not dispatch change events, so Angle calculation / TAS geometry keep the
   // independent --- S1 convention outside this calculation.
   if(uiSense==="---"){
-    const senseSelect=$("sense");
+    const senseSelect=$("sense"), s1SignSelect=$("s1sign");
     const s1MinInput=$("S1min"), s1MaxInput=$("S1max");
-    const savedSense=senseSelect?.value;
+    const savedSense=senseSelect?.value, savedS1Sign=s1SignSelect?.value;
     const savedS1min=s1MinInput?.value, savedS1max=s1MaxInput?.value;
 
     // --- has the same physical Q-E / Dark-angle geometry as -+-, but its
@@ -2868,6 +2949,7 @@ function calculateSingleCrystal(){
     const dashRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"---").s1;
 
     if(senseSelect) senseSelect.value="-+-";
+    if(s1SignSelect) s1SignSelect.value="ccw";
     try{
       const minusRef=effectiveOrientationReference(rl,fixedReferenceEnergy,"-+-").s1;
       const dashMin=Number(savedS1min), dashMax=Number(savedS1max);
@@ -2882,6 +2964,7 @@ function calculateSingleCrystal(){
       if(s1MinInput && savedS1min!=null) s1MinInput.value=savedS1min;
       if(s1MaxInput && savedS1max!=null) s1MaxInput.value=savedS1max;
       if(senseSelect && savedSense!=null) senseSelect.value=savedSense;
+      if(s1SignSelect && savedS1Sign!=null) s1SignSelect.value=savedS1Sign;
     }
   }
 
@@ -2946,7 +3029,7 @@ function calculateSingleCrystalPatched(){
   const regions=[], S2list=[], QmaxList=[];
   const darkKF=[],darkKI=[],darkFixed=[];
   const addDark=$("addDark").checked && darkAssets.length>0;
-  const uiSense=checkedValue("sense");
+  const uiSense=currentUiTasSense();
   const sense=calculationTasSense(uiSense);
 
   // Dark-angle polygons must use the same +++ handedness as the corrected S1
@@ -3959,7 +4042,7 @@ function qeGeometryAngles(cache, senseOverride=null, uiSenseOverride=null, calcO
     b.config.Ei=null;
   }
   b.config.sign_config=senseOverride ?? cache.sense;
-  b.config.ui_sign=uiSenseOverride ?? checkedValue("sense");
+  b.config.ui_sign=uiSenseOverride ?? currentUiTasSense();
   const angles=tasMotorAngles(calc,b);
   const Ei=cache.energyMode==="Ei fixed" ? cache.Ei : cache.Ef+calc.hw;
   const Ef=cache.energyMode==="Ei fixed" ? cache.Ei-calc.hw : cache.Ef;
@@ -4220,7 +4303,7 @@ function renderGeometry(cache,index=0){
   // Powder has no crystallographic sample orientation, but the TAS scattering
   // sign still determines the displayed motor-angle branch exactly as it does
   // for Single crystal.
-  const sense=checkedValue("sense");
+  const sense=currentUiTasSense();
   // +++ keeps the exact former +-+ schematic placement.  The native +-+ branch
   // also uses the canonical plus-side drawing; only -+- is mirrored.
   const displaySense=legacyTasSense(sense);
@@ -5166,7 +5249,7 @@ function setGeometryKiOrientationCondition(mode){
     // virtual Bragg reference is +S2/2 rather than -S2/2.
     if(orient===mode && ['perpU','perpV','parallelU','parallelV'].includes(mode)){
       const fixedE=em==="Ei fixed" ? Number(b.config.Ei) : Number(b.config.Ef);
-      const uiSense=b.config.ui_sign ?? checkedValue("sense");
+      const uiSense=b.config.ui_sign ?? currentUiTasSense();
       const orientationRef=effectiveOrientationReference(b.rl,fixedE,uiSense);
       const c2Sign=(uiSense==="+-+" || uiSense==="---") ? -1 : ((b.config.sign_config==='+-+') ? +1 : -1);
 
@@ -5206,7 +5289,7 @@ function setGeometryKiOrientationCondition(mode){
     // round-trips through the *same* tasMotorAngles() path to S1=0.000 deg.
     // This changes only the quick-target HKL written by Set; orientation
     // calibration and all Dark-angle zero/reference calculations are untouched.
-    const setSense=b.config.ui_sign ?? checkedValue("sense");
+    const setSense=b.config.ui_sign ?? currentUiTasSense();
     let targetHKL;
     if(setSense==="+++" || setSense==="---"){
       targetHKL=exactTargetHKL.slice();
@@ -5497,7 +5580,7 @@ function flipScatteringPlaneUV(){
 }
 function collectResolutionBase(){
   const {lc,rl}=buildResolutionLattice(), em=$('energyMode').value,E=num('energy');
-  const uiSign=$('sense').value;
+  const uiSign=currentUiTasSense();
   const config={energy_mode:em,Ei:em==='Ei fixed'?E:null,Ef:em==='Ef fixed'?E:null,geometry:$('geometry').value,sign_config:calculationTasSense(uiSign),ui_sign:uiSign};
   const approximation={method:$('method').value};
   const focusing={monochromator:{horizontal:{enabled:$('monoHF').checked,blades:num('monoHB')},vertical:{enabled:$('monoVF').checked,blades:num('monoVB')}},analyzer:{horizontal:{enabled:$('anaHF').checked,blades:num('anaHB')},vertical:{enabled:$('anaVF').checked,blades:num('anaVB')}}};
@@ -5537,7 +5620,7 @@ function tasMotorAngles(calc,b){
   let a1abs=braggAngle(Ef,b.mos.d_ana,'Analyzer');
   if(b.config.geometry==='anti-W') a1abs=-a1abs;
 
-  const uiSense=b.config.ui_sign ?? checkedValue("sense");
+  const uiSense=b.config.ui_sign ?? currentUiTasSense();
 
   let senseM,senseS,senseA;
   if(b.config.sign_config==='+-+'){
@@ -5656,7 +5739,7 @@ function calcOne(calc){
   // because Angle calculation / TAS geometry and Q-E calculations retain the
   // previously validated internal sense mapping via calculationTasSense().
   assertImplementedUiSense();
-  const resolutionConfig={...b.config,sign_config:legacyTasSense(checkedValue('sense'))};
+  const resolutionConfig={...b.config,sign_config:selectedTasSense()};
   const result=calcResolution(b.lc,b.rl,b.col,b.mos,resolutionConfig,b.approximation,b.focusing,b.geom,calc,b.unitMode);
   let angles;
   try{
@@ -5723,12 +5806,12 @@ function renderResolution(entry,indexInfo='',plotLimits=null){
 
   $('result').classList.remove('hidden');
 
-  // Display-only S2 sign convention for Angle calculation.
+  // Display-only S2 convention for the derived Sense + S1-sign compatibility branch.
   // Do not modify angles.s2 itself: the internal signed S2 is used by TAS
   // geometry/calibration logic.  User-facing encoder pairs are:
   //   +-+ : +|S2|    +++ : -|S2|
   //   -+- : +|S2|    --- : -|S2|
-  const selectedSense=checkedValue("sense");
+  const selectedSense=currentUiTasSense();
   const uiSense=legacyTasSense(selectedSense);
   const s2Display=Number.isFinite(Number(angles.s2))
     ? (selectedSense==="---"
@@ -5922,7 +6005,7 @@ function powderQFromS2AtHW(s2,hw){
 function powderSignedS2FromQAtHW(q,hw){
   const s2abs=powderS2ForQAtHW(q,hw);
   if(!Number.isFinite(s2abs)) return NaN;
-  const uiSense=checkedValue('sense');
+  const uiSense=currentUiTasSense();
   if(uiSense==='---') return -Math.abs(s2abs);
   return legacyTasSense(uiSense)==='+-+' ? -Math.abs(s2abs) : Math.abs(s2abs);
 }
@@ -5991,9 +6074,9 @@ function powderGeometryTarget(uiSenseOverride=null,rawSenseForDrawing=false){
   let a1abs=braggAngle(kf,num('dAna'),'Analyzer');
   if(checkedValue('geometry')==='anti-W') a1abs=-a1abs;
 
-  // Match the same internal/user sign mapping used by Single-crystal Angle
+  // Match the same internal Sense + S1-sign compatibility mapping used by Single-crystal Angle
   // calculation. Powder has no sample orientation, so S1 is defined as 0.
-  const uiSense=uiSenseOverride ?? checkedValue('sense');
+  const uiSense=uiSenseOverride ?? currentUiTasSense();
   const requestedSense=legacyTasSense(uiSense);
   const internalSense=rawSenseForDrawing ? requestedSense : calculationTasSense(uiSense);
   let senseM,senseS,senseA;
@@ -6679,7 +6762,7 @@ async function initialize(){
   $('powderGeomS2')?.addEventListener('input',()=>{ setPowderLinkDriver('s2'); syncPowderLinkedInputs('s2'); });
   $('powderGeomQ')?.addEventListener('input',()=>{ setPowderLinkDriver('q'); syncPowderLinkedInputs('q'); });
   $('powderGeomHW')?.addEventListener('input',()=>syncPowderLinkedInputs());
-  for(const id of ['energy','energyMode','sense']) $(id)?.addEventListener('change',()=>{
+  for(const id of ['energy','energyMode','sense','s1sign']) $(id)?.addEventListener('change',()=>{
     if(checkedValue('sampleMode')==='powder') syncPowderLinkedInputs();
   });
   $('hwEntry').addEventListener('change',()=>{if(singleCache){const i=nearestHWIndex(singleCache,Number($('hwEntry').value));renderSingle(singleCache,i);saveRightPanelState();}});
@@ -6748,6 +6831,7 @@ async function initialize(){
   saveGlobalUIState();
   setStatus(`${nInstrument} instrument(s), ${nBG} BG CIF material(s), ${nSE} sample environment(s), ${nNeutron} neutron-data record(s) loaded${(restoredLocalState||restoredRightState||restoredGlobalState) ? ' / local parameters restored' : ''}`);recalculate();
 }
+const workspaceCheckedValue=name=>name==="sense" ? currentUiTasSense() : checkedValue(name);
 ({
   currentGeometryCardTab,
   hklInCurrentScatteringPlane,
@@ -6759,7 +6843,7 @@ async function initialize(){
   setScatteringPlaneWarning,
   validateAllTimeScanRows
 }=createScriptWorkspace({
-  $, add, buildResolutionLattice, calculateSingleCrystal, checkedValue, clamp, cross,
+  $, add, buildResolutionLattice, calculateSingleCrystal, checkedValue:workspaceCheckedValue, clamp, cross,
   currentInstrument, dot, effectiveS2MaxAtEi, hklToQ, legacyTasSense, norm, num,
   parseNumericValue, qeDarkBlockWarningsForHKLE, rad2deg, renderGeometry,
   resizeVisiblePlots, safeResizePlot, scale, userFacingTasMessage,

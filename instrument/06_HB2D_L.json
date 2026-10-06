@@ -1,7 +1,8 @@
 {
   "name": "Poplar(Larmor)@HFIR",
   "energy_mode": "Ei fixed",
-  "sense": "+++",
+  "sense": "+-+",
+  "s1sign": "ccw",
   "default_energy": 13.9,
   "s2_dep_ei": "no",
   "S2_min": 30.0,
