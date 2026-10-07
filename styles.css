@@ -3173,3 +3173,189 @@ main{
     grid-template-columns:repeat(3,minmax(0,1fr))!important;
   }
 }
+
+/* Structure viewer compact-control refinement. */
+#structurePanel #cifMagMomentRows{
+  max-height:330px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:4px;
+  scrollbar-gutter:stable;
+}
+#structurePanel .structure-color-row{
+  display:grid!important;
+  grid-template-columns:24px minmax(70px,1fr) 72px minmax(170px,1.35fr) 40px!important;
+  gap:7px!important;
+  align-items:end!important;
+  width:100%!important;
+  min-width:0!important;
+}
+#structurePanel .structure-color-row>span{
+  min-width:0!important;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  align-self:center;
+}
+#structurePanel .structure-color-row .structure-color-palette{
+  justify-content:flex-end;
+  min-width:0;
+}
+#structurePanel .structure-color-row .structure-entry-field{justify-self:end;width:72px!important;}
+#structurePanel .structure-color-row .structure-color-swatch{justify-self:end;}
+
+#structurePanel .structure-plot-toolbar{
+  position:absolute;
+  top:10px;
+  left:10px;
+  z-index:8;
+  display:flex;
+  gap:8px;
+  align-items:end;
+  padding:6px 8px;
+  background:rgba(255,255,255,.9);
+  border:1px solid rgba(0,0,0,.12);
+  border-radius:7px;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);
+}
+#structurePanel .structure-plot-toolbar label{font-size:11px;gap:2px;}
+#structurePanel .structure-plot-toolbar select{min-width:94px;padding:3px 5px;}
+#structurePanel .structure-atom-legend{
+  position:absolute;
+  top:10px;
+  right:10px;
+  z-index:8;
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:5px 10px;
+  max-width:46%;
+  padding:6px 8px;
+  background:rgba(255,255,255,.9);
+  border:1px solid rgba(0,0,0,.12);
+  border-radius:7px;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);
+  pointer-events:none;
+  font-size:12px;
+}
+#structurePanel .structure-atom-legend-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+#structurePanel .structure-atom-legend-dot{display:inline-block;width:10px;height:10px;border-radius:50%;border:1px solid rgba(0,0,0,.35);}
+
+@container structure-viewer (max-width:760px){
+  #structurePanel .structure-color-row{
+    grid-template-columns:24px minmax(74px,1fr) 68px minmax(145px,1fr) 40px!important;
+  }
+  #structurePanel .structure-plot-toolbar{flex-direction:column;align-items:stretch;}
+  #structurePanel .structure-atom-legend{max-width:52%;}
+}
+
+/* vNext: compact Atoms / Spins / Bonds tabs and plot-overlay legend placement. */
+#structurePanel .structure-config-section{padding-top:0;overflow:hidden;}
+#structurePanel .structure-config-tabs{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:4px;
+  margin:0 -1px 8px;
+  padding:4px;
+  background:#f2f4f7;
+  border:1px solid #d7dce3;
+  border-radius:8px;
+}
+#structurePanel .structure-config-tabs button{
+  min-width:0;
+  padding:7px 8px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  font-weight:600;
+}
+#structurePanel .structure-config-tabs button.active{
+  background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.12);
+}
+#structurePanel .structure-config-panel[hidden]{display:none!important;}
+#structurePanel .structure-config-panel{min-width:0;}
+#structurePanel .structure-spin-mode-row{
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+}
+#structurePanel .structure-spin-mode-row select{width:100%;min-width:0;}
+
+#structurePanel .structure-plot-overlay-left{
+  position:absolute;
+  top:10px;
+  left:10px;
+  z-index:8;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:7px;
+  max-width:min(64%,520px);
+  pointer-events:none;
+}
+#structurePanel .structure-plot-toolbar{
+  position:static!important;
+  top:auto!important;
+  left:auto!important;
+  pointer-events:auto;
+}
+#structurePanel .structure-atom-legend{
+  position:static!important;
+  top:auto!important;
+  right:auto!important;
+  max-width:100%!important;
+  justify-content:flex-start!important;
+  gap:8px 14px!important;
+  padding:8px 10px!important;
+  font-size:18px!important;
+}
+#structurePanel .structure-atom-legend-item{gap:7px!important;}
+#structurePanel .structure-atom-legend-dot{
+  width:20px!important;
+  height:20px!important;
+  border-width:1.5px!important;
+}
+@container structure-viewer (max-width:760px){
+  #structurePanel .structure-spin-mode-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  #structurePanel .structure-plot-overlay-left{max-width:72%;}
+}
+@container structure-viewer (max-width:520px){
+  #structurePanel .structure-spin-mode-row{grid-template-columns:1fr!important;}
+  #structurePanel .structure-plot-overlay-left{max-width:80%;}
+  #structurePanel .structure-atom-legend{font-size:16px!important;}
+  #structurePanel .structure-atom-legend-dot{width:18px!important;height:18px!important;}
+}
+
+/* vNext: stack the in-plot atom legend vertically below the plot controls. */
+#structurePanel .structure-atom-legend{
+  display:flex!important;
+  flex-direction:column!important;
+  flex-wrap:nowrap!important;
+  align-items:flex-start!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+  width:max-content;
+  max-width:100%!important;
+}
+#structurePanel .structure-atom-legend-item{
+  display:flex!important;
+  width:auto;
+}
+
+/* vNext: consistent ordering UI, no duplicate tab headings/default buttons, and readable labels. */
+#structurePanel .structure-config-panel{
+  padding-top:2px;
+}
+#structurePanel .structure-entry-label{
+  font-size:13.5px!important;
+  line-height:1.25!important;
+  color:#222!important;
+}
+#structurePanel .structure-plot-toolbar label{
+  font-size:13.5px!important;
+  line-height:1.25!important;
+  gap:4px!important;
+}
+#structurePanel input::placeholder{
+  color:#8b929b;
+  opacity:.62;
+}

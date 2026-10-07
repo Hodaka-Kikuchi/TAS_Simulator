@@ -489,44 +489,47 @@
               <input id="cifRangeZ" type="hidden" value="0 1">
             </div>
           </div>
-          <div class="structure-control-section">
-            <div class="structure-section-heading">
-              <h3>Magnetic ion moments</h3>
-              <button id="cifDefaultMoments" type="button">Default</button>
+          <div class="structure-control-section structure-config-section">
+            <div class="structure-config-tabs" role="tablist" aria-label="Structure display controls">
+              <button type="button" class="active" data-structure-config-tab="atoms" role="tab" aria-selected="true">Atoms</button>
+              <button type="button" data-structure-config-tab="spins" role="tab" aria-selected="false">Spins</button>
+              <button type="button" data-structure-config-tab="bonds" role="tab" aria-selected="false">Bonds</button>
             </div>
-            <div class="structure-moment-axis-row">
-              <label class="structure-entry-field"><span class="structure-entry-label">Structure type</span><select id="cifMomentStructureType">
-                <option value="collinear" selected>Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option>
-              </select></label>
-              <label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
-                <option value="a">a</option><option value="b">b</option><option value="c" selected>c</option>
-              </select></label>
-              <label class="structure-entry-field"><span class="structure-entry-label">Chirality</span><select id="cifMomentChirality">
-                <option value="CCW" selected>CCW</option><option value="CW">CW</option>
-              </select></label>
+            <div class="structure-config-panel active" data-structure-config-panel="atoms">
+              <div id="cifAtomColorRows" class="structure-rows-list"></div>
             </div>
-            <div id="cifMagMomentRows" class="structure-rows-list"></div>
-          </div>
-          <div class="structure-control-section">
-            <div class="structure-section-heading">
-              <h3>Atoms</h3>
-              <button id="cifDefaultAtoms" type="button">Default</button>
+            <div class="structure-config-panel" data-structure-config-panel="spins" hidden>
+              <div class="structure-moment-axis-row structure-spin-mode-row">
+                <label class="structure-entry-field"><span class="structure-entry-label">Propagation vector</span><select id="cifMomentPropagationVector"></select></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Structure type</span><select id="cifMomentStructureType">
+                  <option value="collinear" selected>Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option>
+                </select></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
+                  <option value="a">a</option><option value="b">b</option><option value="c" selected>c</option>
+                </select></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Chirality</span><select id="cifMomentChirality">
+                  <option value="CCW" selected>CCW</option><option value="CW">CW</option>
+                </select></label>
+              </div>
+              <div id="cifMagMomentRows" class="structure-rows-list"></div>
             </div>
-            <div id="cifAtomColorRows" class="structure-rows-list"></div>
-          </div>
-          <div class="structure-control-section">
-            <div class="structure-section-heading">
-              <h3>Bonds</h3>
-              <button id="cifDefaultBonds" type="button">Default</button>
+            <div class="structure-config-panel" data-structure-config-panel="bonds" hidden>
+              <div id="cifBondRows" class="structure-rows-list"></div>
+              <button id="cifAddBondRule" class="structure-add-bond-button" type="button">+ Add bond</button>
+              <div class="structure-help-text">Examples: Ni–Ni 0–5 Å, Ni–O 0–3 Å.</div>
             </div>
-            <div id="cifBondRows" class="structure-rows-list"></div>
-            <button id="cifAddBondRule" class="structure-add-bond-button" type="button">+ Add bond</button>
-            <div class="structure-help-text">Examples: Ni–Ni 0–5 Å, Ni–O 0–3 Å.</div>
           </div>
         </div>
         <div class="structure-viewer-main">
           <div id="cifStructureStatus" class="cif-structure-status" aria-live="polite">Open the Structure tab to visualize the generated or selected CIF.</div>
           <div class="structure-plot-wrap">
+            <div class="structure-plot-overlay-left">
+              <div class="structure-plot-toolbar" aria-label="Structure plot display options">
+                <label><span>Unit cell</span><select id="cifUnitCellMode"><option value="all">All cells</option><option value="one" selected>One cell</option><option value="none">None</option></select></label>
+                <label><span>XYZ axes</span><select id="cifShowXYZ"><option value="show" selected>Show</option><option value="hide">Hide</option></select></label>
+              </div>
+              <div id="cifAtomLegend" class="structure-atom-legend" aria-label="Atom legend"></div>
+            </div>
             <div id="cifStructurePlot" class="cif-structure-plot"></div>
             <svg id="cifDirectTriad" class="structure-triad structure-triad-left" viewBox="0 0 160 160" aria-hidden="true"></svg>
             <svg id="cifReciprocalTriad" class="structure-triad structure-triad-right" viewBox="0 0 160 160" aria-hidden="true"></svg>
