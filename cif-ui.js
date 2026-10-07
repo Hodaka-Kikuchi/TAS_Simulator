@@ -118,8 +118,13 @@ function restoreSelectedCifLocal(){
 function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   const parsed=parseCifStructure(text);
   const cifText=String(text??"");
+  // Save the currently displayed structure before switching.  Settings are
+  // stored per structure fingerprint, so they can only return for the same CIF.
+  saveStructureViewerState();
   setSelectedCifState(parsed,fileName,cifText);
   cifStructureSourcePreference="selected";
+  restoreStructureViewerState();
+  prepareStructureViewerControls();
   if(persist) saveSelectedCifLocal(cifText,fileName);
 
   // A selected/generated CIF defines the crystallographic unit cell. Keep the
@@ -153,7 +158,9 @@ async function selectCifFile(file){
 }
 
 function clearSelectedCif(){
+  saveStructureViewerState();
   setSelectedCifState(null,"","");
+  resetStructureViewerStateToDefaults();
   try{ localStorage.removeItem(SELECTED_CIF_STORAGE_KEY); }catch(_e){}
   cifStructureSourcePreference="selected";
   if($("cifFileInput")) $("cifFileInput").value="";
@@ -333,7 +340,7 @@ let lastGeneratedCifSpaceGroup=null;
 let lastGeneratedReflections=[];
 let cifStructureViewMode="a";
 let cifStructureSourcePreference="generated";
-const STRUCTURE_VIEWER_STORAGE_KEY="tas-simulator-structure-viewer-v1";
+const STRUCTURE_VIEWER_STORAGE_KEY="tas-simulator-structure-viewer-v2";
 let restoringStructureViewer=false;
 let restoredStructureBondRules=null;
 let structureCameraState=null;
@@ -344,6 +351,11 @@ let structureMomentStructureType="collinear";
 let structureMomentRotationAxis="c";
 let structureMomentChirality="CCW";
 let structureMomentPropagationIndex=0;
+let structureMomentDirectionMode="cartesian";
+let structureMomentGlobalWidth=6;
+let structureMomentGlobalHeadSize=0.5;
+let structureMomentGlobalWidthBlank=false;
+let structureMomentGlobalHeadBlank=false;
 let structureUnitCellMode="one";
 let structureShowXYZ=true;
 // Every CIF asymmetric site is available in the Spins tab.
@@ -366,15 +378,76 @@ const structureElementDefaultColors=new Map();
 let structureControlSignature="";
 const STRUCTURE_PALETTE=["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd","#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf","#c2185b","#009688"];
 
+function structureStateFingerprint(structure){
+  if(!structure) return "";
+  const raw=structureSignature(structure);
+  // Small deterministic FNV-1a fingerprint.  This is only a localStorage key,
+  // not a security hash.  The full structure signature is also stored in the
+  // saved entry so an accidental hash collision cannot restore the wrong state.
+  let h=0x811c9dc5;
+  for(let i=0;i<raw.length;i++){
+    h^=raw.charCodeAt(i);
+    h=Math.imul(h,0x01000193)>>>0;
+  }
+  return h.toString(16).padStart(8,"0");
+}
+function currentStructureStateIdentity(){
+  const source=currentStructureForViewer();
+  if(!source?.structure) return null;
+  const signature=structureSignature(source.structure);
+  return {fingerprint:structureStateFingerprint(source.structure),signature};
+}
+function readStructureViewerStateStore(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(STRUCTURE_VIEWER_STORAGE_KEY)||"null");
+    if(parsed?.version===2 && parsed.states && typeof parsed.states==="object") return parsed;
+  }catch(_e){}
+  return {version:2,states:{}};
+}
+function resetStructureViewerStateToDefaults(){
+  restoringStructureViewer=true;
+  try{
+    cifStructureViewMode="a";
+    structureCameraState=null;
+    structureCameraWatchSignature="";
+    for(const axis of ["x","y","z"]){
+      const cap=axis.toUpperCase();
+      if($("cifRange"+cap)) $("cifRange"+cap).value="0 1";
+      if($("cifRange"+cap+"Min")) $("cifRange"+cap+"Min").value="0";
+      if($("cifRange"+cap+"Max")) $("cifRange"+cap+"Max").value="1";
+    }
+    structureAtomColorOverrides.clear();
+    structureAtomSizeOverrides.clear();
+    structureAtomSizeCleared.clear();
+    structureAtomVisibility.clear();
+    structureMomentSettings.clear();
+    structureMomentStructureType="collinear";
+    structureMomentRotationAxis="c";
+    structureMomentChirality="CCW";
+    structureMomentPropagationIndex=0;
+    structureMomentDirectionMode="cartesian";
+    structureMomentGlobalWidth=6;
+    structureMomentGlobalHeadSize=0.5;
+    structureMomentGlobalWidthBlank=false;
+    structureMomentGlobalHeadBlank=false;
+    structureUnitCellMode="one";
+    structureShowXYZ=true;
+    restoredStructureBondRules=[];
+    structureControlSignature="";
+    const unitCellSelect=$("cifUnitCellMode"); if(unitCellSelect) unitCellSelect.value="one";
+    const xyzSelect=$("cifShowXYZ"); if(xyzSelect) xyzSelect.value="show";
+  }finally{ restoringStructureViewer=false; }
+}
 function saveStructureViewerState(){
   if(restoringStructureViewer) return;
   try{
+    const identity=currentStructureStateIdentity();
+    if(!identity) return;
     const liveMoments=currentMomentSettings();
     for(const [key,value] of liveMoments) structureMomentSettings.set(key,value);
     const payload={
-      version:1,
+      signature:identity.signature,
       viewMode:cifStructureViewMode,
-      sourcePreference:cifStructureSourcePreference,
       range:structureRange(),
       atomColors:Object.fromEntries(structureAtomColorOverrides),
       atomSizes:Object.fromEntries(structureAtomSizeOverrides),
@@ -385,23 +458,37 @@ function saveStructureViewerState(){
       momentRotationAxis:structureMomentRotationAxis,
       momentChirality:structureMomentChirality,
       momentPropagationIndex:structureMomentPropagationIndex,
+      momentDirectionMode:structureMomentDirectionMode,
+      momentGlobalWidth:structureMomentGlobalWidth,
+      momentGlobalHeadSize:structureMomentGlobalHeadSize,
+      momentGlobalWidthBlank:structureMomentGlobalWidthBlank,
+      momentGlobalHeadBlank:structureMomentGlobalHeadBlank,
       unitCellMode:structureUnitCellMode,
       showXYZ:structureShowXYZ,
       bonds:readStructureBondRules()
     };
-    localStorage.setItem(STRUCTURE_VIEWER_STORAGE_KEY,JSON.stringify(payload));
+    const store=readStructureViewerStateStore();
+    store.states[identity.fingerprint]=payload;
+    localStorage.setItem(STRUCTURE_VIEWER_STORAGE_KEY,JSON.stringify(store));
   }catch(_e){}
 }
 function restoreStructureViewerState(){
-  let saved;
-  try{ saved=JSON.parse(localStorage.getItem(STRUCTURE_VIEWER_STORAGE_KEY)||"null"); }catch(_e){ return false; }
-  if(!saved || saved.version!==1) return false;
+  const identity=currentStructureStateIdentity();
+  if(!identity){ resetStructureViewerStateToDefaults(); return false; }
+  const store=readStructureViewerStateStore();
+  const saved=store.states?.[identity.fingerprint];
+  // Different CIF/structure: never leak atom colours, spin settings or bonds
+  // from the previously displayed structure.
+  if(!saved || saved.signature!==identity.signature){
+    resetStructureViewerStateToDefaults();
+    return false;
+  }
   restoringStructureViewer=true;
   try{
     // Always start the Structure viewer from the crystallographic a direction.
-    // Other viewer settings are restored, but the previous camera preset is intentionally not.
     cifStructureViewMode="a";
-    if(["generated","selected"].includes(saved.sourcePreference)) cifStructureSourcePreference=saved.sourcePreference;
+    structureCameraState=null;
+    structureCameraWatchSignature="";
     for(const axis of ["x","y","z"]){
       const cap=axis.toUpperCase();
       const legacy=Number(saved.repeat?.[axis]);
@@ -424,14 +511,21 @@ function restoreStructureViewerState(){
     structureMomentSettings.clear();
     for(const [key,value] of Object.entries(saved.moments||{})) if(value && typeof value==="object") structureMomentSettings.set(key,{...value});
     if(["collinear","helical","sinusoidal"].includes(String(saved.momentStructureType||""))) structureMomentStructureType=String(saved.momentStructureType);
-    else if(String(saved.momentStructureType||"")==="uniform") structureMomentStructureType="collinear";
     if(["a","b","c"].includes(String(saved.momentRotationAxis||""))) structureMomentRotationAxis=String(saved.momentRotationAxis);
-    else if(["x","y","z"].includes(String(saved.momentRotationAxis||""))) structureMomentRotationAxis="c";
     if(["CW","CCW"].includes(String(saved.momentChirality||""))) structureMomentChirality=String(saved.momentChirality);
     { const n=Number(saved.momentPropagationIndex); structureMomentPropagationIndex=Number.isInteger(n)&&n>0?n:0; }
+    if(["cartesian","polar"].includes(String(saved.momentDirectionMode||""))) structureMomentDirectionMode=String(saved.momentDirectionMode);
+    { const n=Number(saved.momentGlobalWidth); if(Number.isFinite(n)&&n>=1) structureMomentGlobalWidth=n; }
+    { const n=Number(saved.momentGlobalHeadSize); if(Number.isFinite(n)&&n>0) structureMomentGlobalHeadSize=n; }
+    structureMomentGlobalWidthBlank=saved.momentGlobalWidthBlank===true;
+    structureMomentGlobalHeadBlank=saved.momentGlobalHeadBlank===true;
     if(["all","one","none"].includes(String(saved.unitCellMode||""))) structureUnitCellMode=String(saved.unitCellMode);
+    else structureUnitCellMode="one";
     structureShowXYZ=saved.showXYZ!==false;
     restoredStructureBondRules=Array.isArray(saved.bonds)?saved.bonds.map(x=>({...x})):[];
+    structureControlSignature="";
+    const unitCellSelect=$("cifUnitCellMode"); if(unitCellSelect) unitCellSelect.value=structureUnitCellMode;
+    const xyzSelect=$("cifShowXYZ"); if(xyzSelect) xyzSelect.value=structureShowXYZ?"show":"hide";
     return true;
   }finally{ restoringStructureViewer=false; }
 }
@@ -443,6 +537,18 @@ function vecDot(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
 function vecCross(a,b){ return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]; }
 function vecNorm(v){ return Math.hypot(v[0],v[1],v[2]); }
 function vecNormalize(v){ const n=vecNorm(v); return n>1e-12 ? [v[0]/n,v[1]/n,v[2]/n] : [0,0,1]; }
+function directionToPolar(v){
+  const n=vecNormalize(v);
+  const theta=Math.acos(Math.max(-1,Math.min(1,n[2])))*180/PI;
+  let phi=Math.atan2(n[1],n[0])*180/PI;
+  if(phi<0) phi+=360;
+  return {theta,phi};
+}
+function directionFromPolar(thetaDeg,phiDeg){
+  const theta=Number(thetaDeg)*PI/180, phi=Number(phiDeg)*PI/180;
+  if(!Number.isFinite(theta)||!Number.isFinite(phi)) return [0,0,1];
+  return [Math.sin(theta)*Math.cos(phi),Math.sin(theta)*Math.sin(phi),Math.cos(theta)];
+}
 function fracWrap01(x){ return ((x%1)+1)%1; }
 function clampInt(value,min,max,fallback=1){
   const n=Math.round(Number(value));
@@ -848,6 +954,58 @@ function compressStructureSiteLabels(labels,element=""){
   }
   return cleaned.join(", ");
 }
+
+function setSpinEnabledForElement(element,enabled){
+  const target=String(element||"");
+  const live=currentMomentSettings();
+  for(const [key,value] of live) structureMomentSettings.set(key,value);
+  for(const row of document.querySelectorAll("#cifMagMomentRows .structure-moment-row")){
+    if(String(row.dataset.momentElement||"")!==target) continue;
+    const checkbox=row.querySelector('[data-moment-field="enabled"]');
+    if(checkbox) checkbox.checked=!!enabled;
+    const key=row.dataset.momentKey;
+    if(!key) continue;
+    const cur=structureMomentSettings.get(key)||{};
+    structureMomentSettings.set(key,{...cur,enabled:!!enabled});
+  }
+  syncSpinElementToggleStates();
+}
+function syncSpinElementToggleStates(){
+  const host=$("cifSpinElementToggles");
+  if(!host) return;
+  for(const checkbox of host.querySelectorAll('input[data-spin-element]')){
+    const element=String(checkbox.dataset.spinElement||"");
+    const rows=[...document.querySelectorAll("#cifMagMomentRows .structure-moment-row")].filter(row=>String(row.dataset.momentElement||"")===element);
+    const states=rows.map(row=>!!row.querySelector('[data-moment-field="enabled"]')?.checked);
+    const checked=states.length>0 && states.every(Boolean);
+    const any=states.some(Boolean);
+    checkbox.checked=checked;
+    checkbox.indeterminate=any && !checked;
+  }
+}
+function updateSpinElementToggles(structure){
+  const host=$("cifSpinElementToggles");
+  if(!host) return;
+  host.replaceChildren();
+  const elements=structureElements(structure);
+  for(const element of elements){
+    const label=document.createElement("label");
+    label.className="structure-spin-element-toggle";
+    const checkbox=document.createElement("input");
+    checkbox.type="checkbox";
+    checkbox.dataset.spinElement=element;
+    const text=document.createElement("span");
+    text.textContent=`All ${element}`;
+    checkbox.addEventListener("change",()=>{
+      setSpinEnabledForElement(element,checkbox.checked);
+      saveStructureViewerState();
+      renderCifStructureIfVisible();
+    });
+    label.append(checkbox,text);
+    host.appendChild(label);
+  }
+  syncSpinElementToggleStates();
+}
 function updateStructureAtomColorRows(elements,structure=null){
   const host=$("cifAtomColorRows");
   if(!host) return;
@@ -886,7 +1044,12 @@ function updateStructureAtomColorRows(elements,structure=null){
       renderCifStructureIfVisible();
     };
     custom.addEventListener("input",()=>applyColor(custom.value));
-    visible.addEventListener("change",()=>{ structureAtomVisibility.set(element,visible.checked); saveStructureViewerState(); renderCifStructureIfVisible(); });
+    visible.addEventListener("change",()=>{
+      structureAtomVisibility.set(element,visible.checked);
+      if(!visible.checked) setSpinEnabledForElement(element,false);
+      saveStructureViewerState();
+      renderCifStructureIfVisible();
+    });
     size.addEventListener("input",()=>{
       const raw=String(size.value||"").trim();
       const n=Number(raw);
@@ -925,31 +1088,31 @@ function currentMomentSettings(){
   for(const row of rows){
     const key=row.dataset.momentKey;
     if(!key) continue;
-    const geometryInput=row.querySelector('[data-moment-field="geometry"]'); // legacy combined control
-    const geometryParts=String(geometryInput?.value||"").trim().split(/[\s,]+/).map(Number);
     const fallback=structureMomentSettings.get(key)||{};
-    const displayNumber=(field,defaultValue,minValue,legacyIndex)=>{
-      const input=row.querySelector(`[data-moment-field="${field}"]`);
-      const raw=String(input?.value??"").trim();
-      if(raw){ const n=Number(raw); if(Number.isFinite(n)) return Math.max(minValue,n); }
-      if(!input && Number.isFinite(geometryParts[legacyIndex])) return Math.max(minValue,geometryParts[legacyIndex]);
-      return defaultValue;
-    };
+    let mx=Number(fallback.mx)||0, my=Number(fallback.my)||0, mz=Number(fallback.mz);
+    if(!Number.isFinite(mz)) mz=1;
+    const thetaInput=row.querySelector('[data-moment-field="theta"]');
+    const phiInput=row.querySelector('[data-moment-field="phi"]');
+    if(thetaInput || phiInput){
+      const theta=Number(thetaInput?.value);
+      const phi=Number(phiInput?.value);
+      if(Number.isFinite(theta)&&Number.isFinite(phi)) [mx,my,mz]=directionFromPolar(theta,phi);
+    }else{
+      const x=row.querySelector('[data-moment-field="mx"]');
+      const y=row.querySelector('[data-moment-field="my"]');
+      const z=row.querySelector('[data-moment-field="mz"]');
+      if(x) mx=Number(x.value)||0;
+      if(y) my=Number(y.value)||0;
+      if(z) mz=Number(z.value)||0;
+    }
     const sizeInput=row.querySelector('[data-moment-field="size"]');
-    const widthInput=row.querySelector('[data-moment-field="width"]');
-    const headInput=row.querySelector('[data-moment-field="headSize"]');
-    const size=displayNumber("size",1,0.05,0);
-    const width=displayNumber("width",6,1,1);
-    const headSize=displayNumber("headSize",0.5,0.01,2);
+    const rawSize=String(sizeInput?.value??"").trim();
+    const size=rawSize && Number.isFinite(Number(rawSize)) ? Math.max(0.05,Number(rawSize)) : 1;
     out.set(key,{
       enabled:!!row.querySelector('[data-moment-field="enabled"]')?.checked,
-      mx:Number(row.querySelector('[data-moment-field="mx"]')?.value)||0,
-      my:Number(row.querySelector('[data-moment-field="my"]')?.value)||0,
-      mz:Number(row.querySelector('[data-moment-field="mz"]')?.value)||0,
-      size,width,headSize,
-      sizeBlank:!!sizeInput && String(sizeInput.value??"").trim()==="",
-      widthBlank:!!widthInput && String(widthInput.value??"").trim()==="",
-      headSizeBlank:!!headInput && String(headInput.value??"").trim()==="",
+      mx,my,mz,size,
+      width:structureMomentGlobalWidth,headSize:structureMomentGlobalHeadSize,
+      sizeBlank:!!sizeInput && rawSize==="",
       color:row.querySelector('[data-moment-field="color"]')?.value || row.dataset.momentColor || elementColor(row.dataset.momentElement),
       colorCustomized:row.dataset.momentColorCustom==="1"
     });
@@ -1000,37 +1163,34 @@ function updateMagneticMomentRows(structure){
     const xyz=document.createElement("div");
     xyz.className="structure-moment-vector structure-entry-grid";
     const momentInputs=[];
-    for(const [field,labelText,value] of [["mx","x",setting.mx],["my","y",setting.my],["mz","z",setting.mz]]){
-      const inp=document.createElement("input");
-      inp.type="number";
-      inp.step="0.1";
-      inp.value=String(value);
-      inp.dataset.momentField=field;
-      inp.title=field.toUpperCase();
-      momentInputs.push(inp);
-      xyz.appendChild(makeField(labelText,inp));
+    if(structureMomentDirectionMode==="polar"){
+      const polar=directionToPolar([setting.mx,setting.my,setting.mz]);
+      for(const [field,labelText,value] of [["theta","θ (from +z)",polar.theta],["phi","φ (from +x in xy)",polar.phi]]){
+        const inp=document.createElement("input");
+        inp.type="number"; inp.step="1"; inp.value=Number(value).toFixed(3).replace(/\.?0+$/,"");
+        inp.dataset.momentField=field;
+        inp.title=field==="theta"?"Polar angle θ from +z (degrees)":"Azimuth φ from +x toward +y (degrees)";
+        momentInputs.push(inp); xyz.appendChild(makeField(labelText,inp));
+      }
+    }else{
+      for(const [field,labelText,value] of [["mx","x",setting.mx],["my","y",setting.my],["mz","z",setting.mz]]){
+        const inp=document.createElement("input");
+        inp.type="number"; inp.step="0.1"; inp.value=String(value); inp.dataset.momentField=field;
+        inp.title=`${labelText} direction component`; momentInputs.push(inp); xyz.appendChild(makeField(labelText,inp));
+      }
     }
 
     const geometry=document.createElement("div");
     geometry.className="structure-moment-geometry structure-entry-grid";
     const geometryInputs=[];
-    for(const [field,labelText,value,min,step] of [
-      ["size","Length",setting.size,0.05,0.05],
-      ["width","Width",Number.isFinite(Number(setting.width))?setting.width:6,1,1],
-      ["headSize","Head",Number.isFinite(Number(setting.headSize))?setting.headSize:0.5,0.01,0.05]
-    ]){
+    {
       const inp=document.createElement("input");
-      inp.type="number"; inp.min=String(min); inp.step=String(step); inp.dataset.momentField=field;
-      const defaultValue=field==="size"?1:(field==="width"?6:0.5);
-      const numericValue=Number(value);
-      const blankFlag=field==="size"?!!setting.sizeBlank:(field==="width"?!!setting.widthBlank:!!setting.headSizeBlank);
-      inp.value=blankFlag ? "" : String(Number.isFinite(numericValue)?numericValue:defaultValue);
-      inp.placeholder=String(defaultValue);
-      inp.title=field==="size"
-        ? `Length from atom center to one end (full displayed arrow length = 2 × Length; leave blank for default ${defaultValue})`
-        : `${labelText} (leave blank for default ${defaultValue})`;
-      geometryInputs.push(inp);
-      geometry.appendChild(makeField(labelText,inp));
+      inp.type="number"; inp.min="0.05"; inp.step="0.05"; inp.dataset.momentField="size";
+      const numericValue=Number(setting.size);
+      inp.value=setting.sizeBlank ? "" : String(Number.isFinite(numericValue)?numericValue:1);
+      inp.placeholder="1";
+      inp.title="Length from atom center to one end (full displayed arrow length = 2 × Length; leave blank for default 1)";
+      geometryInputs.push(inp); geometry.appendChild(makeField("Length",inp));
     }
 
     const picker=makeMomentColorPicker(setting.color,color=>{
@@ -1050,15 +1210,14 @@ function updateMagneticMomentRows(structure){
       saveStructureViewerState();
       renderCifStructureIfVisible();
     };
-    enabled.addEventListener("change",commit);
+    enabled.addEventListener("change",()=>{ commit(); syncSpinElementToggleStates(); });
     for(const input of geometryInputs){
       input.addEventListener("input",commit);
       input.addEventListener("change",commit);
     }
     for(const input of momentInputs){
       const autoEnable=()=>{
-        const nonzero=momentInputs.some(x=>Math.abs(Number(x.value)||0)>1e-12);
-        if(nonzero && !enabled.checked) enabled.checked=true;
+        if(!enabled.checked) enabled.checked=true;
         commit();
       };
       input.addEventListener("input",autoEnable);
@@ -1068,6 +1227,7 @@ function updateMagneticMomentRows(structure){
     row.append(enabled,siteLabel,xyz,geometry,picker);
     host.appendChild(row);
   });
+  updateSpinElementToggles(structure);
 }
 function parseBondRange(value,fallbackMin=0,fallbackMax=3){
   const parts=String(value??"").trim().split(/[\s,]+/).filter(Boolean).map(Number);
@@ -1317,7 +1477,7 @@ function magneticStructureTraces(atoms,basis,structure){
     let dir=vecNormalize(moment);
     let amplitude=1;
     if(structureMomentStructureType==="helical"){
-      const chiralitySign=structureMomentChirality==="CW" ? -1 : 1;
+      const chiralitySign=structureMomentChirality==="CW" ? 1 : -1;
       dir=vecNormalize(rotateVectorAroundAxis(moment,rotationAxis,chiralitySign*basePhase));
     }else if(structureMomentStructureType==="sinusoidal"){
       amplitude=Math.cos(basePhase);
@@ -1332,8 +1492,8 @@ function magneticStructureTraces(atoms,basis,structure){
       if(phaseAmplitude<0) dir=vecScale(dir,-1);
     }
     const length=Math.max(0.05,Number(setting.size)||1)*amplitude;
-    const width=Math.max(1,Number(setting.width)||6);
-    const headLength=Math.min(Math.max(0.01,Number(setting.headSize)||0.5),2*length*0.95);
+    const width=Math.max(1,Number(structureMomentGlobalWidth)||6);
+    const headLength=Math.min(Math.max(0.01,Number(structureMomentGlobalHeadSize)||0.5),2*length*0.95);
     const center=fractionalToCartesian(basis,frac);
     // Length is the center-to-end (half-length) setting.  The displayed arrow
     // is symmetric about the atom position: tail = center - L*dir,
@@ -1532,6 +1692,41 @@ function prepareStructureViewerControls(){
   const structureTypeSelect=$("cifMomentStructureType");
   const axisSelect=$("cifMomentRotationAxis");
   const chiralitySelect=$("cifMomentChirality");
+  const directionSelect=$("cifMomentDirectionMode");
+  const widthInput=$("cifMomentGlobalWidth");
+  const headInput=$("cifMomentGlobalHead");
+  if(directionSelect){
+    directionSelect.value=structureMomentDirectionMode;
+    if(!directionSelect.dataset.structureBound){
+      directionSelect.dataset.structureBound="1";
+      directionSelect.addEventListener("change",()=>{
+        const live=currentMomentSettings();
+        for(const [key,value] of live) structureMomentSettings.set(key,value);
+        structureMomentDirectionMode=directionSelect.value==="polar"?"polar":"cartesian";
+        saveStructureViewerState();
+        updateMagneticMomentRows(currentStructureForViewer()?.structure||null);
+        renderCifStructureIfVisible();
+      });
+    }
+  }
+  const bindGlobalArrowInput=(input,kind)=>{
+    if(!input) return;
+    const isWidth=kind==="width", defaultValue=isWidth?6:0.5;
+    const blank=isWidth?structureMomentGlobalWidthBlank:structureMomentGlobalHeadBlank;
+    input.value=blank?"":String(isWidth?structureMomentGlobalWidth:structureMomentGlobalHeadSize);
+    input.placeholder=String(defaultValue);
+    if(input.dataset.structureBound) return;
+    input.dataset.structureBound="1";
+    const commit=()=>{
+      const raw=String(input.value||"").trim(); const n=Number(raw);
+      if(isWidth){ structureMomentGlobalWidthBlank=!raw; structureMomentGlobalWidth=raw&&Number.isFinite(n)?Math.max(1,n):6; }
+      else{ structureMomentGlobalHeadBlank=!raw; structureMomentGlobalHeadSize=raw&&Number.isFinite(n)?Math.max(0.01,n):0.5; }
+      saveStructureViewerState(); renderCifStructureIfVisible();
+    };
+    input.addEventListener("input",commit); input.addEventListener("change",commit);
+  };
+  bindGlobalArrowInput(widthInput,"width");
+  bindGlobalArrowInput(headInput,"head");
   const syncMomentStructureModeControls=()=>{
     const helical=structureMomentStructureType==="helical";
     if(axisSelect) axisSelect.disabled=!helical;
@@ -1624,7 +1819,7 @@ function renderCifStructureView(){
   structureCameraState=copyStructureCamera(mainCamera);
   const layout={
     margin:{l:0,r:0,t:8,b:0},paper_bgcolor:"#fff",plot_bgcolor:"#fff",showlegend:false,
-    scene:{aspectmode:"data",dragmode:"orbit",xaxis:{visible:structureShowXYZ,title:"x (Å)",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},yaxis:{visible:structureShowXYZ,title:"y (Å)",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},zaxis:{visible:structureShowXYZ,title:"z (Å)",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},camera:mainCamera},
+    scene:{aspectmode:"data",dragmode:"orbit",xaxis:{visible:structureShowXYZ,title:{text:"x (Å)",font:{size:18,color:"#222"}},showticklabels:structureShowXYZ,tickfont:{size:12},ticks:"outside",showline:true,linecolor:"#666",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},yaxis:{visible:structureShowXYZ,title:{text:"y (Å)",font:{size:18,color:"#222"}},showticklabels:structureShowXYZ,tickfont:{size:12},ticks:"outside",showline:true,linecolor:"#666",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},zaxis:{visible:structureShowXYZ,title:{text:"z (Å)",font:{size:18,color:"#222"}},showticklabels:structureShowXYZ,tickfont:{size:12},ticks:"outside",showline:true,linecolor:"#666",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},camera:mainCamera},
     uirevision:"cif-structure-interactive"
   };
   Plotly.react(plot,traces,layout,{displaylogo:false,responsive:true,scrollZoom:true});

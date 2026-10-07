@@ -67,6 +67,7 @@ export function createToolbox({
       table.style.gridTemplateColumns='max-content repeat(11,minmax(105px,1fr))';
       table.style.minWidth='1450px';
     }
+    ensureFlexibleS2Controls();
     const note=document.querySelector('#toolboxPanel .tool-note');
     if(note) note.textContent='Editing any one of λ, E, k, THz, K, cm⁻¹, velocity, mass equivalent, magnetic field, J, or cal updates all other values and the wavelength-multiple table.';
   }
@@ -124,20 +125,170 @@ export function createToolbox({
   }
 
   // ==================== Toolbox: X-ray -> neutron S2 conversion ====================
+  const S2_NEUTRON_UNITS=[
+    ['lambda','Å'],
+    ['energy','meV'],
+    ['k','Å⁻¹'],
+    ['thz','THz'],
+    ['cm','cm⁻¹']
+  ];
+  const S2_XRAY_UNITS=[
+    ['lambda','Å'],
+    ['energy','meV'],
+    ['k','Å⁻¹'],
+    ['thz','THz'],
+    ['cm','cm⁻¹']
+  ];
+  // Photon relations for the X-ray beam.  Keep these separate from the
+  // neutron conversions above: E(lambda) and f(lambda) are different for
+  // photons and massive neutrons.
+  const XRAY_MEV_ANGSTROM=12398419.843320026; // E[meV] = hc/lambda
+  const XRAY_THz_ANGSTROM=2997924.58;         // f[THz] = c/lambda
+  const XRAY_CM1_ANGSTROM=1e8;                // wavenumber[cm^-1] = 1/lambda[cm]
+
+  function formatS2BeamNumber(value,digits=6){
+    const v=Number(value);
+    if(!Number.isFinite(v)) return '';
+    if(v===0) return '0';
+    if(Math.abs(v)>=1e6 || Math.abs(v)<1e-5) return v.toExponential(6);
+    return v.toFixed(digits).replace(/0+$/,'').replace(/\.$/,'');
+  }
+
+  function neutronLambdaFromS2Value(value,unit){
+    const v=Number(value);
+    if(!(v>0)) return NaN;
+    if(unit==='energy') return Math.sqrt(NEUTRON_E_LAMBDA/v);
+    if(unit==='k') return 2*Math.PI/v;
+    if(unit==='thz') return Math.sqrt(NEUTRON_E_LAMBDA/(v*MEV_PER_THz));
+    if(unit==='cm') return Math.sqrt(NEUTRON_E_LAMBDA/(v/CM1_PER_MEV));
+    return v;
+  }
+
+  function neutronS2ValueFromLambda(lambda,unit){
+    const l=Number(lambda);
+    if(!(l>0)) return NaN;
+    const v=toolboxValues(l);
+    if(unit==='energy') return v.E;
+    if(unit==='k') return v.k;
+    if(unit==='thz') return v.thz;
+    if(unit==='cm') return v.cm;
+    return v.lambda;
+  }
+
+  function xrayLambdaFromS2Value(value,unit){
+    const v=Number(value);
+    if(!(v>0)) return NaN;
+    if(unit==='energy') return XRAY_MEV_ANGSTROM/v;
+    if(unit==='k') return 2*Math.PI/v;
+    if(unit==='thz') return XRAY_THz_ANGSTROM/v;
+    if(unit==='cm') return XRAY_CM1_ANGSTROM/v;
+    return v;
+  }
+
+  function xrayS2ValueFromLambda(lambdaA,unit){
+    const l=Number(lambdaA);
+    if(!(l>0)) return NaN;
+    if(unit==='energy') return XRAY_MEV_ANGSTROM/l;
+    if(unit==='k') return 2*Math.PI/l;
+    if(unit==='thz') return XRAY_THz_ANGSTROM/l;
+    if(unit==='cm') return XRAY_CM1_ANGSTROM/l;
+    return l;
+  }
+
+  function currentS2XrayLambdaA(){
+    return xrayLambdaFromS2Value($('s2ConvXrayLambda')?.value,$('s2ConvXrayUnit')?.value||'lambda');
+  }
+
+  function currentS2NeutronLambdaA(){
+    return neutronLambdaFromS2Value($('s2ConvNeutronLambda')?.value,$('s2ConvNeutronUnit')?.value||'lambda');
+  }
+
+  function setS2XrayLambdaA(lambdaA){
+    const field=$('s2ConvXrayLambda'), unit=$('s2ConvXrayUnit')?.value||'lambda';
+    if(field) field.value=formatS2BeamNumber(xrayS2ValueFromLambda(lambdaA,unit));
+  }
+
+  function setS2NeutronLambdaA(lambdaA){
+    const field=$('s2ConvNeutronLambda'), unit=$('s2ConvNeutronUnit')?.value||'lambda';
+    if(field) field.value=formatS2BeamNumber(neutronS2ValueFromLambda(lambdaA,unit));
+  }
+
+  function setS2NeutronDefaultFromInstrument(){
+    const energy=num('energy');
+    if(!(energy>0)) return;
+    setS2NeutronLambdaA(Math.sqrt(NEUTRON_E_LAMBDA/energy));
+    updateS2Conversion();
+  }
+
+  function makeS2UnitSelect(id,items,defaultValue){
+    const select=document.createElement('select');
+    select.id=id;
+    select.className='s2-unit-select';
+    select.setAttribute('aria-label','Unit');
+    for(const [value,label] of items){
+      const option=document.createElement('option');
+      option.value=value; option.textContent=label;
+      select.appendChild(option);
+    }
+    select.value=defaultValue;
+    select.dataset.previousUnit=defaultValue;
+    return select;
+  }
+
+  function ensureFlexibleS2Controls(){
+    const xField=$('s2ConvXrayLambda'), nField=$('s2ConvNeutronLambda');
+    if(!xField || !nField) return;
+
+    const xLabel=xField.closest('label');
+    if(xLabel && !$('s2ConvXrayUnit')){
+      const unit=makeS2UnitSelect('s2ConvXrayUnit',S2_XRAY_UNITS,'lambda');
+      const row=document.createElement('div'); row.className='s2-beam-entry-row s2-beam-entry-row-xray';
+      xField.type='number'; xField.step='any'; xField.min='0';
+      row.append(xField,unit);
+      xLabel.replaceChildren(document.createTextNode('X-ray beam'),row);
+    }
+
+    const nLabel=nField.closest('label');
+    if(nLabel && !$('s2ConvNeutronUnit')){
+      const unit=makeS2UnitSelect('s2ConvNeutronUnit',S2_NEUTRON_UNITS,'lambda');
+      const button=document.createElement('button');
+      button.id='s2ConvNeutronDefault'; button.type='button'; button.textContent='Set default';
+      button.className='s2-set-default';
+      nField.readOnly=false; nField.type='number'; nField.step='any'; nField.min='0';
+      const row=document.createElement('div'); row.className='s2-beam-entry-row s2-beam-entry-row-neutron';
+      row.append(nField,unit,button);
+      nLabel.replaceChildren(document.createTextNode('Neutron beam'),row);
+    }
+
+    if(!document.getElementById('s2FlexibleBeamStyle')){
+      const style=document.createElement('style'); style.id='s2FlexibleBeamStyle';
+      style.textContent=`
+        .s2-beam-entry-row{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(66px,.55fr);gap:6px;align-items:center;margin-top:4px}
+        .s2-beam-entry-row-neutron{grid-template-columns:minmax(0,1fr) minmax(66px,.52fr) auto}
+        .s2-beam-entry-row input,.s2-beam-entry-row select{width:100%!important;min-width:0!important;margin:0!important}
+        .s2-set-default{white-space:nowrap;width:auto!important;padding-left:10px!important;padding-right:10px!important}
+        @media(max-width:1250px){.s2-beam-entry-row-neutron{grid-template-columns:minmax(105px,1fr) 66px;}.s2-set-default{grid-column:1/-1}}
+      `;
+      document.head.appendChild(style);
+    }
+  }
+
   function updateS2Conversion(){
-    const xLambda=Number($("s2ConvXrayLambda")?.value);
+    const xLambda=currentS2XrayLambdaA();
     const raw=String($("s2ConvXrayS2")?.value||"").trim();
-    const nLambda=fixedInstrumentWavelengthA();
-    const nLambdaField=$("s2ConvNeutronLambda");
+    const nLambda=currentS2NeutronLambdaA();
     const neutronS2Field=$("s2ConvNeutronS2");
     const dField=$("s2ConvD");
     const info=$("s2ConvInfo");
-    if(nLambdaField) nLambdaField.value=Number.isFinite(nLambda)?nLambda.toFixed(6):"";
     if(neutronS2Field) neutronS2Field.value="";
     if(dField) dField.value="";
     if(info){ info.textContent=""; info.classList.remove("warning"); }
-    if(!(xLambda>0) || !(nLambda>0)){
-      if(info){ info.textContent='Enter a positive X-ray wavelength.'; info.classList.add('warning'); }
+    if(!(xLambda>0)){
+      if(info){ info.textContent='Enter a positive X-ray beam value.'; info.classList.add('warning'); }
+      return;
+    }
+    if(!(nLambda>0)){
+      if(info){ info.textContent='Enter a positive neutron beam value or press Set default.'; info.classList.add('warning'); }
       return;
     }
     if(!raw){
@@ -172,27 +323,59 @@ export function createToolbox({
     }
     const blocked=rows.filter(r=>r.status).length;
     if(blocked && info){
-      info.textContent=`${blocked} entr${blocked===1?'y':'ies'} cannot satisfy the neutron Bragg condition at the current ${checkedValue('energyMode')}.`;
+      info.textContent=`${blocked} entr${blocked===1?'y':'ies'} cannot satisfy the neutron Bragg condition at the current neutron beam setting.`;
       info.classList.add('warning');
     }
   }
 
   function initializeS2Conversion(){
-    const source=$("s2ConvSource"), lambda=$("s2ConvXrayLambda"), s2=$("s2ConvXrayS2");
-    if(!source || !lambda || !s2) return;
+    ensureFlexibleS2Controls();
+    const source=$("s2ConvSource"), xField=$("s2ConvXrayLambda"), s2=$("s2ConvXrayS2");
+    const xUnit=$('s2ConvXrayUnit'), nField=$('s2ConvNeutronLambda'), nUnit=$('s2ConvNeutronUnit');
+    const defaultButton=$('s2ConvNeutronDefault');
+    if(!source || !xField || !s2 || !xUnit || !nField || !nUnit) return;
+    // Unit selects may have been restored from saved right-panel state after
+    // the dynamic controls were created.  Treat the restored choice as the
+    // current source unit for the first conversion.
+    xUnit.dataset.previousUnit=xUnit.value;
+    nUnit.dataset.previousUnit=nUnit.value;
+
     source.addEventListener('change',()=>{
-      if(source.value!=='custom') lambda.value=source.value;
+      if(source.value!=='custom') setS2XrayLambdaA(Number(source.value));
       updateS2Conversion();
     });
-    lambda.addEventListener('input',()=>{
-      const matching=[...source.options].find(o=>o.value!=='custom' && Math.abs(Number(o.value)-Number(lambda.value))<5e-7);
+
+    xField.addEventListener('input',()=>{
+      const lambdaA=currentS2XrayLambdaA();
+      const matching=[...source.options].find(o=>o.value!=='custom' && Math.abs(Number(o.value)-lambdaA)<5e-7);
       source.value=matching?matching.value:'custom';
       updateS2Conversion();
     });
+
+    xUnit.addEventListener('change',()=>{
+      const oldUnit=xUnit.dataset.previousUnit||'lambda';
+      const lambdaA=xrayLambdaFromS2Value(xField.value,oldUnit);
+      xUnit.dataset.previousUnit=xUnit.value;
+      if(lambdaA>0) xField.value=formatS2BeamNumber(xrayS2ValueFromLambda(lambdaA,xUnit.value));
+      updateS2Conversion();
+    });
+
+    nField.addEventListener('input',updateS2Conversion);
+    nUnit.addEventListener('change',()=>{
+      const oldUnit=nUnit.dataset.previousUnit||'lambda';
+      const lambdaA=neutronLambdaFromS2Value(nField.value,oldUnit);
+      nUnit.dataset.previousUnit=nUnit.value;
+      if(lambdaA>0) nField.value=formatS2BeamNumber(neutronS2ValueFromLambda(lambdaA,nUnit.value));
+      updateS2Conversion();
+    });
+    defaultButton?.addEventListener('click',setS2NeutronDefaultFromInstrument);
     s2.addEventListener('input',updateS2Conversion);
-    for(const id of ['energy','energyMode','instrument']) $(id)?.addEventListener('input',updateS2Conversion);
-    for(const id of ['energy','energyMode','instrument']) $(id)?.addEventListener('change',updateS2Conversion);
-    updateS2Conversion();
+
+    // Backward-compatible first load: start from the current fixed instrument
+    // energy only when no restored/custom neutron value exists. Afterwards the
+    // field remains independent until Set default is pressed.
+    if(!(Number(nField.value)>0)) setS2NeutronDefaultFromInstrument();
+    else updateS2Conversion();
   }
 
   // ==================== CIF-based neutron attenuation ====================

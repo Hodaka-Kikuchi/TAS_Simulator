@@ -507,10 +507,16 @@
                 <label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
                   <option value="a">a</option><option value="b">b</option><option value="c" selected>c</option>
                 </select></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Chirality</span><select id="cifMomentChirality">
+                <label class="structure-entry-field"><span class="structure-entry-label">Chirality</span><select id="cifMomentChirality" title="CW/CCW as viewed from the negative side toward the positive side of the selected rotation axis">
                   <option value="CCW" selected>CCW</option><option value="CW">CW</option>
                 </select></label>
               </div>
+              <div class="structure-spin-display-row">
+                <label class="structure-entry-field"><span class="structure-entry-label">Direction</span><select id="cifMomentDirectionMode"><option value="cartesian" selected>Cartesian</option><option value="polar">Polar</option></select></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Width</span><input id="cifMomentGlobalWidth" type="number" min="1" step="1" value="6" placeholder="6"></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Head</span><input id="cifMomentGlobalHead" type="number" min="0.01" step="0.05" value="0.5" placeholder="0.5"></label>
+              </div>
+              <div id="cifSpinElementToggles" class="structure-spin-element-toggles" aria-label="Spin element controls"></div>
               <div id="cifMagMomentRows" class="structure-rows-list"></div>
             </div>
             <div class="structure-config-panel" data-structure-config-panel="bonds" hidden>

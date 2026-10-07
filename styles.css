@@ -3359,3 +3359,52 @@ main{
   color:#8b929b;
   opacity:.62;
 }
+
+/* Spin element bulk toggles */
+#structurePanel .structure-spin-element-toggles{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 12px;
+  align-items:center;
+  margin:8px 0 10px;
+  padding:6px 0;
+  border-bottom:1px solid rgba(127,127,127,.22);
+}
+#structurePanel .structure-spin-element-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  white-space:nowrap;
+  font-size:13.5px;
+  line-height:1.2;
+  cursor:pointer;
+}
+#structurePanel .structure-spin-element-toggle input{
+  margin:0;
+}
+
+/* Spins: global arrow width/head, compact Cartesian/Polar direction inputs. */
+#structurePanel .structure-spin-display-row{
+  display:grid;
+  grid-template-columns:minmax(130px,1.35fr) minmax(86px,.8fr) minmax(86px,.8fr);
+  gap:8px;
+  align-items:end;
+  margin:8px 0 6px;
+}
+#structurePanel .structure-spin-display-row select,
+#structurePanel .structure-spin-display-row input{width:100%;min-width:0;}
+#structurePanel .structure-moment-row{
+  grid-template-columns:auto minmax(72px,.8fr) minmax(150px,2fr) minmax(82px,.8fr) auto!important;
+}
+#structurePanel .structure-moment-vector{grid-template-columns:repeat(3,minmax(0,1fr));}
+#structurePanel .structure-moment-geometry{grid-template-columns:minmax(0,1fr)!important;}
+#structurePanel .structure-moment-color-swatch{align-self:end;}
+@container structure-viewer (max-width:760px){
+  #structurePanel .structure-spin-display-row{grid-template-columns:repeat(3,minmax(0,1fr));}
+  #structurePanel .structure-moment-row{grid-template-columns:auto minmax(68px,.9fr) minmax(130px,2fr) minmax(76px,.9fr) auto!important;}
+}
+@container structure-viewer (max-width:520px){
+  #structurePanel .structure-spin-display-row{grid-template-columns:1fr 1fr 1fr;}
+  #structurePanel .structure-moment-row{grid-template-columns:auto minmax(64px,1fr) minmax(0,2.3fr) minmax(70px,1fr) auto!important;}
+  #structurePanel .structure-moment-vector{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
