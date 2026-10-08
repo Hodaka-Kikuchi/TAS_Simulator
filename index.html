@@ -50,7 +50,7 @@
     </label>
   </div>
   <div id="cifSelectRow" class="cif-select-row">
-    <button id="cifSelectButton" type="button">Select CIF</button>
+    <button id="cifSelectButton" type="button">Select CIF/mCIF</button>
     <input id="cifFileName" class="cif-file-name" type="text" value="No file selected" readonly aria-label="Selected CIF file">
     <button id="cifClearButton" type="button" disabled>Clear</button>
     <input id="cifFileInput" type="file" accept=".cif,.mcif,text/plain" hidden>
@@ -115,7 +115,7 @@
     <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution</button>
     <button id="tabToolbox" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="toolboxPanel" data-tab="toolbox">Toolbox</button>
     <button id="tabCifGenerator" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="cifGeneratorPanel" data-tab="cif-generator">CIF Generator</button>
-    <button id="tabStructure" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="structurePanel" data-tab="structure">Structure</button>
+    <button id="tabStructure" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="structurePanel" data-tab="structure">mCIF Generator</button>
     <button id="tabScript" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scriptPanel" data-tab="script">Script</button>
   </nav>
 
@@ -183,7 +183,6 @@
           </div>
         </div>
         <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div class="time-info-row"><button id="timeEstimateInfoToggle" class="info-toggle-button" type="button" aria-expanded="false" aria-controls="timeEstimateInfoPanel" title="Show Time estimate information">ⓘ Info</button></div>
           <div id="timeEstimateInfoPanel" class="time-info-panel hidden">
             <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count uses MCU; wait remains in seconds. Scan/count MCU values are converted to real time using the MCU setting below. Fractions are accepted in numeric Details.</div>
             <div class="time-mcu-help"><strong>Calc MCU:</strong> Scan and count durations use the MCU value above together with the configured seconds per MCU. Ranged scan MCU values are used as relative weights and only unfixed scans are rescaled to fit the Scan start–finish time. Loop repetitions and Movement time are included. Fixed-Details commands use MCU = 0; wait remains in seconds. Adjusted MCU values are whole numbers and are truncated downward.</div>
@@ -191,6 +190,7 @@
           <div class="time-estimate-settings" aria-label="Time estimate settings">
             <label><span>1 MCU =</span><span class="time-setting-entry"><input id="timeMcuSecondsPerUnit" type="number" min="0.000001" step="0.001" value="1" inputmode="decimal"><span>s</span></span></label>
             <label><span>Movement time</span><span class="time-setting-entry"><input id="timeMovementPercent" type="number" min="0" step="0.1" value="1" inputmode="decimal"><span>%</span></span></label>
+            <button id="timeEstimateInfoToggle" class="info-toggle-button" type="button" aria-expanded="false" aria-controls="timeEstimateInfoPanel" title="Show Time estimate information">ⓘ Info</button>
           </div>
           <div class="time-scan-table-wrap">
             <div class="time-scan-table">
@@ -284,14 +284,13 @@
         <label>Wavevector k (Å⁻¹)<input id="toolK" type="number" step="0.001" min="0"></label>
         <label>Frequency (THz)<input id="toolTHz" type="number" step="0.001" min="0"></label>
         <label>Temperature (K)<input id="toolTemp" type="number" step="0.001" min="0"></label>
-        <label>Spectroscopic wavenumber (cm⁻¹)<input id="toolCm" type="number" step="0.001" min="0"></label>
+        <label>Wavenumber (cm⁻¹)<input id="toolCm" type="number" step="0.001" min="0"></label>
         <label>Velocity (m/s)<input id="toolVelocity" type="number" step="0.1" min="0"></label>
       </div>
       <div class="harmonic-wrap"><div class="harmonic-table">
-        <div></div><div>Wavelength (Å)</div><div>Energy (meV)</div><div>Wavevector k (Å⁻¹)</div><div>Frequency (THz)</div><div>Temperature (K)</div><div>Spectroscopic wavenumber (cm⁻¹)</div><div>Velocity (m/s)</div>
+        <div></div><div>Wavelength (Å)</div><div>Energy (meV)</div><div>Wavevector k (Å⁻¹)</div><div>Frequency (THz)</div><div>Temperature (K)</div><div>Wavenumber (cm⁻¹)</div><div>Velocity (m/s)</div>
         <strong>1/3 λ</strong><output id="harmThirdLambda"></output><output id="harmThirdEnergy"></output><output id="harmThirdK"></output><output id="harmThirdTHz"></output><output id="harmThirdTemp"></output><output id="harmThirdCm"></output><output id="harmThirdVelocity"></output>
         <strong>1/2 λ</strong><output id="harmHalfLambda"></output><output id="harmHalfEnergy"></output><output id="harmHalfK"></output><output id="harmHalfTHz"></output><output id="harmHalfTemp"></output><output id="harmHalfCm"></output><output id="harmHalfVelocity"></output>
-        <strong>λ</strong><output id="harmBaseLambda"></output><output id="harmBaseEnergy"></output><output id="harmBaseK"></output><output id="harmBaseTHz"></output><output id="harmBaseTemp"></output><output id="harmBaseCm"></output><output id="harmBaseVelocity"></output>
         <strong>2 λ</strong><output id="harmDoubleLambda"></output><output id="harmDoubleEnergy"></output><output id="harmDoubleK"></output><output id="harmDoubleTHz"></output><output id="harmDoubleTemp"></output><output id="harmDoubleCm"></output><output id="harmDoubleVelocity"></output>
         <strong>3 λ</strong><output id="harmTripleLambda"></output><output id="harmTripleEnergy"></output><output id="harmTripleK"></output><output id="harmTripleTHz"></output><output id="harmTripleTemp"></output><output id="harmTripleCm"></output><output id="harmTripleVelocity"></output>
       </div></div>
@@ -323,10 +322,24 @@
       <h2>Neutron Attenuation</h2>
       <div class="absorption-workspace">
         <div class="absorption-left">
-          <div class="absorption-cif-row">
-            <label>Selected CIF<input id="absorptionCifStatus" type="text" value="No CIF selected" readonly></label>
-            <button id="absorptionCifSelectButton" type="button">Select CIF</button>
-            <input id="absorptionCifFileInput" type="file" accept=".cif,text/plain" hidden>
+          <div class="absorption-source-row">
+            <div class="absorption-input-mode-row">
+              <label>Input mode
+                <select id="absorptionInputMode">
+                  <option value="manual">Manual</option>
+                  <option value="cif" selected>CIF/mCIF</option>
+                </select>
+              </label>
+            </div>
+            <div id="absorptionManualInputs" class="absorption-manual-row hidden">
+              <label>Chemical formula<input id="absorptionFormula" type="text" value="" placeholder="e.g. CuSe2O5" spellcheck="false"></label>
+              <label>Density (g/cm³)<input id="absorptionDensity" type="number" min="0" step="0.001" value=""></label>
+            </div>
+            <div id="absorptionCifInputs" class="absorption-cif-row">
+              <label>Selected CIF/mCIF<input id="absorptionCifStatus" type="text" value="No CIF/mCIF selected" readonly></label>
+              <button id="absorptionCifSelectButton" type="button">Select CIF/mCIF</button>
+              <input id="absorptionCifFileInput" type="file" accept=".cif,.mcif,text/plain,chemical/x-cif" hidden>
+            </div>
           </div>
           <div class="absorption-beam-controls">
             <label>Energy (meV)<input id="absorptionEnergy" type="number" min="0" step="0.001"></label>
@@ -351,77 +364,88 @@
     <section class="calc-card cif-generator-card">
       <div class="cif-generator-workspace">
         <div class="cif-generator-input-pane">
-          <div class="cif-pane-heading">
-            <div>
-              <h3>Structure input</h3>
-              
+          <section class="cif-generator-section cif-generator-source-section">
+            <div class="cif-pane-heading">
+              <h3>CIF/mCIF file</h3>
+              <div class="cif-heading-actions"><button id="cifShowCurrent" type="button">Show current file</button></div>
             </div>
-            <div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button><button id="cifShowCurrent" type="button">Show current CIF</button></div>
-          </div>
-
-          <div class="cif-generator-setup">
-            <div class="cif-space-group-picker">
-              <label class="cif-space-group-number-label">No.
-                <input id="cifSpaceGroupNumber" type="number" min="1" max="230" step="1" value="1" inputmode="numeric" aria-label="Space group number">
-              </label>
-              <label>Space group
-                <select id="cifSpaceGroup"><option value="">Loading space groups...</option></select>
-              </label>
+            <div class="cif-generator-source-row">
+              <button id="cifLoadExisting" type="button">Select CIF/mCIF</button>
+              <input id="cifGeneratorSourceName" class="cif-file-name" type="text" value="No file selected" readonly aria-label="Selected CIF or mCIF for CIF Generator">
+              <button id="cifGeneratorSourceClear" type="button" disabled>Clear</button>
+              <input id="cifLoadFile" type="file" accept=".cif,.mcif,text/plain,chemical/x-cif" class="hidden">
             </div>
-            <div id="cifSpaceGroupInfo" class="cif-space-group-info"></div>
-          </div>
-
-          <div class="cif-generator-beam-grid">
-            <label>Energy (meV)<input id="cifReflectionEnergy" type="number" min="0" step="0.001"></label>
-            <label>Wavelength (Å)<input id="cifReflectionWavelength" type="number" min="0" step="0.0001"></label>
-            <label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" type="number" min="0" step="0.0001"></label>
-          </div>
-
-          <h3>Lattice parameters</h3>
-          <div class="cif-lattice-grid">
-            <label>a (Å)<input id="cifA" type="number" value="5" step="0.001" min="0"></label>
-            <label>b (Å)<input id="cifB" type="number" value="5" step="0.001" min="0"></label>
-            <label>c (Å)<input id="cifC" type="number" value="5" step="0.001" min="0"></label>
-            <label>α (deg)<input id="cifAlpha" type="number" value="90" step="0.01"></label>
-            <label>β (deg)<input id="cifBeta" type="number" value="90" step="0.01"></label>
-            <label>γ (deg)<input id="cifGamma" type="number" value="90" step="0.01"></label>
-          </div>
-
-          <div class="cif-atom-heading">
-            <div>
-              <h3>Atomic positions</h3>
-              
-            </div>
-          </div>
-          <div class="cif-atom-table-wrap">
-            <div class="cif-atom-table" id="cifAtomTable">
-              <div class="cif-atom-header">Index</div><div class="cif-atom-header">Atom</div><div class="cif-atom-header">x</div><div class="cif-atom-header">y</div><div class="cif-atom-header">z</div><div class="cif-atom-header">Occupancy</div><div class="cif-atom-header"></div>
-              <div id="cifAtomRows" class="cif-atom-rows"></div>
-            </div>
-          </div>
-          <div class="cif-atom-actions">
-            <button id="cifCopyAtom" type="button">+ Copy atom</button>
-            <button id="cifAddAtom" type="button">+ Add atom</button>
-          </div>
-
-          <div class="cif-generator-actions">
-            <label>File name
+            <label class="cif-generator-file-name">File name
               <span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"><span class="cif-filename-suffix">.cif</span></span>
             </label>
-            <button id="cifLoadExisting" type="button">Load CIF</button>
-            <input id="cifLoadFile" type="file" accept=".cif,text/plain,chemical/x-cif" class="hidden">
-            <button id="cifGenerate" type="button" class="primary-action">Generate</button>
-            <button id="cifDownload" type="button" disabled>Download CIF</button>
-            <button id="cifDownloadTable" type="button" disabled>Download table</button>
-            <button id="cifSet" type="button" disabled>Set CIF</button>
-          </div>
+            <div class="cif-source-button-row">
+              <button id="cifGenerate" type="button" class="primary-action">Generate</button>
+              <button id="cifDownload" type="button" disabled>Download CIF</button>
+              <button id="cifSet" type="button" disabled>Set CIF</button>
+            </div>
+          </section>
+
+          <section class="cif-generator-section cif-lattice-information-section">
+            <h3 class="cif-section-title">Lattice information</h3>
+            <div class="cif-generator-setup">
+              <div class="cif-space-group-picker">
+                <label class="cif-space-group-number-label">No.
+                  <input id="cifSpaceGroupNumber" type="number" min="1" max="230" step="1" value="1" inputmode="numeric" aria-label="Space group number">
+                </label>
+                <label>Space group
+                  <select id="cifSpaceGroup"><option value="">Loading space groups...</option></select>
+                </label>
+              </div>
+              <div id="cifSpaceGroupInfo" class="cif-space-group-info"></div>
+            </div>
+
+            <div class="cif-pane-heading cif-lattice-heading">
+              <h3>Lattice parameters</h3>
+              <div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button></div>
+            </div>
+            <div class="cif-lattice-grid">
+              <label>a (Å)<input id="cifA" type="number" value="5" step="0.001" min="0"></label>
+              <label>b (Å)<input id="cifB" type="number" value="5" step="0.001" min="0"></label>
+              <label>c (Å)<input id="cifC" type="number" value="5" step="0.001" min="0"></label>
+              <label>α (deg)<input id="cifAlpha" type="number" value="90" step="0.01"></label>
+              <label>β (deg)<input id="cifBeta" type="number" value="90" step="0.01"></label>
+              <label>γ (deg)<input id="cifGamma" type="number" value="90" step="0.01"></label>
+            </div>
+
+            <div class="cif-atom-heading">
+              <div><h3>Atomic positions</h3></div>
+            </div>
+            <div class="cif-atom-table-wrap">
+              <div class="cif-atom-table" id="cifAtomTable">
+                <div class="cif-atom-header">Index</div><div class="cif-atom-header">Atom</div><div class="cif-atom-header">x</div><div class="cif-atom-header">y</div><div class="cif-atom-header">z</div><div class="cif-atom-header">Occupancy</div><div class="cif-atom-header"></div>
+                <div id="cifAtomRows" class="cif-atom-rows"></div>
+              </div>
+            </div>
+            <div class="cif-atom-actions">
+              <button id="cifCopyAtom" type="button">+ Copy atom</button>
+              <button id="cifAddAtom" type="button">+ Add atom</button>
+            </div>
+          </section>
+
+          <section class="cif-generator-section cif-reflection-parameters-section">
+            <div class="cif-pane-heading">
+              <h3>Reflection parameters</h3>
+              <div class="cif-heading-actions"><button id="cifDownloadTable" type="button" disabled>Download table</button></div>
+            </div>
+            <div class="cif-generator-beam-grid">
+              <label>Energy (meV)<input id="cifReflectionEnergy" type="number" min="0" step="0.001"></label>
+              <label>Wavelength (Å)<input id="cifReflectionWavelength" type="number" min="0" step="0.0001"></label>
+              <label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" type="number" min="0" step="0.0001"></label>
+            </div>
+          </section>
+
           <div id="cifGeneratorMessage" class="cif-generator-message" aria-live="polite"></div>
         </div>
 
         <div class="cif-generator-output-pane">
           <div class="cif-output-tabs" role="tablist" aria-label="CIF generator output">
-            <button id="cifOutputTabPreview" class="cif-output-tab active" type="button" role="tab" aria-selected="true" aria-controls="cifPreviewPanel" data-cif-output-tab="preview">CIF preview</button>
             <button id="cifOutputTabReflections" class="cif-output-tab" type="button" role="tab" aria-selected="false" aria-controls="cifReflectionsPanel" data-cif-output-tab="reflections">Reflection table</button>
+            <button id="cifOutputTabPreview" class="cif-output-tab active" type="button" role="tab" aria-selected="true" aria-controls="cifPreviewPanel" data-cif-output-tab="preview">CIF preview</button>
           </div>
 
           <div id="cifPreviewPanel" class="cif-output-panel" role="tabpanel" aria-labelledby="cifOutputTabPreview">
@@ -460,12 +484,21 @@
       <div class="structure-viewer-layout">
         <div class="structure-viewer-controls">
           <div class="structure-control-section structure-cif-section">
-            <h3>CIF</h3>
+            <div class="cif-pane-heading"><h3>CIF/mCIF file</h3><div class="cif-heading-actions"><button id="structureMcifShowCurrent" type="button">Show current file</button></div></div>
             <div class="structure-cif-row">
-              <input id="structureCifName" type="text" value="No CIF selected" readonly aria-label="Selected CIF for structure viewer">
-              <button id="structureCifSelect" type="button">Select CIF</button>
+              <button id="structureCifSelect" type="button">Select CIF/mCIF</button>
+              <input id="structureCifName" class="cif-file-name" type="text" value="No file selected" readonly aria-label="Selected CIF/mCIF file">
               <button id="structureCifClear" type="button">Clear</button>
             </div>
+            <label class="cif-generator-file-name">File name
+              <span class="cif-filename-entry"><input id="structureMcifGeneratedName" type="text" value="generated_structure"><span class="cif-filename-suffix">.mcif</span></span>
+            </label>
+            <div class="cif-source-button-row">
+              <button id="structureMcifGenerate" type="button" class="primary-action">Generate</button>
+              <button id="structureMcifDownload" type="button" disabled>Download mCIF</button>
+              <button id="structureMcifSet" type="button" disabled>Set mCIF</button>
+            </div>
+            <div id="structureMcifMessage" class="cif-generator-message" aria-live="polite"></div>
           </div>
           <div class="structure-control-section">
             <h3>View</h3>
@@ -502,7 +535,7 @@
               <div class="structure-moment-axis-row structure-spin-mode-row">
                 <label class="structure-entry-field"><span class="structure-entry-label">Propagation vector</span><select id="cifMomentPropagationVector"></select></label>
                 <label class="structure-entry-field"><span class="structure-entry-label">Structure type</span><select id="cifMomentStructureType">
-                  <option value="collinear" selected>Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option>
+                  <option value="collinear" selected>Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option><option value="mcif" hidden>mCIF</option>
                 </select></label>
                 <label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
                   <option value="a">a</option><option value="b">b</option><option value="c" selected>c</option>
@@ -513,8 +546,9 @@
               </div>
               <div class="structure-spin-display-row">
                 <label class="structure-entry-field"><span class="structure-entry-label">Direction</span><select id="cifMomentDirectionMode"><option value="cartesian" selected>Cartesian</option><option value="polar">Polar</option></select></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Width</span><input id="cifMomentGlobalWidth" type="number" min="1" step="1" value="6" placeholder="6"></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Head</span><input id="cifMomentGlobalHead" type="number" min="0.01" step="0.05" value="0.5" placeholder="0.5"></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Arrow length</span><input id="cifMomentGlobalLength" type="number" min="0" step="0.05" value="1" placeholder="1"></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Arrow width</span><input id="cifMomentGlobalWidth" type="number" min="1" step="1" value="10" placeholder="10"></label>
+                <label class="structure-entry-field"><span class="structure-entry-label">Arrow head</span><input id="cifMomentGlobalHead" type="number" min="0.01" step="0.01" value="0.51" placeholder="0.51"></label>
               </div>
               <div id="cifSpinElementToggles" class="structure-spin-element-toggles" aria-label="Spin element controls"></div>
               <div id="cifMagMomentRows" class="structure-rows-list"></div>
@@ -527,18 +561,28 @@
           </div>
         </div>
         <div class="structure-viewer-main">
-          <div id="cifStructureStatus" class="cif-structure-status" aria-live="polite">Open the Structure tab to visualize the generated or selected CIF.</div>
+          <div class="cif-output-tabs" role="tablist" aria-label="mCIF Generator output">
+            <button id="mcifTabStructure" class="cif-output-tab active" type="button" role="tab" aria-selected="true" aria-controls="mcifStructurePane">Structure</button>
+            <button id="mcifTabPreview" class="cif-output-tab" type="button" role="tab" aria-selected="false" aria-controls="mcifPreviewPane">mCIF preview</button>
+          </div>
+          <div id="mcifStructurePane" role="tabpanel" aria-labelledby="mcifTabStructure">
+          <div id="cifStructureStatus" class="cif-structure-status" aria-live="polite">Open the mCIF Generator tab to visualize the generated or selected CIF.</div>
           <div class="structure-plot-wrap">
             <div class="structure-plot-overlay-left">
               <div class="structure-plot-toolbar" aria-label="Structure plot display options">
                 <label><span>Unit cell</span><select id="cifUnitCellMode"><option value="all">All cells</option><option value="one" selected>One cell</option><option value="none">None</option></select></label>
                 <label><span>XYZ axes</span><select id="cifShowXYZ"><option value="show" selected>Show</option><option value="hide">Hide</option></select></label>
+                <button id="cifSaveFigure" type="button" title="Save current 3D view with legend and coordinate axes as PNG">Save figure</button>
               </div>
               <div id="cifAtomLegend" class="structure-atom-legend" aria-label="Atom legend"></div>
             </div>
             <div id="cifStructurePlot" class="cif-structure-plot"></div>
             <svg id="cifDirectTriad" class="structure-triad structure-triad-left" viewBox="0 0 160 160" aria-hidden="true"></svg>
             <svg id="cifReciprocalTriad" class="structure-triad structure-triad-right" viewBox="0 0 160 160" aria-hidden="true"></svg>
+          </div>
+          </div>
+          <div id="mcifPreviewPane" class="cif-output-panel hidden" role="tabpanel" aria-labelledby="mcifTabPreview">
+            <pre id="mcifPreviewText" class="cif-preview-note" tabindex="0">Load an mCIF to preview its contents.</pre>
           </div>
         </div>
       </div>

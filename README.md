@@ -197,3 +197,21 @@ Q vector–E display keeps the ħω axis anchored at 0 meV regardless of BG over
 
 ## v122
 Q vector–E map grid lines are now rendered above colored overlays for consistent visibility across the entire plot.
+
+### mCIF Generator update (v8)
+
+The Structure tab includes a **CIF/mCIF file** selector, **Show current file**, an
+editable `.mcif` output name, **Generate**, **Download mCIF** and **Set mCIF**.
+Names advance `_generate01`, `_generate02`, etc. The generated magnetic CIF is
+validated by parsing its magnetic symmetry and moments again. To avoid
+fabricating a magnetic space group, generation requires an imported mCIF with
+magnetic-symmetry operations; for a nuclear-only CIF the interface reports a
+clear error rather than creating physically arbitrary magnetic symmetry.
+Existing mCIF header, site labels, BNS transform, operations and centerings are
+retained and only the magnetic-moment loop is updated.
+
+Validation reference: `1.2_CuSe2O5(1).mcif` includes monoclinic
+`(a,b,c,beta)=(12.254,4.858,7.960,110.7 deg)` and Cu1 crystalaxis vector
+`(0.13,0.50,0.00)`. Expanding the magnetic operations yields four Cu spins.
+This magnetic cell has *zero net vector* under a simple sum of the generated
+moments; do not infer a finite bulk ferromagnetic moment from this data alone.

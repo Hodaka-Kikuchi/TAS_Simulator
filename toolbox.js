@@ -2,7 +2,7 @@
 // DOM behavior is preserved; app.js injects the small UI/state boundary.
 
 import {deg2rad, rad2deg, clamp} from "./tas-core.js";
-import {neutronAbsorptionSummary} from "./cif-structure.js";
+import {neutronAbsorptionSummary, absorptionCrossSectionBarn, scatteringCrossSectionBarn, coherentCrossSectionBarn, incoherentCrossSectionBarn, neutronDataRecord} from "./cif-structure.js";
 
 export function createToolbox({
   $, num, checkedValue,
@@ -47,14 +47,14 @@ export function createToolbox({
     }
     // Extend the wavelength-multiple table with the same four quantities.
     const table=document.querySelector('#toolboxPanel .harmonic-table');
-    if(table && !document.getElementById('harmBaseMass')){
+    if(table && !document.getElementById('harmThirdMass')){
       const old=[...table.children];
       const oldCols=8; // row label + 7 original quantities
-      const prefixes=['harmThird','harmHalf','harmBase','harmDouble','harmTriple'];
+      const prefixes=['harmThird','harmHalf','harmDouble','harmTriple'];
       const extraHeaders=['Mass equivalent (kg)','Magnetic field (T)','Energy (J)','Heat (cal)'];
       const suffixes=['Mass','Field','J','Cal'];
       const frag=document.createDocumentFragment();
-      for(let row=0;row<6;row++){
+      for(let row=0;row<5;row++){
         for(let col=0;col<oldCols;col++) frag.appendChild(old[row*oldCols+col]);
         if(row===0){
           for(const text of extraHeaders){ const d=document.createElement('div'); d.textContent=text; frag.appendChild(d); }
@@ -107,7 +107,7 @@ export function createToolbox({
         toolField:v.field.toExponential(6), toolJ:v.joule.toExponential(6), toolCal:v.cal.toExponential(6)
       };
       for(const [id,text] of Object.entries(formatted)){ if(id!==kind && $(id)) $(id).value=text; }
-      for(const [factor,prefix] of [[1/3,'harmThird'],[1/2,'harmHalf'],[1,'harmBase'],[2,'harmDouble'],[3,'harmTriple']]){
+      for(const [factor,prefix] of [[1/3,'harmThird'],[1/2,'harmHalf'],[2,'harmDouble'],[3,'harmTriple']]){
         const x=toolboxValues(lambda*factor);
         $(`${prefix}Lambda`).textContent=x.lambda.toFixed(6);
         $(`${prefix}Energy`).textContent=x.E.toFixed(6);
@@ -378,7 +378,121 @@ export function createToolbox({
     else updateS2Conversion();
   }
 
-  // ==================== CIF-based neutron attenuation ====================
+  // ==================== Neutron attenuation ====================
+  const AVOGADRO=6.02214076e23;
+  const ATOMIC_MASS={
+    H:1.008,He:4.002602,Li:6.94,Be:9.0121831,B:10.81,C:12.011,N:14.007,O:15.999,F:18.998403163,Ne:20.1797,
+    Na:22.98976928,Mg:24.305,Al:26.9815385,Si:28.085,P:30.973761998,S:32.06,Cl:35.45,Ar:39.948,K:39.0983,Ca:40.078,
+    Sc:44.955908,Ti:47.867,V:50.9415,Cr:51.9961,Mn:54.938044,Fe:55.845,Co:58.933194,Ni:58.6934,Cu:63.546,Zn:65.38,
+    Ga:69.723,Ge:72.630,As:74.921595,Se:78.971,Br:79.904,Kr:83.798,Rb:85.4678,Sr:87.62,Y:88.90584,Zr:91.224,
+    Nb:92.90637,Mo:95.95,Tc:98,Ru:101.07,Rh:102.90550,Pd:106.42,Ag:107.8682,Cd:112.414,In:114.818,Sn:118.710,
+    Sb:121.760,Te:127.60,I:126.90447,Xe:131.293,Cs:132.90545196,Ba:137.327,La:138.90547,Ce:140.116,Pr:140.90766,
+    Nd:144.242,Pm:145,Sm:150.36,Eu:151.964,Gd:157.25,Tb:158.92535,Dy:162.500,Ho:164.93033,Er:167.259,Tm:168.93422,
+    Yb:173.045,Lu:174.9668,Hf:178.49,Ta:180.94788,W:183.84,Re:186.207,Os:190.23,Ir:192.217,Pt:195.084,Au:196.966569,
+    Hg:200.592,Tl:204.38,Pb:207.2,Bi:208.98040,Po:209,At:210,Rn:222,Fr:223,Ra:226,Ac:227,Th:232.0377,
+    Pa:231.03588,U:238.02891,Np:237,Pu:244,Am:243,Cm:247,Bk:247,Cf:251,Es:252,Fm:257,Md:258,No:259,Lr:266,
+    Rf:267,Db:268,Sg:269,Bh:270,Hs:277,Mt:278,Ds:281,Rg:282,Cn:285,Nh:286,Fl:289,Mc:290,Lv:293,Ts:294,Og:294
+  };
+
+  function parseChemicalFormula(formula){
+    const text=String(formula||'').replace(/\s+/g,'');
+    if(!text) throw new Error('Enter a chemical formula.');
+    let i=0;
+    function number(){
+      const m=text.slice(i).match(/^(\d+(?:\.\d+)?)/);
+      if(!m) return 1;
+      i+=m[1].length; return Number(m[1]);
+    }
+    function group(stopChar=''){
+      const out=new Map();
+      while(i<text.length && (!stopChar || text[i]!==stopChar)){
+        if(text[i]==='('){
+          i++; const sub=group(')');
+          if(text[i]!==')') throw new Error('Unmatched parenthesis in chemical formula.');
+          i++; const mult=number();
+          for(const [el,n] of sub) out.set(el,(out.get(el)||0)+n*mult);
+          continue;
+        }
+        const m=text.slice(i).match(/^([A-Z][a-z]?)/);
+        if(!m) throw new Error(`Cannot parse chemical formula near "${text.slice(i)}".`);
+        const el=m[1]; i+=el.length; const n=number();
+        out.set(el,(out.get(el)||0)+n);
+      }
+      return out;
+    }
+    const result=group();
+    if(i!==text.length) throw new Error('Cannot parse chemical formula.');
+    return result;
+  }
+
+  function neutronManualAttenuationSummary(formula,densityGcm3,wavelengthA,thicknessCm=0){
+    const composition=parseChemicalFormula(formula);
+    const density=Number(densityGcm3), lambda=Number(wavelengthA), thickness=Number(thicknessCm);
+    if(!(density>0)) throw new Error('Enter a positive density in g/cm³.');
+    if(!(lambda>0)) throw new Error('A positive neutron wavelength is required.');
+    if(!(thickness>=0)) throw new Error('Sample thickness must be zero or positive.');
+
+    let molarMass=0, atomCount=0, sumBRe=0, sumBIm=0, sigmaAbsFU=0, sigmaScatFU=0;
+    const rows=[];
+    for(const [element,count] of composition){
+      const mass=ATOMIC_MASS[element];
+      if(!(mass>0)) throw new Error(`No atomic mass is available for ${element}.`);
+      const rec=neutronDataRecord(element);
+      const sigmaAbs=absorptionCrossSectionBarn(element,lambda);
+      const sigmaScat=scatteringCrossSectionBarn(element);
+      const sigmaCoh=coherentCrossSectionBarn(element);
+      const sigmaIncoh=incoherentCrossSectionBarn(element);
+      const bRe=Number(rec?.b_coherent_fm?.real), bIm=Number(rec?.b_coherent_fm?.imag||0);
+      if(!Number.isFinite(sigmaAbs)) throw new Error(`No absorption cross section is available for ${element}.`);
+      if(!Number.isFinite(sigmaScat)) throw new Error(`No total scattering cross section is available for ${element}.`);
+      if(!Number.isFinite(bRe)) throw new Error(`No coherent scattering length is available for ${element}.`);
+      molarMass+=count*mass; atomCount+=count;
+      sigmaAbsFU+=count*sigmaAbs; sigmaScatFU+=count*sigmaScat;
+      sumBRe+=count*bRe; sumBIm+=count*bIm;
+      rows.push({element,count,sigmaAbsBarn:sigmaAbs,sigmaCohBarn:sigmaCoh,sigmaIncohBarn:sigmaIncoh,sigmaScatBarn:sigmaScat,
+        absContributionBarn:count*sigmaAbs,scatContributionBarn:count*sigmaScat});
+    }
+    if(!(molarMass>0) || !(atomCount>0)) throw new Error('Chemical formula contains no atoms.');
+    const meanBRe=sumBRe/atomCount, meanBIm=sumBIm/atomCount;
+    const sigmaCohPerAtom=4*Math.PI*(meanBRe*meanBRe+meanBIm*meanBIm)/100;
+    const sigmaCohFU=atomCount*sigmaCohPerAtom;
+    const sigmaIncohFU=Math.max(0,sigmaScatFU-sigmaCohFU);
+    const sigmaAttFU=sigmaAbsFU+sigmaIncohFU;
+    const numberDensityFU=density/molarMass*AVOGADRO;
+    const barnToCm2=1e-24;
+    const muAbsCmInv=numberDensityFU*sigmaAbsFU*barnToCm2;
+    const muCohCmInv=numberDensityFU*sigmaCohFU*barnToCm2;
+    const muIncohCmInv=numberDensityFU*sigmaIncohFU*barnToCm2;
+    const muScatCmInv=numberDensityFU*sigmaScatFU*barnToCm2;
+    const muAttenuationCmInv=muAbsCmInv+muIncohCmInv;
+    const muFullCmInv=muAttenuationCmInv+muCohCmInv;
+    for(const row of rows){
+      row.absMuCmInv=numberDensityFU*row.absContributionBarn*barnToCm2;
+      row.scatMuCmInv=numberDensityFU*row.scatContributionBarn*barnToCm2;
+    }
+    return {
+      mode:'manual',formula:String(formula).trim(),densityGcm3:density,molarMassGmol:molarMass,numberDensityFU,
+      wavelengthA:lambda,thicknessCm:thickness,atomCount,
+      muAbsCmInv,muCohCmInv,muIncohCmInv,muScatCmInv,muAttenuationCmInv,muFullCmInv,muTotalCmInv:muAttenuationCmInv,
+      absorptionLengthCm:muAbsCmInv>0?1/muAbsCmInv:Infinity,
+      attenuationLengthCm:muAttenuationCmInv>0?1/muAttenuationCmInv:Infinity,
+      fullLengthCm:muFullCmInv>0?1/muFullCmInv:Infinity,
+      transmissionAbsorptionOnly:Math.exp(-muAbsCmInv*thickness),
+      transmission:Math.exp(-muAttenuationCmInv*thickness),
+      elements:rows.sort((a,b)=>(b.absMuCmInv+b.scatMuCmInv)-(a.absMuCmInv+a.scatMuCmInv))
+    };
+  }
+
+  function absorptionInputMode(){ return $('absorptionInputMode')?.value==='cif' ? 'cif' : 'manual'; }
+  function currentAbsorptionSummary(lambda,thicknessCm){
+    if(absorptionInputMode()==='cif'){
+      const structure=getSelectedCifStructure();
+      if(!structure) throw new Error('Select a CIF/mCIF for attenuation calculation.');
+      return neutronAbsorptionSummary(structure,lambda,thicknessCm);
+    }
+    return neutronManualAttenuationSummary($('absorptionFormula')?.value,$('absorptionDensity')?.value,lambda,thicknessCm);
+  }
+
   function fixedInstrumentWavelengthA(){
     const E=num('energy');
     return E>0 ? Math.sqrt(NEUTRON_E_LAMBDA/E) : NaN;
@@ -433,10 +547,8 @@ export function createToolbox({
   }
 
   function setAbsorptionThicknessFromTransmissionPercent(percent){
-    const selectedCifStructure=getSelectedCifStructure();
     const overallPct=Number(percent);
     if(!(overallPct>0) || overallPct>100) throw new Error('Overall transmission must be greater than 0% and no more than 100%.');
-    if(!selectedCifStructure) throw new Error('Select a CIF before solving thickness from transmission.');
     const seField=$('absorptionSETransmission');
     let sePct=Number(seField?.value);
     if(!Number.isFinite(sePct)) sePct=100;
@@ -445,7 +557,7 @@ export function createToolbox({
     if(overallPct>sePct+1e-9) throw new Error(`Overall transmission cannot exceed the SE transmission (${formatAbsorptionNumber(sePct,3)}%).`);
     const samplePct=overallPct/sePct*100;
     const lambda=attenuationWavelengthA();
-    const base=neutronAbsorptionSummary(selectedCifStructure,lambda,0);
+    const base=currentAbsorptionSummary(lambda,0);
     const mu=Number(base.muAttenuationCmInv ?? base.muTotalCmInv);
     let thicknessMm=0;
     if(samplePct<100){
@@ -464,6 +576,7 @@ export function createToolbox({
   function updateAbsorptionCalculator(){
     const selectedCifStructure=getSelectedCifStructure();
     const selectedCifFileName=getSelectedCifFileName();
+    const inputMode=absorptionInputMode();
     const host=$('absorptionResults');
     const status=$('absorptionCifStatus');
     const energyField=$('absorptionEnergy');
@@ -477,9 +590,9 @@ export function createToolbox({
 
     const lambda=attenuationWavelengthA();
     const energyMeV=attenuationEnergyMeV();
-    status.value=selectedCifFileName || selectedCifStructure?.name || 'No CIF selected';
+    status.value=selectedCifFileName || selectedCifStructure?.name || 'No CIF/mCIF selected';
 
-    if(!selectedCifStructure){
+    if(inputMode==='cif' && !selectedCifStructure){
       transmissionOut.value='';
       host.innerHTML='';
       if(plot && window.Plotly) Plotly.purge(plot);
@@ -489,7 +602,7 @@ export function createToolbox({
     let thicknessMm=Math.max(0,Number(thicknessEntry.value)||0);
     if(document.activeElement!==thicknessEntry) thicknessEntry.value=formatAbsorptionNumber(thicknessMm,2);
     try{
-      const r=neutronAbsorptionSummary(selectedCifStructure,lambda,thicknessMm/10);
+      const r=currentAbsorptionSummary(lambda,thicknessMm/10);
       const transPct=100*r.transmission;
       const absTransPct=100*r.transmissionAbsorptionOnly;
       let seTransPct=Number(seTransmissionField?.value);
@@ -508,8 +621,8 @@ export function createToolbox({
       thicknessSlider.value=String(Math.min(thicknessMm,sliderMax));
 
       const rows=r.elements.map(e=>{
-        const absMu=(Number(e.absContributionBarn)||0)/r.volumeA3;
-        const scatMu=(Number(e.scatContributionBarn)||0)/r.volumeA3;
+        const absMu=r.mode==='manual' ? Number(e.absMuCmInv)||0 : (Number(e.absContributionBarn)||0)/r.volumeA3;
+        const scatMu=r.mode==='manual' ? Number(e.scatMuCmInv)||0 : (Number(e.scatContributionBarn)||0)/r.volumeA3;
         const ratioDen=(r.muAbsCmInv+r.muScatCmInv) || 1;
         return `<tr><td>${e.element}</td><td>${formatAbsorptionNumber(e.count,4)}</td><td>${formatAbsorptionNumber(absMu,5)}</td><td>${formatAbsorptionNumber(scatMu,5)}</td><td>${formatAbsorptionNumber(100*(absMu+scatMu)/ratioDen,2)}%</td></tr>`;
       }).join('');
@@ -517,7 +630,9 @@ export function createToolbox({
       const lengthText=v=>Number.isFinite(v)?`${formatAbsorptionNumber(v,4)} cm`:'∞';
       host.innerHTML=`
         <div class="absorption-summary-cards">
-          <div class="absorption-summary-card"><div class="absorption-summary-label">Cell volume</div><div class="absorption-summary-value">${formatAbsorptionNumber(r.volumeA3,4)} Å³</div></div>
+          ${r.mode==='manual'
+            ? `<div class="absorption-summary-card"><div class="absorption-summary-label">Density / molar mass</div><div class="absorption-summary-value">${formatAbsorptionNumber(r.densityGcm3,4)} g/cm³ · ${formatAbsorptionNumber(r.molarMassGmol,4)} g/mol</div></div>`
+            : `<div class="absorption-summary-card"><div class="absorption-summary-label">Cell volume</div><div class="absorption-summary-value">${formatAbsorptionNumber(r.volumeA3,4)} Å³</div></div>`}
           <div class="absorption-summary-card absorption-summary-wide">
             <div class="absorption-summary-label">Scattering cross section</div>
             <div class="absorption-summary-subgrid">
@@ -543,7 +658,7 @@ export function createToolbox({
             </div>
           </div>
         </div>
-        <div class="absorption-table-wrap"><table class="absorption-table absorption-atom-table"><thead><tr><th>Atom</th><th>Atoms / cell</th><th>Abs (cm⁻¹)</th><th>Scat total (cm⁻¹)</th><th>Ratio</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        <div class="absorption-table-wrap"><table class="absorption-table absorption-atom-table"><thead><tr><th>Atom</th><th>${r.mode==='manual'?'Atoms / formula':'Atoms / cell'}</th><th>Abs (cm⁻¹)</th><th>Scat total (cm⁻¹)</th><th>Ratio</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 
       if(plot && window.Plotly){
         const n=241;

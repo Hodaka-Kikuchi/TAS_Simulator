@@ -35,6 +35,7 @@ export function createCifUI(deps){
     updateModeVisibility,
     updateAbsorptionCalculator,
     getPropagationVectors,
+    setPropagationVectorsFromFile,
     getSelectedCifStructure,
     getSelectedCifFileName,
     getSelectedCifText,
@@ -65,6 +66,7 @@ function updateCifUI(){
   if(structureName) structureName.value=getSelectedCifFileName() || "No CIF selected";
   const structureClear=$("structureCifClear");
   if(structureClear) structureClear.disabled=!getSelectedCifStructure();
+  if($("structureMcifShowCurrent")) $("structureMcifShowCurrent").disabled=!getSelectedCifText();
   const showCurrentButton=$("cifShowCurrent");
   if(showCurrentButton) showCurrentButton.disabled=!getSelectedCifText();
   $("sfColorMaxRow")?.classList.toggle("hidden",!hasSelectedCif());
@@ -115,29 +117,72 @@ function restoreSelectedCifLocal(){
   }
 }
 
+function propagationVectorsFromMcif(text,parsed){
+  const lines=String(text||'').replace(/\r/g,'').split('\n');
+  const result=[];
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].trim().toLowerCase()!=='loop_') continue;
+    let j=i+1, tags=[];
+    while(j<lines.length && lines[j].trim().startsWith('_')){tags.push(lines[j].trim().toLowerCase());j++;}
+    const idx=tags.findIndex(tag=>['_parent_propagation_vector.kxkykz','_parent_propagation_vector_kxkykz'].includes(tag));
+    if(idx<0) continue;
+    while(j<lines.length){
+      const row=lines[j].trim();
+      if(!row || row.startsWith('#')){j++;continue;}
+      if(row==='loop_' || row.startsWith('_') || /^data_/i.test(row)) break;
+      const match=row.match(/\[([^\]]+)\]/);
+      const components=match ? match[1].split(/[\s,]+/) : row.split(/\s+/).slice(idx,idx+3);
+      const nums=components.map(Number);
+      if(nums.length===3 && nums.every(Number.isFinite)) result.push({h:nums[0],k:nums[1],l:nums[2],enabled:true});
+      j++;
+    }
+  }
+  if(!result.length && parsed?.incommensurateSingleQ) for(const q of (parsed.propagationVectors||[])) result.push({h:q.h,k:q.k,l:q.l,enabled:true});
+  return result;
+}
+
 function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   const parsed=parseCifStructure(text);
   const cifText=String(text??"");
+  const importedQ=propagationVectorsFromMcif(cifText,parsed);
+  if(importedQ.length) setPropagationVectorsFromFile?.(importedQ);
+  if($("mcifPreviewText")) $("mcifPreviewText").textContent=cifText;
+  if($("structureMcifGeneratedName")) $("structureMcifGeneratedName").value=cleanMcifBaseName(fileName);
+  invalidateGeneratedMcif();
   // Save the currently displayed structure before switching.  Settings are
   // stored per structure fingerprint, so they can only return for the same CIF.
   saveStructureViewerState();
   setSelectedCifState(parsed,fileName,cifText);
   cifStructureSourcePreference="selected";
   restoreStructureViewerState();
+  if(parsed.magnetic){
+    // Imported mCIF vectors are authoritative. Restore visual preferences,
+    // but never allow an old local XYZ value to override the file's moments.
+    for(const [siteIndex,site] of (parsed.asymmetricSites||[]).entries()){
+      const key=momentKey({...site,siteIndex});
+      const saved=structureMomentSettings.get(key)||{};
+      const imported=defaultMomentSetting(site,parsed);
+      structureMomentSettings.set(key,{...saved,enabled:imported.enabled,
+        mx:imported.mx,my:imported.my,mz:imported.mz});
+    }
+    // Clear live inputs before rebuilding or they could overwrite the imported
+    // XYZ vectors during updateMagneticMomentRows().
+    $("cifMagMomentRows")?.replaceChildren();
+    structureControlSignature="";
+  }
   prepareStructureViewerControls();
   if(persist) saveSelectedCifLocal(cifText,fileName);
 
   // A selected/generated CIF defines the crystallographic unit cell. Keep the
   // existing U/V orientation indices, but synchronize the six lattice fields.
+  const sg=findGeneratorSpaceGroup(parsed);
+  if(sg) setSampleSpaceGroup(sg.number,{recalc:false});
   const lattice=parsed?.lattice || {};
+  // Use the exact reported mCIF cell parameters, not symmetry-normalized values.
   for(const id of ["a","b","c","alpha","beta","gamma"]){
     const value=Number(lattice[id]);
     if(Number.isFinite(value) && $(id)) $(id).value=String(value);
   }
-  // When the CIF contains a recognizable standard-setting space group, keep
-  // the Sample Space group controls synchronized with the loaded structure.
-  const sg=findGeneratorSpaceGroup(parsed);
-  if(sg) setSampleSpaceGroup(sg.number,{recalc:false});
 
   // Keep CIF Generator synchronized with the currently selected sample CIF.
   // Only editable generator fields are populated; file inputs are never set
@@ -340,6 +385,8 @@ let lastGeneratedCifSpaceGroup=null;
 let lastGeneratedReflections=[];
 let cifStructureViewMode="a";
 let cifStructureSourcePreference="generated";
+let loadedGeneratorCifStructure=null;
+let loadedGeneratorCifName="";
 const STRUCTURE_VIEWER_STORAGE_KEY="tas-simulator-structure-viewer-v2";
 let restoringStructureViewer=false;
 let restoredStructureBondRules=null;
@@ -352,8 +399,10 @@ let structureMomentRotationAxis="c";
 let structureMomentChirality="CCW";
 let structureMomentPropagationIndex=0;
 let structureMomentDirectionMode="cartesian";
-let structureMomentGlobalWidth=6;
-let structureMomentGlobalHeadSize=0.5;
+let structureConfigActiveTab="atoms";
+let structureMomentGlobalLength=1;
+let structureMomentGlobalWidth=10;
+let structureMomentGlobalHeadSize=0.51;
 let structureMomentGlobalWidthBlank=false;
 let structureMomentGlobalHeadBlank=false;
 let structureUnitCellMode="one";
@@ -426,14 +475,17 @@ function resetStructureViewerStateToDefaults(){
     structureMomentChirality="CCW";
     structureMomentPropagationIndex=0;
     structureMomentDirectionMode="cartesian";
-    structureMomentGlobalWidth=6;
-    structureMomentGlobalHeadSize=0.5;
+    structureConfigActiveTab="atoms";
+    structureMomentGlobalLength=1;
+    structureMomentGlobalWidth=10;
+    structureMomentGlobalHeadSize=0.51;
     structureMomentGlobalWidthBlank=false;
     structureMomentGlobalHeadBlank=false;
     structureUnitCellMode="one";
     structureShowXYZ=true;
     restoredStructureBondRules=[];
     structureControlSignature="";
+    
     const unitCellSelect=$("cifUnitCellMode"); if(unitCellSelect) unitCellSelect.value="one";
     const xyzSelect=$("cifShowXYZ"); if(xyzSelect) xyzSelect.value="show";
   }finally{ restoringStructureViewer=false; }
@@ -459,6 +511,9 @@ function saveStructureViewerState(){
       momentChirality:structureMomentChirality,
       momentPropagationIndex:structureMomentPropagationIndex,
       momentDirectionMode:structureMomentDirectionMode,
+      configActiveTab:structureConfigActiveTab,
+      momentCoordinatesVersion:3,
+      momentGlobalLength:structureMomentGlobalLength,
       momentGlobalWidth:structureMomentGlobalWidth,
       momentGlobalHeadSize:structureMomentGlobalHeadSize,
       momentGlobalWidthBlank:structureMomentGlobalWidthBlank,
@@ -472,6 +527,7 @@ function saveStructureViewerState(){
     localStorage.setItem(STRUCTURE_VIEWER_STORAGE_KEY,JSON.stringify(store));
   }catch(_e){}
 }
+function sourceIsMagneticCif(){return currentStructureForViewer()?.structure?.magnetic===true;}
 function restoreStructureViewerState(){
   const identity=currentStructureStateIdentity();
   if(!identity){ resetStructureViewerStateToDefaults(); return false; }
@@ -510,11 +566,23 @@ function restoreStructureViewerState(){
     for(const [element,visible] of Object.entries(saved.atomVisible||{})) structureAtomVisibility.set(element,visible!==false);
     structureMomentSettings.clear();
     for(const [key,value] of Object.entries(saved.moments||{})) if(value && typeof value==="object") structureMomentSettings.set(key,{...value});
+    if(sourceIsMagneticCif() && saved.momentCoordinatesVersion!==3) {
+      for(const site of (currentStructureForViewer()?.structure?.asymmetricSites||[])) {
+        if(!Array.isArray(site.magneticMoment)) continue;
+        const key=momentKey({...site,siteIndex:(currentStructureForViewer()?.structure?.asymmetricSites||[]).indexOf(site)});
+        const existing=structureMomentSettings.get(key)||{};
+        const canonical=defaultMomentSetting(site,currentStructureForViewer().structure);
+        structureMomentSettings.set(key,{...existing,mx:canonical.mx,my:canonical.my,mz:canonical.mz,size:1});
+      }
+    }
     if(["collinear","helical","sinusoidal"].includes(String(saved.momentStructureType||""))) structureMomentStructureType=String(saved.momentStructureType);
+    else if(String(saved.momentStructureType||"")==="canted") structureMomentStructureType="collinear";
     if(["a","b","c"].includes(String(saved.momentRotationAxis||""))) structureMomentRotationAxis=String(saved.momentRotationAxis);
     if(["CW","CCW"].includes(String(saved.momentChirality||""))) structureMomentChirality=String(saved.momentChirality);
     { const n=Number(saved.momentPropagationIndex); structureMomentPropagationIndex=Number.isInteger(n)&&n>0?n:0; }
     if(["cartesian","polar"].includes(String(saved.momentDirectionMode||""))) structureMomentDirectionMode=String(saved.momentDirectionMode);
+    structureConfigActiveTab=["atoms","spins","bonds"].includes(saved.configActiveTab)?saved.configActiveTab:"atoms";
+    { const n=Number(saved.momentGlobalLength); if(Number.isFinite(n)&&n>=0) structureMomentGlobalLength=n; }
     { const n=Number(saved.momentGlobalWidth); if(Number.isFinite(n)&&n>=1) structureMomentGlobalWidth=n; }
     { const n=Number(saved.momentGlobalHeadSize); if(Number.isFinite(n)&&n>0) structureMomentGlobalHeadSize=n; }
     structureMomentGlobalWidthBlank=saved.momentGlobalWidthBlank===true;
@@ -524,6 +592,7 @@ function restoreStructureViewerState(){
     structureShowXYZ=saved.showXYZ!==false;
     restoredStructureBondRules=Array.isArray(saved.bonds)?saved.bonds.map(x=>({...x})):[];
     structureControlSignature="";
+    
     const unitCellSelect=$("cifUnitCellMode"); if(unitCellSelect) unitCellSelect.value=structureUnitCellMode;
     const xyzSelect=$("cifShowXYZ"); if(xyzSelect) xyzSelect.value=structureShowXYZ?"show":"hide";
     return true;
@@ -611,13 +680,14 @@ function elementColor(element){
   return structureAtomColorOverrides.get(String(element||"")) || defaultElementColor(element);
 }
 function defaultElementRadius(_element){
-  return 8;
+  return 10;
 }
 function elementRadius(element){
   const override=Number(structureAtomSizeOverrides.get(String(element||"")));
   return Number.isFinite(override) ? Math.max(2,Math.min(30,override)) : defaultElementRadius(element);
 }
 function currentStructureForViewer(){
+  if(cifStructureSourcePreference==="loaded" && loadedGeneratorCifStructure) return {structure:loadedGeneratorCifStructure,label:loadedGeneratorCifName||"loaded mCIF",kind:"loaded"};
   const preferSelected=cifStructureSourcePreference==="selected";
   if(preferSelected && getSelectedCifStructure()) return {structure:getSelectedCifStructure(), label:getSelectedCifFileName()||"selected CIF", kind:"selected"};
   try{
@@ -633,7 +703,7 @@ function isStructurePanelVisible(){
   return !!panel && !panel.classList.contains("hidden");
 }
 function renderCifStructureIfVisible(){
-  if(isStructurePanelVisible()) renderCifStructureView();
+  if(isStructurePanelVisible() && $("mcifStructurePane") && !$("mcifStructurePane").classList.contains("hidden")) renderCifStructureView();
 }
 function enabledPropagationVectorsForStructure(){
   const rows=(typeof getPropagationVectors==="function" ? getPropagationVectors() : []) || [];
@@ -1078,9 +1148,65 @@ function magneticCandidateSites(structure){
   });
 }
 function momentKey(site){ return `${site.siteIndex}:${site.label||site.element}`; }
-function defaultMomentSetting(site){
+// mCIF crystalaxis values are components along unit crystallographic
+// directions, not fractional atomic coordinates. Never multiply moments
+// by lattice lengths a, b, c (in Angstrom).
+function mcifCrystalAxisToCartesian(basis,m){
+  if(!basis || !Array.isArray(m)) return m?.slice()||[0,0,0];
+  const ua=vecNormalize(basis.a),ub=vecNormalize(basis.b),uc=vecNormalize(basis.c);
+  return vecAdd(vecAdd(vecScale(ua,m[0]),vecScale(ub,m[1])),vecScale(uc,m[2]));
+}
+
+function evaluateFourierCrystalMoment(model,phase){
+  if(!model) return [0,0,0];
+  const cosVec=Array.isArray(model.cos)?model.cos:[0,0,0];
+  const sinVec=Array.isArray(model.sin)?model.sin:[0,0,0];
+  const arg=2*PI*((Number(model.phaseSign)||1)*phase + (Number(model.phaseShift)||0));
+  let out=[0,0,0].map((_,i)=>(Number(cosVec[i])||0)*Math.cos(arg) + (Number(sinVec[i])||0)*Math.sin(arg));
+  if(Array.isArray(model.transformR)){
+    const factor=Number.isFinite(Number(model.transformFactor)) ? Number(model.transformFactor) : 1;
+    out=model.transformR.map(row=>factor*row.reduce((sum,x,j)=>sum+x*out[j],0));
+  }
+  return out;
+}
+function representativeCrystalMoment(site){
+  const base=Array.isArray(site?.magneticMoment)?site.magneticMoment.slice():[0,0,0];
+  if(site?.magneticFourier){
+    const mod=evaluateFourierCrystalMoment({...site.magneticFourier,phaseSign:1,phaseShift:0},0);
+    return base.map((v,i)=>v+(mod[i]||0));
+  }
+  return base;
+}
+function atomCrystalMoment(atom,frac){
+  const base=Array.isArray(atom?.magneticMoment)?atom.magneticMoment.slice():[0,0,0];
+  if(atom?.magneticFourier){
+    const q=atom.magneticFourier.q||[0,0,0];
+    const phase=(Number(q[0])||0)*(Number(frac[0])||0) + (Number(q[1])||0)*(Number(frac[1])||0) + (Number(q[2])||0)*(Number(frac[2])||0);
+    const mod=evaluateFourierCrystalMoment(atom.magneticFourier,phase);
+    return base.map((v,i)=>v+(mod[i]||0));
+  }
+  return base;
+}
+function defaultMomentSetting(site,structure=null){
   const element=String(site.element||"").toUpperCase();
-  return {enabled:DEFAULT_SPIN_ELEMENTS.has(element),mx:0,my:0,mz:1,size:1,width:6,headSize:0.5,color:elementColor(site.element),colorCustomized:false};
+  const hasMoment=Array.isArray(site.magneticMoment);
+  const hasFourier=!!site?.magneticFourier;
+  // Sunny uses the mCIF cell matrix to turn crystalaxis components into
+  // Cartesian magnetic moments; do not show unconverted components as XYZ.
+  const basis=directLatticeBasis(structure?.lattice);
+  const representative=representativeCrystalMoment(site);
+  const cart=(hasMoment||hasFourier)&&basis ? mcifCrystalAxisToCartesian(basis,representative) : null;
+  const isMcif=structure?.magnetic===true;
+  return {enabled:hasMoment || hasFourier || (!isMcif&&DEFAULT_SPIN_ELEMENTS.has(element)),
+    mx:cart?.[0]??0,my:cart?.[1]??0,mz:cart?.[2]??(isMcif?0:1),
+    size:1,width:10,headSize:0.51,color:elementColor(site.element),colorCustomized:false};
+}
+// Four significant digits are for display only; never round stored vectors.
+function formatSpinValue(value){
+  const n=Number(value);
+  if(!Number.isFinite(n)) return "0";
+  if(Math.abs(n)<1e-12) return "0";
+  return String(Number(n.toPrecision(4)));
 }
 function currentMomentSettings(){
   const rows=[...document.querySelectorAll("#cifMagMomentRows .structure-moment-row")];
@@ -1091,28 +1217,32 @@ function currentMomentSettings(){
     const fallback=structureMomentSettings.get(key)||{};
     let mx=Number(fallback.mx)||0, my=Number(fallback.my)||0, mz=Number(fallback.mz);
     if(!Number.isFinite(mz)) mz=1;
+    const readEditedNumber=(field)=>{
+      const input=row.querySelector(`[data-moment-field="${field}"]`);
+      if(!input) return null;
+      const shown=String(input.value);
+      const precise=Number(input.dataset.fullPrecision);
+      return shown===input.dataset.displayValue && Number.isFinite(precise) ? precise : Number(shown);
+    };
     const thetaInput=row.querySelector('[data-moment-field="theta"]');
     const phiInput=row.querySelector('[data-moment-field="phi"]');
     if(thetaInput || phiInput){
-      const theta=Number(thetaInput?.value);
-      const phi=Number(phiInput?.value);
-      if(Number.isFinite(theta)&&Number.isFinite(phi)) [mx,my,mz]=directionFromPolar(theta,phi);
+      const magnitudeInput=row.querySelector('[data-moment-field="moment"]');
+      const untouched=[thetaInput,phiInput,magnitudeInput].every(input=>input && input.value===input.dataset.displayValue);
+      if(!untouched){
+        const theta=readEditedNumber("theta"), phi=readEditedNumber("phi"), magnitude=readEditedNumber("moment");
+        if([theta,phi,magnitude].every(Number.isFinite) && magnitude>=0) [mx,my,mz]=vecScale(directionFromPolar(theta,phi),magnitude);
+      }
     }else{
-      const x=row.querySelector('[data-moment-field="mx"]');
-      const y=row.querySelector('[data-moment-field="my"]');
-      const z=row.querySelector('[data-moment-field="mz"]');
-      if(x) mx=Number(x.value)||0;
-      if(y) my=Number(y.value)||0;
-      if(z) mz=Number(z.value)||0;
+      for(const field of ["mx","my","mz"]){
+        const value=readEditedNumber(field);
+        if(Number.isFinite(value)) {if(field==="mx") mx=value; else if(field==="my") my=value; else mz=value;}
+      }
     }
-    const sizeInput=row.querySelector('[data-moment-field="size"]');
-    const rawSize=String(sizeInput?.value??"").trim();
-    const size=rawSize && Number.isFinite(Number(rawSize)) ? Math.max(0.05,Number(rawSize)) : 1;
     out.set(key,{
       enabled:!!row.querySelector('[data-moment-field="enabled"]')?.checked,
-      mx,my,mz,size,
+      mx,my,mz,size:structureMomentGlobalLength,
       width:structureMomentGlobalWidth,headSize:structureMomentGlobalHeadSize,
-      sizeBlank:!!sizeInput && rawSize==="",
       color:row.querySelector('[data-moment-field="color"]')?.value || row.dataset.momentColor || elementColor(row.dataset.momentElement),
       colorCustomized:row.dataset.momentColorCustom==="1"
     });
@@ -1132,7 +1262,9 @@ function updateMagneticMomentRows(structure){
   sites.forEach((site,siteOrder)=>{
     const key=momentKey(site);
     const saved=structureMomentSettings.get(key)||{};
-    const setting={...defaultMomentSetting(site),...saved};
+    const setting={...defaultMomentSetting(site,structure),...saved};
+    // For mCIF, loaded components are physical Cartesian moments, not fractional coordinates.
+    // Keep the original physical components in XYZ; Length is a visual-only control.
     if(!setting.colorCustomized && !saved.colorCustomized) setting.color=elementColor(site.element);
     const row=document.createElement("div");
     row.className="structure-moment-row";
@@ -1165,32 +1297,20 @@ function updateMagneticMomentRows(structure){
     const momentInputs=[];
     if(structureMomentDirectionMode==="polar"){
       const polar=directionToPolar([setting.mx,setting.my,setting.mz]);
-      for(const [field,labelText,value] of [["theta","θ (from +z)",polar.theta],["phi","φ (from +x in xy)",polar.phi]]){
+      for(const [field,labelText,value] of [["theta","θ (z)",polar.theta],["phi","φ (xy)",polar.phi],["moment","μB",vecNorm([setting.mx,setting.my,setting.mz])]]){
         const inp=document.createElement("input");
-        inp.type="number"; inp.step="1"; inp.value=Number(value).toFixed(3).replace(/\.?0+$/,"");
+        inp.type="number"; inp.step=field==="moment"?"0.01":"1"; if(field==="moment") inp.min="0";
+        inp.value=formatSpinValue(value); inp.dataset.displayValue=inp.value; inp.dataset.fullPrecision=String(value);
         inp.dataset.momentField=field;
-        inp.title=field==="theta"?"Polar angle θ from +z (degrees)":"Azimuth φ from +x toward +y (degrees)";
+        inp.title=field==="theta"?"Polar angle from +z (degrees)":field==="phi"?"Azimuth from +x toward +y (degrees)":"Physical magnetic moment magnitude (μB); separate from Length display scale";
         momentInputs.push(inp); xyz.appendChild(makeField(labelText,inp));
       }
     }else{
       for(const [field,labelText,value] of [["mx","x",setting.mx],["my","y",setting.my],["mz","z",setting.mz]]){
         const inp=document.createElement("input");
-        inp.type="number"; inp.step="0.1"; inp.value=String(value); inp.dataset.momentField=field;
-        inp.title=`${labelText} direction component`; momentInputs.push(inp); xyz.appendChild(makeField(labelText,inp));
+        inp.type="number"; inp.step="any"; inp.value=formatSpinValue(value); inp.dataset.displayValue=inp.value; inp.dataset.fullPrecision=String(value); inp.dataset.momentField=field;
+        inp.title=`${labelText} Cartesian magnetic moment component (μB)`; momentInputs.push(inp); xyz.appendChild(makeField(labelText,inp));
       }
-    }
-
-    const geometry=document.createElement("div");
-    geometry.className="structure-moment-geometry structure-entry-grid";
-    const geometryInputs=[];
-    {
-      const inp=document.createElement("input");
-      inp.type="number"; inp.min="0.05"; inp.step="0.05"; inp.dataset.momentField="size";
-      const numericValue=Number(setting.size);
-      inp.value=setting.sizeBlank ? "" : String(Number.isFinite(numericValue)?numericValue:1);
-      inp.placeholder="1";
-      inp.title="Length from atom center to one end (full displayed arrow length = 2 × Length; leave blank for default 1)";
-      geometryInputs.push(inp); geometry.appendChild(makeField("Length",inp));
     }
 
     const picker=makeMomentColorPicker(setting.color,color=>{
@@ -1211,10 +1331,6 @@ function updateMagneticMomentRows(structure){
       renderCifStructureIfVisible();
     };
     enabled.addEventListener("change",()=>{ commit(); syncSpinElementToggleStates(); });
-    for(const input of geometryInputs){
-      input.addEventListener("input",commit);
-      input.addEventListener("change",commit);
-    }
     for(const input of momentInputs){
       const autoEnable=()=>{
         if(!enabled.checked) enabled.checked=true;
@@ -1224,7 +1340,9 @@ function updateMagneticMomentRows(structure){
       input.addEventListener("change",autoEnable);
     }
 
-    row.append(enabled,siteLabel,xyz,geometry,picker);
+    // Three numeric fields: Cartesian x/y/z or Polar θ/φ/μB.
+    xyz.classList.add("structure-moment-three-fields");
+    row.append(enabled,siteLabel,xyz,picker);
     host.appendChild(row);
   });
   updateSpinElementToggles(structure);
@@ -1268,6 +1386,19 @@ function populateBondSelect(select,elements,value){
   for(const element of values){ const opt=document.createElement("option"); opt.value=element; opt.textContent=element; select.appendChild(opt); }
   select.value=keep;
 }
+function defaultBondColor(a,b){
+  const first=elementColor(a), second=elementColor(b);
+  const rgb=color=>{ const hex=String(color||"").trim().replace(/^#/,""); return /^[0-9a-fA-F]{6}$/.test(hex)?[0,2,4].map(i=>parseInt(hex.slice(i,i+2),16)):null; };
+  const x=rgb(first),y=rgb(second);
+  if(!x||!y) return first||"#888888";
+  // Keep same-element bonds identical to the atom color. For different
+  // elements, use the RGB complement of the mean atom color.
+  if(String(a)===String(b)) return first;
+  return "#"+x.map((v,i)=>{
+    const mixed=Math.round((v+y[i])/2);
+    return (255-mixed).toString(16).padStart(2,"0");
+  }).join("");
+}
 function createBondRuleRow(rule={},elements=[]){
   const row=document.createElement("div"); row.className="structure-bond-row";
   const a=document.createElement("select"); a.dataset.bondField="a"; a.title="First atom";
@@ -1281,17 +1412,24 @@ function createBondRuleRow(rule={},elements=[]){
   };
   const minDistance=makeNumber("minDistance",minValue,0,0.1,"Minimum bond distance (Å)");
   const maxDistance=makeNumber("maxDistance",maxValue,0,0.1,"Maximum bond distance (Å)");
-  const bondWidth=Number.isFinite(Number(rule.width))?Number(rule.width):3;
+  const bondWidth=Number.isFinite(Number(rule.width))?Number(rule.width):5;
   const width=makeNumber("width",bondWidth,1,1,"Bond width (pixels; leave blank for default)");
-  width.max="30"; width.placeholder="3"; if(rule.widthBlank===true) width.value="";
-  const color=document.createElement("input"); color.type="color"; color.dataset.bondField="color"; color.value=rule.color||"#888888"; color.title="Bond color";
+  width.max="30"; width.placeholder="5"; if(rule.widthBlank===true) width.value="";
+  const color=document.createElement("input"); color.type="color"; color.dataset.bondField="color"; color.value=rule.color||defaultBondColor(a.value,b.value); color.title="Bond color";
   const field=(text,input)=>{ const label=document.createElement("label"); label.className="structure-entry-field"; const span=document.createElement("span"); span.className="structure-entry-label"; span.textContent=text; label.append(span,input); return label; };
   const rangePair=document.createElement("div"); rangePair.className="structure-bond-range-pair";
   rangePair.append(field("Min (Å)",minDistance),field("Max (Å)",maxDistance));
   const widthField=field("Width",width);
   const remove=document.createElement("button"); remove.type="button"; remove.textContent="Remove";
   populateBondSelect(a,elements,rule.a||elements[0]||""); populateBondSelect(b,elements,rule.b||elements[1]||elements[0]||"");
+  if(!rule.color) color.value=defaultBondColor(a.value,b.value);
   remove.addEventListener("click",()=>{ row.remove(); saveStructureViewerState(); renderCifStructureIfVisible(); if(!$("cifBondRows")?.children.length) updateStructureBondRows(elements); });
+  // Track explicit user color changes; automatically update the pair default otherwise.
+  let customized=!!rule.color && rule.color.toLowerCase()!==defaultBondColor(a.value,b.value).toLowerCase();
+  color.addEventListener("input",()=>{customized=true;});
+  const updatePairColor=()=>{if(!customized) color.value=defaultBondColor(a.value,b.value);};
+  a.addEventListener("change",updatePairColor);
+  b.addEventListener("change",updatePairColor);
   const commit=()=>{ saveStructureViewerState(); renderCifStructureIfVisible(); };
   for(const el of [a,b,minDistance,maxDistance,width,color]){
     el.addEventListener("input",commit);
@@ -1320,14 +1458,14 @@ function addStructureBondRule(){
   const info=currentStructureForViewer(); const elements=structureElements(info?.structure||null); const host=$("cifBondRows");
   if(!host||!elements.length) return;
   if(host.firstElementChild?.classList.contains("structure-rows-empty")) host.replaceChildren();
-  host.appendChild(createBondRuleRow({a:elements[0],b:elements[Math.min(1,elements.length-1)]||elements[0],minDistance:0,maxDistance:3,width:3,color:"#888888"},elements));
+  host.appendChild(createBondRuleRow({a:elements[0],b:elements[Math.min(1,elements.length-1)]||elements[0],minDistance:0,maxDistance:3,width:5},elements));
   saveStructureViewerState();
   renderCifStructureIfVisible();
 }
 function structureSignature(structure){
   if(!structure) return "";
   const lattice=structure.lattice||{};
-  const sites=(structure.asymmetricSites||[]).map((s,i)=>`${i}:${s.label||""}:${s.element}:${s.x}:${s.y}:${s.z}`).join("|");
+  const sites=(structure.asymmetricSites||[]).map((s,i)=>`${i}:${s.label||""}:${s.element}:${s.x}:${s.y}:${s.z}:${(s.magneticMoment||[]).join(",")}:${s.magneticFourier?JSON.stringify(s.magneticFourier):""}`).join("|");
   return `${lattice.a},${lattice.b},${lattice.c},${lattice.alpha},${lattice.beta},${lattice.gamma}|${sites}`;
 }
 function syncStructureControlRows(structure){
@@ -1375,7 +1513,7 @@ function bondTraces(atoms,basis,rules){
         x.push(pi[0],pj[0],null); y.push(pi[1],pj[1],null); z.push(pi[2],pj[2],null);
       }
     }
-    if(x.length) traces.push({type:"scatter3d",mode:"lines",x,y,z,name:`${rule.a}-${rule.b} ${rule.minDistance}–${rule.maxDistance} Å`,hoverinfo:"skip",showlegend:false,line:{color:rule.color,width:Math.max(1,Number(rule.width)||3)}});
+    if(x.length) traces.push({type:"scatter3d",mode:"lines",x,y,z,name:`${rule.a}-${rule.b} ${rule.minDistance}–${rule.maxDistance} Å`,hoverinfo:"skip",showlegend:false,line:{color:rule.color,width:Math.max(1,Number(rule.width)||5)}});
   }
   return traces;
 }
@@ -1469,14 +1607,26 @@ function magneticStructureTraces(atoms,basis,structure){
   for(const atom of atoms){
     const setting=atomMomentSetting(atom,settings,structure);
     if(!setting?.enabled) continue;
-    const moment=[setting.mx,setting.my,setting.mz];
+    // mCIF supplies the site-resolved magnetic moment. Preserve its canting.
+    // mCIF crystalaxis components must be transformed with the actual
+    // magnetic cell vectors (as in Sunny), not reinterpreted as UI XYZ values.
+    // mCIF moments are axial crystalaxis vectors, NOT fractional positions.
+    // Their symmetry-transformed components are mapped to physical Cartesian
+    // coordinates with the magnetic unit-cell basis exactly once (Sunny).
+    // Never synthesize a spin along c for sites missing an mCIF moment.
+    if(structure?.magnetic && !Array.isArray(atom.magneticMoment) && !atom.magneticFourier) continue;
+    const frac=[Number.isFinite(atom.phaseX)?atom.phaseX:atom.x,Number.isFinite(atom.phaseY)?atom.phaseY:atom.y,Number.isFinite(atom.phaseZ)?atom.phaseZ:atom.z];
+    const crystalMoment=(Array.isArray(atom.magneticMoment)||atom.magneticFourier)
+      ? atomCrystalMoment(atom,frac) : null;
+    const moment=crystalMoment ? mcifCrystalAxisToCartesian(basis,crystalMoment) : [setting.mx,setting.my,setting.mz];
     const mnorm=vecNorm(moment);
     if(!(mnorm>1e-12)) continue;
-    const frac=[Number.isFinite(atom.phaseX)?atom.phaseX:atom.x,Number.isFinite(atom.phaseY)?atom.phaseY:atom.y,Number.isFinite(atom.phaseZ)?atom.phaseZ:atom.z];
     const basePhase=2*PI*(q.h*frac[0]+q.k*frac[1]+q.l*frac[2]);
     let dir=vecNormalize(moment);
     let amplitude=1;
-    if(structureMomentStructureType==="helical"){
+    if(Array.isArray(atom.magneticMoment) || atom.magneticFourier){
+      // Magnetic symmetry/Fourier modulation already provides the spin.
+    }else if(structureMomentStructureType==="helical"){
       const chiralitySign=structureMomentChirality==="CW" ? 1 : -1;
       dir=vecNormalize(rotateVectorAroundAxis(moment,rotationAxis,chiralitySign*basePhase));
     }else if(structureMomentStructureType==="sinusoidal"){
@@ -1491,9 +1641,16 @@ function magneticStructureTraces(atoms,basis,structure){
       const phaseAmplitude=Math.cos(basePhase);
       if(phaseAmplitude<0) dir=vecScale(dir,-1);
     }
-    const length=Math.max(0.05,Number(setting.size)||1)*amplitude;
-    const width=Math.max(1,Number(structureMomentGlobalWidth)||6);
-    const headLength=Math.min(Math.max(0.01,Number(structureMomentGlobalHeadSize)||0.5),2*length*0.95);
+    // Length is only a display multiplier. The original Cartesian moment
+    // (including its magnitude in mu_B) stays unchanged for mCIF export.
+    // Using the norm here preserves relative arrow lengths between distinct
+    // magnetic ions: e.g. 2 mu_B and 1 mu_B display at a 2:1 ratio.
+    const displayMultiplier=Number(structureMomentGlobalLength);
+    const length=(Number.isFinite(displayMultiplier) ? Math.max(0.05,displayMultiplier) : 1)*mnorm*amplitude;
+    if(!(length>1e-12)) continue;
+    const width=Math.max(1,Number(structureMomentGlobalWidth)||10);
+    // Avoid a fixed arrowhead minimum that could dwarf small moments.
+    const headLength=Math.min(Math.max(0.01,Number(structureMomentGlobalHeadSize)||0.51),2*length*0.95);
     const center=fractionalToCartesian(basis,frac);
     // Length is the center-to-end (half-length) setting.  The displayed arrow
     // is symmetric about the atom position: tail = center - L*dir,
@@ -1605,8 +1762,8 @@ function resetMomentDisplayDefaults(){
   const live=currentMomentSettings();
   for(const site of sites){
     const key=momentKey(site);
-    const current=live.get(key)||structureMomentSettings.get(key)||defaultMomentSetting(site);
-    structureMomentSettings.set(key,{...current,size:1,width:6,headSize:0.5,color:elementColor(site.element),colorCustomized:false});
+    const current=live.get(key)||structureMomentSettings.get(key)||defaultMomentSetting(site,info?.structure);
+    structureMomentSettings.set(key,{...current,size:1,width:10,headSize:0.51,color:elementColor(site.element),colorCustomized:false});
   }
   $("cifMagMomentRows")?.replaceChildren();
   structureControlSignature="";
@@ -1625,8 +1782,8 @@ function resetBondDisplayDefaults(){
     const min=row.querySelector('[data-bond-field="minDistance"]'); if(min) min.value="0";
     const max=row.querySelector('[data-bond-field="maxDistance"]'); if(max) max.value="3";
     const legacy=row.querySelector('[data-bond-field="distanceRange"]'); if(legacy) legacy.value="0 3";
-    const width=row.querySelector('[data-bond-field="width"]'); if(width) width.value="3";
-    const color=row.querySelector('[data-bond-field="color"]'); if(color) color.value="#888888";
+    const width=row.querySelector('[data-bond-field="width"]'); if(width) width.value="5";
+    const color=row.querySelector('[data-bond-field="color"]'); if(color) color.value=defaultBondColor(row.querySelector('[data-bond-field="a"]')?.value,row.querySelector('[data-bond-field="b"]')?.value);
   }
   saveStructureViewerState();
   renderCifStructureIfVisible();
@@ -1653,6 +1810,18 @@ function ensureSectionDefaultButton(hostId,buttonId,handler,titleWords,existingB
   host.parentElement?.insertBefore(button,host);
   return button;
 }
+// mCIF determines the magnetic arrangement itself, independent of the manual
+// Collinear/Helical/Sinusoidal generator mode. Keep the latter preference.
+function syncImportedMomentStructureType(){
+  const select=$("cifMomentStructureType");
+  if(!select) return;
+  const imported=sourceIsMagneticCif();
+  const option=select.querySelector('option[value="mcif"]');
+  if(option){ option.hidden=!imported; option.disabled=!imported; }
+  select.disabled=imported;
+  select.value=imported?"mcif":structureMomentStructureType;
+  select.title=imported?"The magnetic structure is defined by the loaded mCIF.":"Choose a generated magnetic structure type.";
+}
 function prepareStructureViewerControls(){
   ensureStructureViewerStyle();
   const viewButtons=[...document.querySelectorAll("[data-cif-structure-view]")];
@@ -1666,10 +1835,20 @@ function prepareStructureViewerControls(){
   hideLegacyStructureColumnHeaders("cifAtomColorRows",["show","atom","marker","color"]);
   hideLegacyStructureColumnHeaders("cifBondRows",["atom1","atom2","range","width","color"]);
   for(const button of document.querySelectorAll("[data-structure-config-tab]")){
+    const active=button.dataset.structureConfigTab===structureConfigActiveTab;
+    button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active));
+  }
+  for(const panel of document.querySelectorAll("[data-structure-config-panel]")){
+    const active=panel.dataset.structureConfigPanel===structureConfigActiveTab;
+    panel.classList.toggle("active",active);panel.hidden=!active;
+  }
+  for(const button of document.querySelectorAll("[data-structure-config-tab]")){
     if(button.dataset.structureTabBound) continue;
     button.dataset.structureTabBound="1";
     button.addEventListener("click",()=>{
       const key=button.dataset.structureConfigTab;
+      structureConfigActiveTab=key;
+      saveStructureViewerState();
       for(const tab of document.querySelectorAll("[data-structure-config-tab]")){
         const active=tab===button; tab.classList.toggle("active",active); tab.setAttribute("aria-selected",active?"true":"false");
       }
@@ -1693,6 +1872,7 @@ function prepareStructureViewerControls(){
   const axisSelect=$("cifMomentRotationAxis");
   const chiralitySelect=$("cifMomentChirality");
   const directionSelect=$("cifMomentDirectionMode");
+  const lengthInput=$("cifMomentGlobalLength");
   const widthInput=$("cifMomentGlobalWidth");
   const headInput=$("cifMomentGlobalHead");
   if(directionSelect){
@@ -1707,6 +1887,19 @@ function prepareStructureViewerControls(){
         updateMagneticMomentRows(currentStructureForViewer()?.structure||null);
         renderCifStructureIfVisible();
       });
+    }
+  }
+  if(lengthInput){
+    lengthInput.value=String(structureMomentGlobalLength);
+    if(!lengthInput.dataset.structureBound){
+      lengthInput.dataset.structureBound="1";
+      const commit=()=>{
+        const raw=String(lengthInput.value||"").trim(), n=Number(raw);
+        structureMomentGlobalLength=raw && Number.isFinite(n)?Math.max(0,n):1;
+        saveStructureViewerState(); renderCifStructureIfVisible();
+      };
+      lengthInput.addEventListener("input",commit);
+      lengthInput.addEventListener("change",commit);
     }
   }
   const bindGlobalArrowInput=(input,kind)=>{
@@ -1728,15 +1921,19 @@ function prepareStructureViewerControls(){
   bindGlobalArrowInput(widthInput,"width");
   bindGlobalArrowInput(headInput,"head");
   const syncMomentStructureModeControls=()=>{
-    const helical=structureMomentStructureType==="helical";
+    const helical=!sourceIsMagneticCif() && structureMomentStructureType==="helical";
     if(axisSelect) axisSelect.disabled=!helical;
     if(chiralitySelect) chiralitySelect.disabled=!helical;
   };
   if(structureTypeSelect){
-    structureTypeSelect.value=structureMomentStructureType;
+    syncImportedMomentStructureType();
     if(!structureTypeSelect.dataset.structureBound){
       structureTypeSelect.dataset.structureBound="1";
       structureTypeSelect.addEventListener("change",()=>{
+        if(sourceIsMagneticCif()){
+          syncImportedMomentStructureType();
+          return;
+        }
         structureMomentStructureType=["collinear","helical","sinusoidal"].includes(structureTypeSelect.value)?structureTypeSelect.value:"collinear";
         syncMomentStructureModeControls();
         saveStructureViewerState();
@@ -1769,11 +1966,67 @@ function prepareStructureViewerControls(){
   syncMomentStructureModeControls();
 }
 
+function loadFigureOverlayImage(url){
+  return new Promise((resolve,reject)=>{const img=new Image(); img.onload=()=>resolve(img);img.onerror=()=>reject(new Error("Could not render figure overlay"));img.src=url;});
+}
+async function saveStructureFigure(){
+  const plot=$("cifStructurePlot"), wrap=plot?.closest(".structure-plot-wrap");
+  if(!plot || !wrap || !plot._fullLayout || typeof Plotly?.toImage!=="function") throw new Error("Draw the structure before saving a figure.");
+  const bounds=wrap.getBoundingClientRect(), pb=plot.getBoundingClientRect();
+  if(bounds.width<1 || bounds.height<1) throw new Error("The structure is not visible.");
+  const scale=1,canvas=document.createElement("canvas");
+  canvas.width=Math.round(bounds.width*scale);canvas.height=Math.round(bounds.height*scale);
+  const ctx=canvas.getContext("2d");ctx.scale(scale,scale);
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,0,bounds.width,bounds.height);
+  // Plotly export sometimes uses a stale view camera; snapshot the live scene first.
+  // Export at display resolution, avoiding the expensive 2x WebGL re-render.
+  const camera=currentStructureCamera();
+  const previousCamera=plot.layout?.scene?.camera;
+  if(camera && plot.layout?.scene) plot.layout.scene.camera=copyStructureCamera(camera);
+  let data;
+  try{ data=await Plotly.toImage(plot,{format:"png",width:Math.max(2,Math.round(pb.width)),height:Math.max(2,Math.round(pb.height)),scale:1}); }
+  finally{if(plot.layout?.scene) plot.layout.scene.camera=previousCamera;}
+  const base=await loadFigureOverlayImage(data);
+  ctx.drawImage(base,pb.left-bounds.left,pb.top-bounds.top,pb.width,pb.height);
+  // Render the element legend using computed CSS and its current DOM positions.
+  const legend=$("cifAtomLegend");
+  if(legend && !legend.classList.contains("hidden")){
+    const r=legend.getBoundingClientRect(),style=getComputedStyle(legend);
+    ctx.fillStyle=style.backgroundColor==="rgba(0, 0, 0, 0)"?"rgba(255,255,255,0.90)":style.backgroundColor;
+    ctx.fillRect(r.left-bounds.left,r.top-bounds.top,r.width,r.height);
+    for(const item of legend.querySelectorAll(".structure-atom-legend-item")){
+      const ir=item.getBoundingClientRect(),dot=item.querySelector(".structure-atom-legend-dot"),dr=dot?.getBoundingClientRect();
+      if(dr){ctx.fillStyle=getComputedStyle(dot).backgroundColor;ctx.beginPath();ctx.arc(dr.left-bounds.left+dr.width/2,dr.top-bounds.top+dr.height/2,Math.min(dr.width,dr.height)/2,0,Math.PI*2);ctx.fill();}
+      ctx.font=getComputedStyle(item).font||"18px sans-serif";ctx.fillStyle=getComputedStyle(item).color||"#222";
+      const text=item.querySelector("span")?.textContent||item.textContent;
+      ctx.textBaseline="middle";ctx.fillText(text,(dr?.right||ir.left)-bounds.left+7,ir.top-bounds.top+ir.height/2);
+    }
+  }
+  // Both SVG triads are live camera-synchronized overlays. Serialize them at the
+  // last displayed orientation, without resetting or changing the 3D camera.
+  for(const id of ["cifDirectTriad","cifReciprocalTriad"]){
+    const el=$(id);if(!el) continue;
+    const r=el.getBoundingClientRect();if(!r.width||!r.height)continue;
+    const bg=getComputedStyle(el).backgroundColor;
+    if(bg && bg!=="rgba(0, 0, 0, 0)"){ctx.fillStyle=bg;ctx.fillRect(r.left-bounds.left,r.top-bounds.top,r.width,r.height);}
+    const clone=el.cloneNode(true);
+    clone.setAttribute("xmlns","http://www.w3.org/2000/svg");clone.setAttribute("width",String(r.width));clone.setAttribute("height",String(r.height));
+    const source=new XMLSerializer().serializeToString(clone);
+    const url=URL.createObjectURL(new Blob([source],{type:"image/svg+xml;charset=utf-8"}));
+    try{const img=await loadFigureOverlayImage(url);ctx.drawImage(img,r.left-bounds.left,r.top-bounds.top,r.width,r.height);}finally{URL.revokeObjectURL(url);}
+  }
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+  if(!blob) throw new Error("Could not encode PNG image.");
+  const href=URL.createObjectURL(blob),link=document.createElement("a");
+  link.download="structure-figure.png";link.href=href;document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(href),1500);
+}
 function renderCifStructureView(){
   const plot=$("cifStructurePlot"),status=$("cifStructureStatus");
   if(!plot||!status) return;
   if(typeof Plotly==="undefined"){ status.textContent="Plotly is unavailable, so the structure view cannot be drawn."; return; }
   const source=currentStructureForViewer();
+  syncImportedMomentStructureType();
   if(!source?.structure){ status.textContent="No CIF structure is available yet. Load/select a CIF or enter a valid CIF Generator structure."; Plotly.purge(plot); return; }
   const basis=directLatticeBasis(source.structure.lattice);
   if(!basis){ status.textContent="The CIF lattice parameters are invalid, so the structure view cannot be drawn."; Plotly.purge(plot); return; }
@@ -1810,7 +2063,7 @@ function renderCifStructureView(){
   const enabledMoments=[...currentMomentSettings().values()].filter(x=>x.enabled).length;
   status.textContent=`${source.label}: x ${range.x.min}–${range.x.max}, y ${range.y.min}–${range.y.max}, z ${range.z.min}–${range.z.max}; ${displayedAtoms.length} displayed atoms.`+
     (bondRules.length?` ${bondRules.length} bond rule${bondRules.length===1?"":"s"}.`:"")+
-    (enabledMoments?` ${enabledMoments} magnetic site setting${enabledMoments===1?"":"s"}; ${structureMomentStructureType}${structureMomentStructureType==="helical"?` about ${structureMomentRotationAxis} (${structureMomentChirality})`:""}, k${effectiveK.index||1}=(${effectiveK.h}, ${effectiveK.k}, ${effectiveK.l})${effectiveK.count>1?" (selected propagation vector)":""}.`:"");
+    (source.structure.magnetic?" mCIF moments from magnetic symmetry/Fourier modulation.":enabledMoments?` ${enabledMoments} magnetic site setting${enabledMoments===1?"":"s"}; ${structureMomentStructureType}${structureMomentStructureType==="helical"?` about ${structureMomentRotationAxis} (${structureMomentChirality})`:""}, k${effectiveK.index||1}=(${effectiveK.h}, ${effectiveK.k}, ${effectiveK.l})${effectiveK.count>1?" (selected propagation vector)":""}.`:"");
   // Keep an explicit camera state independent of Plotly.react.  This prevents
   // later redraws (including range edits) from restoring the view-button camera
   // after the user has already rotated or zoomed the structure.
@@ -2530,12 +2783,13 @@ function loadParsedCifIntoGenerator(parsed,fileName="selected_structure.cif",{me
   }
   if(!Array.isArray(parsed.asymmetricSites) || !parsed.asymmetricSites.length) return false;
   if(!$("cifSpaceGroup") || !$("cifAtomRows")) return false;
-  if(message){ cifStructureSourcePreference="generated"; saveStructureViewerState(); }
+  if(message){ cifStructureSourcePreference="loaded"; saveStructureViewerState(); }
   $("cifSpaceGroup").value=String(sg.number);
   for(const [key,id] of Object.entries(CIF_LATTICE_FIELDS)) if($(id)) $(id).value=String(lattice[key]);
   replaceCifAtomRows(parsed.asymmetricSites.map(a=>({element:a.element,x:a.x,y:a.y,z:a.z,occupancy:a.occupancy})));
   if($("cifGeneratedName")) $("cifGeneratedName").value=cleanCifBaseName(fileName);
   updateCifSpaceGroupInfo();
+  if(parsed.magnetic) for(const [key,id] of Object.entries(CIF_LATTICE_FIELDS)) if($(id)) $(id).value=String(lattice[key]);
   invalidateGeneratedCif("");
   if(message) setCifGeneratorMessage(`Loaded ${fileName} for editing: #${sg.number} ${sg.hm}, ${parsed.asymmetricSites.length} asymmetric site(s). Open Structure to view it immediately, or press Generate to review the regenerated CIF and reflection table.`);
   renderCifStructureIfVisible();
@@ -2555,6 +2809,133 @@ async function loadCifIntoGenerator(file){
   }
   if(!Array.isArray(parsed.asymmetricSites) || !parsed.asymmetricSites.length) throw new Error(`Could not load asymmetric-unit atoms from ${file.name}.`);
   if(!loadParsedCifIntoGenerator(parsed,file.name,{message:true})) throw new Error(`Could not load ${file.name} into CIF Generator.`);
+  loadedGeneratorCifStructure=parsed;
+  loadedGeneratorCifName=file.name;
+  if($("mcifPreviewText")) $("mcifPreviewText").textContent=text;
+  cifStructureSourcePreference="loaded";
+  prepareStructureViewerControls();
+  renderCifStructureIfVisible();
+}
+
+
+// mCIF Generator: preserve the complete source symmetry/orbit specification.
+let lastGeneratedMcifText="", lastGeneratedMcifName="";
+function cleanMcifBaseName(name){
+  return (String(name||"generated_structure").replace(/[\\/:*?"<>|]+/g,"_").replace(/\.(mcif|cif)$/i,"").trim()||"generated_structure");
+}
+function nextMcifGeneratedBaseName(raw){
+  const current=cleanMcifBaseName(raw), matched=current.match(/^(.*)_generate(\d+)$/i);
+  return matched?`${matched[1]}_generate${String(Number(matched[2])+1).padStart(2,"0")}`:`${current}_generate01`;
+}
+function invalidateGeneratedMcif(){
+  lastGeneratedMcifText=""; lastGeneratedMcifName="";
+  for(const id of ["structureMcifDownload","structureMcifSet"]) if($(id)) $(id).disabled=true;
+}
+function mcifMessage(message,error=false){
+  const el=$("structureMcifMessage"); if(!el) return;
+  el.textContent=message; el.classList.toggle("error",error);
+}
+function mcifPreview(text){
+  if($("mcifPreviewText")) $("mcifPreviewText").textContent=text;
+  $("mcifTabPreview")?.click();
+}
+function crystalComponents(lattice,cart){
+  const basis=directLatticeBasis(lattice);
+  if(!basis) throw new Error("Invalid unit cell for magnetic vector conversion.");
+  const a=vecNormalize(basis.a),b=vecNormalize(basis.b),c=vecNormalize(basis.c);
+  const det=vecDot(a,vecCross(b,c));
+  if(Math.abs(det)<1e-12) throw new Error("Singular crystallographic axes.");
+  return [vecDot(cart,vecCross(b,c))/det,vecDot(cart,vecCross(c,a))/det,vecDot(cart,vecCross(a,b))/det];
+}
+// The original mCIF is retained to preserve the BNS setting, time reversal,
+// atomic site labels, and all magnetic symmetry loops. Replace only the moment loop.
+function replaceMcifMoments(source,rows){
+  const lines=String(source).replace(/\r\n?/g,"\n").split("\n");
+  let start=-1,end=-1;
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].trim().toLowerCase()!=="loop_") continue;
+    let j=i+1, tags=[];
+    while(j<lines.length && lines[j].trim().startsWith("_")) tags.push(lines[j++].trim().toLowerCase().split(/\s+/)[0]);
+    if(!tags.some(x=>x==="_atom_site_moment.label"||x==="_atom_site_moment_label")) continue;
+    start=i;end=j;
+    while(end<lines.length){
+      const line=lines[end].trim();
+      if(/^(loop_|data_|save_|stop_|_)/i.test(line)) break;
+      end++;
+    }
+    break;
+  }
+  const block=["loop_","_atom_site_moment.label","_atom_site_moment.crystalaxis_x","_atom_site_moment.crystalaxis_y","_atom_site_moment.crystalaxis_z","_atom_site_moment.symmform",...rows,""];
+  if(start>=0) lines.splice(start,end-start,...block);
+  else lines.push("",...block);
+  return lines.join("\n");
+}
+function generateMcifForReview(){
+  const source=getSelectedCifText();
+  if(!source) throw new Error("Select a CIF/mCIF before generating.");
+  const structure=getSelectedCifStructure();
+  if(!structure) throw new Error("Selected structure is unavailable.");
+  const hasMagOps=/_space_group_symop_magn_operation[._]/i.test(source);
+  if(!hasMagOps) throw new Error("This generator currently requires an mCIF with magnetic symmetry operations. A nonmagnetic CIF cannot be converted without choosing a magnetic space group.");
+  const live=currentMomentSettings();
+  const records=[];
+  (structure.asymmetricSites||[]).forEach((site,siteIndex)=>{
+    const key=momentKey({...site,siteIndex});
+    const setting=live.get(key)||structureMomentSettings.get(key)||defaultMomentSetting(site,structure);
+    if(!setting.enabled) return;
+    const cart=[Number(setting.mx)||0,Number(setting.my)||0,Number(setting.mz)||0];
+    if(cart.some(x=>!Number.isFinite(x))) throw new Error(`Invalid spin components for ${site.label}`);
+    const v=crystalComponents(structure.lattice,cart);
+    records.push(`${site.label} ${v.map(x=>Number(x.toFixed(8))).join(" ")} mx,my,mz`);
+  });
+  if(!records.length) throw new Error("No spin sites enabled. Enable at least one spin.");
+  const text=replaceMcifMoments(source,records);
+  // Reparse and verify symmetry consistency before allowing Set or Download.
+  const check=parseCifStructure(text);
+  if(!check.magnetic) throw new Error("Generated file lost magnetic structure information.");
+  for(const site of check.asymmetricSites){
+    const expected=structure.asymmetricSites.find(x=>x.label===site.label);
+    if(!expected) throw new Error(`Magnetic site ${site.label} was lost.`);
+  }
+  const base=cleanMcifBaseName($("structureMcifGeneratedName")?.value);
+  lastGeneratedMcifText=text; lastGeneratedMcifName=`${base}.mcif`;
+  for(const id of ["structureMcifDownload","structureMcifSet"]) if($(id)) $(id).disabled=false;
+  mcifPreview(text);
+  mcifMessage(`Generated ${lastGeneratedMcifName}; magnetic symmetry checked (${check.atoms.filter(a=>Array.isArray(a.magneticMoment)).length} magnetic atoms).`);
+}
+function initMcifGeneratorActions(){
+  $("structureMcifShowCurrent")?.addEventListener("click",()=>{
+    if(!getSelectedCifText()){mcifMessage("No current CIF/mCIF selected.",true);return;}
+    mcifPreview(getSelectedCifText());mcifMessage(`Showing ${getSelectedCifFileName()}.`);
+  });
+  $("structureMcifGeneratedName")?.addEventListener("change",()=>{
+    $("structureMcifGeneratedName").value=cleanMcifBaseName($("structureMcifGeneratedName").value);
+    invalidateGeneratedMcif();
+  });
+  $("structureMcifGenerate")?.addEventListener("click",()=>{
+    const el=$("structureMcifGeneratedName"),previous=el?.value;
+    if(el) el.value=nextMcifGeneratedBaseName(previous);
+    try{ generateMcifForReview(); }
+    catch(err){if(el)el.value=previous;invalidateGeneratedMcif();mcifMessage(err.message||String(err),true);}
+  });
+  $("structureMcifDownload")?.addEventListener("click",()=>{
+    if(!lastGeneratedMcifText)return;
+    downloadGeneratedCif(lastGeneratedMcifText,lastGeneratedMcifName);
+    mcifMessage(`Downloaded ${lastGeneratedMcifName}.`);
+  });
+  $("structureMcifSet")?.addEventListener("click",()=>{
+    try{
+      if(!lastGeneratedMcifText)throw new Error("Generate mCIF first.");
+      if($("sampleMode")?.value!=="single"){
+        $("sampleMode").value="single";updateModeVisibility();
+      }
+      loadCifText(lastGeneratedMcifText,lastGeneratedMcifName);
+      $("mcifTabStructure")?.click();renderCifStructureIfVisible();
+      mcifMessage(`Set ${lastGeneratedMcifName} as the current mCIF.`);
+    }catch(err){mcifMessage(err.message||String(err),true);}
+  });
+  $("cifMagMomentRows")?.addEventListener("input",invalidateGeneratedMcif);
+  $("cifMagMomentRows")?.addEventListener("change",invalidateGeneratedMcif);
 }
 
 async function initializeCifGenerator(){
@@ -2620,11 +3001,13 @@ async function initializeCifGenerator(){
 
     inputPane?.addEventListener("input",ev=>{
       if(["cifLoadFile","cifReflectionEnergy","cifReflectionWavelength","cifReflectionWavevector"].includes(ev.target?.id)) return;
+      if(cifStructureSourcePreference==="loaded") cifStructureSourcePreference="generated";
       invalidateGeneratedCif();
       renderCifStructureIfVisible();
     });
     inputPane?.addEventListener("change",ev=>{
       if(["cifLoadFile","cifReflectionEnergy","cifReflectionWavelength","cifReflectionWavevector"].includes(ev.target?.id)) return;
+      if(cifStructureSourcePreference==="loaded") cifStructureSourcePreference="generated";
       invalidateGeneratedCif();
       renderCifStructureIfVisible();
     });
@@ -2693,6 +3076,8 @@ async function initializeCifGenerator(){
       button.addEventListener("click",()=>setCifOutputTab(button.dataset.cifOutputTab));
     }
     $("tabStructure")?.addEventListener("click",()=>requestAnimationFrame(renderCifStructureView));
+    if($("cifSaveFigure")) $("cifSaveFigure").onclick=()=>saveStructureFigure().catch(err=>{alert(`Save figure failed: ${err?.message||err}`);});
+    
     const unitCellSelect=$("cifUnitCellMode");
     if(unitCellSelect){ unitCellSelect.value=structureUnitCellMode; unitCellSelect.addEventListener("change",()=>{ structureUnitCellMode=unitCellSelect.value; saveStructureViewerState(); renderCifStructureIfVisible(); }); }
     const xyzSelect=$("cifShowXYZ");
@@ -2764,6 +3149,23 @@ async function initializeCifGenerator(){
     setCifGeneratorMessage(`CIF Generator could not load space-group data: ${err?.message||String(err)}`,true);
   }
 }
+
+  initMcifGeneratorActions();
+  // Structure / mCIF preview tabs: $ and rendering helpers are scoped to createCifUI.
+  for (const [tab, pane, otherTab, otherPane] of [
+    ["mcifTabStructure", "mcifStructurePane", "mcifTabPreview", "mcifPreviewPane"],
+    ["mcifTabPreview", "mcifPreviewPane", "mcifTabStructure", "mcifStructurePane"]
+  ]) {
+    $(tab)?.addEventListener("click", () => {
+      $(tab)?.classList.add("active");
+      $(tab)?.setAttribute("aria-selected", "true");
+      $(otherTab)?.classList.remove("active");
+      $(otherTab)?.setAttribute("aria-selected", "false");
+      $(pane)?.classList.remove("hidden");
+      $(otherPane)?.classList.add("hidden");
+      if (tab === "mcifTabStructure") requestAnimationFrame(renderCifStructureIfVisible);
+    });
+  }
 
   return {
     updateCifUI,

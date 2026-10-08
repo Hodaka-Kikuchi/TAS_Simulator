@@ -79,6 +79,18 @@ export function createToolboxUI({
 
     initializeS2Conversion();
 
+
+    const setAbsorptionInputMode=()=>{
+      const manual=$('absorptionManualInputs'), cif=$('absorptionCifInputs');
+      const isCif=$('absorptionInputMode')?.value==='cif';
+      manual?.classList.toggle('hidden',isCif);
+      cif?.classList.toggle('hidden',!isCif);
+      updateAbsorptionCalculator();
+    };
+    $('absorptionInputMode')?.addEventListener('change',setAbsorptionInputMode);
+    $('absorptionFormula')?.addEventListener('input',()=>updateAbsorptionCalculator());
+    $('absorptionDensity')?.addEventListener('input',()=>updateAbsorptionCalculator());
+
     $('absorptionCifSelectButton')?.addEventListener('click',()=>$('absorptionCifFileInput')?.click());
     $('absorptionCifFileInput')?.addEventListener('change',async()=>{
       const input=$('absorptionCifFileInput');
@@ -106,7 +118,7 @@ export function createToolboxUI({
     }
 
     syncAbsorptionBeamFromInstrument();
-    updateAbsorptionCalculator();
+    setAbsorptionInputMode();
     setToolboxFrom('toolLambda');
   }
 

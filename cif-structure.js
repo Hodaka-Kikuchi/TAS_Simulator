@@ -212,6 +212,147 @@ function findSymmetryOperations(doc){
   return single ? [single] : ['x,y,z'];
 }
 
+// mCIF magnetic symmetry: (R,t,time reversal), including centering operators.
+function magneticOperators(doc,names){
+  for(const name of names){
+    const loop=doc.loops.find(lp=>lp.tags.includes(name));
+    if(loop) return loop.rows.map(r=>r[name]).filter(v=>v && v!=='.' && v!=='?');
+    const single=doc.scalar[name];
+    if(single) return [single];
+  }
+  return null;
+}
+function parseMagneticOperation(value){
+  const parts=String(value).replace(/\s+/g,'').split(',');
+  if(parts.length!==4) throw new Error(`Invalid mCIF magnetic symmetry operation: ${value}`);
+  const xyz=parts.slice(0,3).join(',');
+  const parity=parseCifNumber(parts[3]);
+  if(parity!==1 && parity!==-1) throw new Error(`Invalid mCIF time reversal: ${value}`);
+  return {xyz,rotation:symmetryRotationMatrix(xyz),parity};
+}
+function multiply3(A,B){return A.map(row=>B[0].map((_,j)=>row.reduce((v,x,k)=>v+x*B[k][j],0)));}
+function determinant3(R){return R[0][0]*(R[1][1]*R[2][2]-R[1][2]*R[2][1])-R[0][1]*(R[1][0]*R[2][2]-R[1][2]*R[2][0])+R[0][2]*(R[1][0]*R[2][1]-R[1][1]*R[2][0]);}
+function magneticMomentLoop(doc){
+  return doc.loops.find(lp=>lp.tags.includes('_atom_site_moment.label')||lp.tags.includes('_atom_site_moment_label'))||null;
+}
+function magneticMomentForLabel(loop,label){
+  if(!loop) return null;
+  const row=loop.rows.find(r=>String(r['_atom_site_moment.label']??r['_atom_site_moment_label']??'').trim()===label);
+  if(!row) return null;
+  const values=[[' _atom_site_moment.crystalaxis_x','_atom_site_moment_crystalaxis_x'],['_atom_site_moment.crystalaxis_y','_atom_site_moment_crystalaxis_y'],['_atom_site_moment.crystalaxis_z','_atom_site_moment_crystalaxis_z']]
+    .map(([modern,old])=>parseCifNumber(row[modern.trim()]??row[old]));
+  if(values.some(v=>!Number.isFinite(v))) throw new Error(`Invalid mCIF moment components for ${label}`);
+  return values;
+}
+function buildMagneticOperations(doc){
+  const ops=magneticOperators(doc,['_space_group_symop_magn_operation.xyz','_space_group_symop.magn_operation_xyz']);
+  if(!ops) return null;
+  const centers=magneticOperators(doc,['_space_group_symop_magn_centering.xyz','_space_group_symop.magn_centering_xyz'])||['x,y,z,1'];
+  const result=[];
+  for(const opText of ops) for(const centeringText of centers){
+    const a=parseMagneticOperation(opText),b=parseMagneticOperation(centeringText);
+    const R=multiply3(a.rotation,b.rotation);
+    const origin=applySymmetryOperation(a.xyz,applySymmetryOperation(b.xyz,[0,0,0]));
+    result.push({R,origin,parity:a.parity*b.parity});
+  }
+  return result;
+}
+
+function parseLinearCombination(expr,variables){
+  let s=String(expr??'').trim().toLowerCase().replace(/\s+/g,'').replace(/−/g,'-');
+  if(!s) throw new Error(`Empty linear expression: ${expr}`);
+  s=s.replace(/-/g,'+-');
+  if(s.startsWith('+')) s=s.slice(1);
+  const coeffs=Object.fromEntries(variables.map(v=>[v,0]));
+  let constant=0;
+  const ordered=[...variables].sort((a,b)=>b.length-a.length);
+  for(const raw of s.split('+').filter(Boolean)){
+    const hit=ordered.find(v=>raw.includes(v));
+    if(!hit){
+      const c=rationalNumber(raw);
+      if(!Number.isFinite(c)) throw new Error(`Unsupported linear term: ${raw}`);
+      constant+=c;
+      continue;
+    }
+    const coeffText=raw.replace(hit,'');
+    const coeff=rationalNumber(coeffText);
+    if(!Number.isFinite(coeff)) throw new Error(`Unsupported linear term: ${raw}`);
+    coeffs[hit]+=coeff;
+  }
+  return {coeffs,constant};
+}
+function parseSuperspaceMagneticOperation(value){
+  const parts=String(value).replace(/\s+/g,'').split(',');
+  if(parts.length!==5) throw new Error(`Invalid magnetic superspace operation: ${value}`);
+  const spatialText=parts.slice(0,3).map(v=>String(v).replace(/x1/g,'x').replace(/x2/g,'y').replace(/x3/g,'z')).join(',');
+  const parity=parseCifNumber(parts[4]);
+  if(parity!==1 && parity!==-1) throw new Error(`Invalid mCIF superspace time reversal: ${value}`);
+  const x4=parseLinearCombination(parts[3],['x1','x2','x3','x4']);
+  if(Math.abs((x4.coeffs.x1||0))>1e-12 || Math.abs((x4.coeffs.x2||0))>1e-12 || Math.abs((x4.coeffs.x3||0))>1e-12){
+    throw new Error(`Unsupported superspace x4 dependence on x1/x2/x3 in: ${value}`);
+  }
+  if(Math.abs(Math.abs(x4.coeffs.x4)-1)>1e-12) throw new Error(`Unsupported superspace x4 coefficient in: ${value}`);
+  return {xyz:spatialText,rotation:symmetryRotationMatrix(spatialText),parity,phaseSign:x4.coeffs.x4,phaseShift:x4.constant};
+}
+function buildMagneticSuperspaceOperations(doc,warnings){
+  const opNames=['_space_group_symop_magn_ssg_operation.algebraic','_space_group_symop.magn_ssg_operation_algebraic'];
+  const centerNames=['_space_group_symop_magn_ssg_centering.algebraic','_space_group_symop.magn_ssg_centering_algebraic'];
+  const ops=magneticOperators(doc,opNames);
+  if(!ops) return null;
+  const centers=magneticOperators(doc,centerNames)||['x1,x2,x3,x4,+1'];
+  const result=[];
+  try{
+    for(const opText of ops) for(const centeringText of centers){
+      const a=parseSuperspaceMagneticOperation(opText), b=parseSuperspaceMagneticOperation(centeringText);
+      const R=multiply3(a.rotation,b.rotation);
+      const origin=applySymmetryOperation(a.xyz,applySymmetryOperation(b.xyz,[0,0,0]));
+      result.push({R,origin,parity:a.parity*b.parity,phaseSign:a.phaseSign*b.phaseSign,phaseShift:a.phaseSign*b.phaseShift+a.phaseShift});
+    }
+  }catch(err){
+    warnings?.push(`Single-q incommensurate display was disabled: ${err.message}`);
+    return null;
+  }
+  return result;
+}
+function cellWaveVectors(doc){
+  const loop=doc.loops.find(lp=>lp.tags.includes('_cell_wave_vector_x') && lp.tags.includes('_cell_wave_vector_y') && lp.tags.includes('_cell_wave_vector_z'));
+  if(!loop) return [];
+  return loop.rows.map((row,index)=>({
+    seqId:String(row['_cell_wave_vector_seq_id'] ?? `${index+1}`),
+    q:[parseCifNumber(row['_cell_wave_vector_x']),parseCifNumber(row['_cell_wave_vector_y']),parseCifNumber(row['_cell_wave_vector_z'])]
+  })).filter(item=>item.q.every(Number.isFinite));
+}
+function magneticFourierMoments(doc,warnings){
+  const qVectors=cellWaveVectors(doc);
+  const loop=doc.loops.find(lp=>lp.tags.includes('_atom_site_moment_fourier.atom_site_label'));
+  if(!loop || !qVectors.length) return {supported:false,q:null,byLabel:new Map()};
+  if(qVectors.length!==1){
+    warnings?.push(`This viewer currently supports only single-q incommensurate magCIF display; found ${qVectors.length} wave vectors.`);
+    return {supported:false,q:qVectors[0]?.q||null,byLabel:new Map()};
+  }
+  const q=qVectors[0].q.slice();
+  const byLabel=new Map();
+  const axisIndex={x:0,y:1,z:2};
+  for(const row of loop.rows){
+    const label=String(row['_atom_site_moment_fourier.atom_site_label']||'').trim();
+    const axis=String(row['_atom_site_moment_fourier.axis']||'').trim().toLowerCase();
+    const seqId=String(row['_atom_site_moment_fourier.wave_vector_seq_id']||'').trim();
+    if(!label || !(axis in axisIndex)) continue;
+    if(seqId && seqId!==String(qVectors[0].seqId)) continue;
+    const cos=parseCifNumber(row['_atom_site_moment_fourier_param.cos'],0);
+    const sin=parseCifNumber(row['_atom_site_moment_fourier_param.sin'],0);
+    const rec=byLabel.get(label)||{q:q.slice(),cos:[0,0,0],sin:[0,0,0]};
+    rec.cos[axisIndex[axis]]=Number.isFinite(cos)?cos:0;
+    rec.sin[axisIndex[axis]]=Number.isFinite(sin)?sin:0;
+    byLabel.set(label,rec);
+  }
+  return {supported:byLabel.size>0,q,byLabel};
+}
+function applyMagneticOperator(op,p){return op.origin.map((v,i)=>wrap01(v+op.R[i].reduce((sum,x,j)=>sum+x*p[j],0)));}
+function transformAxialMoment(op,m){
+  const factor=op.parity*determinant3(op.R);
+  return op.R.map(row=>factor*row.reduce((sum,x,j)=>sum+x*m[j],0));
+}
 function positionKey(p){ return p.map(v=>Math.round(wrap01(v)*1e8)).join(','); }
 
 function findAnisoLoop(doc){
@@ -265,7 +406,12 @@ export function parseCifStructure(text){
   const doc=parseCifDocument(text);
   const atomLoop=findAtomLoop(doc);
   if(!atomLoop || !atomLoop.rows.length) throw new Error('CIF has no atom-site fractional coordinates.');
-  const symops=findSymmetryOperations(doc);
+  const warnings=[];
+  const magneticOps=buildMagneticOperations(doc);
+  const momentLoop=magneticMomentLoop(doc);
+  const fourierInfo=magneticFourierMoments(doc,warnings);
+  const superspaceOps=fourierInfo.supported ? buildMagneticSuperspaceOperations(doc,warnings) : null;
+  const symops=(magneticOps||superspaceOps) ? [] : findSymmetryOperations(doc);
   const anisoLoop=findAnisoLoop(doc);
   const anisoByLabel=new Map();
   if(anisoLoop){
@@ -277,7 +423,7 @@ export function parseCifStructure(text){
       if([u11,u22,u33,u12,u13,u23].every(Number.isFinite)) anisoByLabel.set(label,[[u11,u12,u13],[u12,u22,u23],[u13,u23,u33]]);
     }
   }
-  const atoms=[], asymmetricSites=[], missing=new Set(), invalidSites=[], warnings=[];
+  const atoms=[], asymmetricSites=[], missing=new Set(), invalidSites=[];
 
   for(const row of atomLoop.rows){
     const typeRaw=row['_atom_site_type_symbol'] ?? row['_atom_site_label'];
@@ -293,7 +439,9 @@ export function parseCifStructure(text){
     if(xyz.some(v=>!Number.isFinite(v))){ invalidSites.push(siteLabel || `site ${asymmetricSites.length+1}`); continue; }
     const occupancy=parseCifNumber(row['_atom_site_occupancy'],1);
     if(!Number.isFinite(occupancy) || occupancy<0 || occupancy>1){ invalidSites.push(`${siteLabel || `site ${asymmetricSites.length+1}`} (occupancy)`); continue; }
-    asymmetricSites.push({label:siteLabel,element,x:xyz[0],y:xyz[1],z:xyz[2],occupancy});
+    const sourceMoment=magneticMomentForLabel(momentLoop,siteLabel);
+    const fourier=fourierInfo.byLabel.get(siteLabel) || null;
+    asymmetricSites.push({label:siteLabel,element,x:xyz[0],y:xyz[1],z:xyz[2],occupancy,magneticMoment:sourceMoment,magneticFourier:fourier});
     let Biso=parseCifNumber(row['_atom_site_b_iso_or_equiv'],NaN);
     if(!Number.isFinite(Biso)){
       const Uiso=parseCifNumber(row['_atom_site_u_iso_or_equiv'],NaN);
@@ -301,13 +449,25 @@ export function parseCifStructure(text){
     }
     const label=String(row['_atom_site_label'] ?? '').trim();
     const U0=anisoByLabel.get(label) || null;
+    const moment=magneticMomentForLabel(momentLoop,siteLabel);
     const unique=new Map();
-    for(const op of symops){
-      const p=applySymmetryOperation(op,xyz);
+    const opsToUse=(superspaceOps && fourier) ? superspaceOps : (magneticOps||symops);
+    for(const op of opsToUse){
+      const p=(magneticOps||superspaceOps)?applyMagneticOperator(op,xyz):applySymmetryOperation(op,xyz);
       const key=positionKey(p);
-      if(!unique.has(key)){
-        const R=symmetryRotationMatrix(op);
-        unique.set(key,{p,U:U0?transformSymmetricTensor(U0,R):null});
+      const R=(magneticOps||superspaceOps)?op.R:symmetryRotationMatrix(op);
+      const transformedMoment=moment ? ((magneticOps||superspaceOps)?transformAxialMoment(op,moment):moment.slice()) : null;
+      const transformedFourier=fourier ? {q:fourier.q.slice(),cos:fourier.cos.slice(),sin:fourier.sin.slice(),phaseSign:(op.phaseSign ?? 1),phaseShift:(op.phaseShift ?? 0),transformR:R,transformFactor:(op.parity ?? 1)*determinant3(R)} : null;
+      if(unique.has(key)){
+        // Sunny's set_dipoles_from_mcif! rejects incompatible moments produced
+        // for the same site by different magnetic symmetry operations.
+        const previous=unique.get(key).magneticMoment;
+        if(previous && transformedMoment &&
+           previous.some((v,i)=>Math.abs(v-transformedMoment[i])>1e-7*Math.max(1,Math.abs(v),Math.abs(transformedMoment[i])))){
+          throw new Error(`Inconsistent mCIF magnetic symmetry for ${siteLabel} at (${p.map(v=>v.toFixed(6)).join(', ')}).`);
+        }
+      }else{
+        unique.set(key,{p,U:U0?transformSymmetricTensor(U0,R):null,magneticMoment:transformedMoment,magneticFourier:transformedFourier});
       }
     }
     const sourceSiteIndex=asymmetricSites.length-1;
@@ -315,15 +475,30 @@ export function parseCifStructure(text){
       element, occupancy:Number.isFinite(occupancy)?occupancy:1,
       Biso:Number.isFinite(Biso)?Biso:0, Uaniso:item.U,
       x:item.p[0],y:item.p[1],z:item.p[2], bRe:b[0],bIm:b[1],
-      sourceLabel:siteLabel, sourceSiteIndex,
+      sourceLabel:siteLabel, sourceSiteIndex, magneticMoment:item.magneticMoment,
+      magneticFourier:item.magneticFourier,
       sourceX:xyz[0], sourceY:xyz[1], sourceZ:xyz[2]
     });
   }
 
+  // Check duplicates across *different* asymmetric labels as well: overlapping
+  // magnetic orbits must not silently assign contradictory dipoles to one site.
+  if((magneticOps||superspaceOps) && momentLoop){
+    const occupied=new Map();
+    for(const atom of atoms){
+      if(!Array.isArray(atom.magneticMoment)) continue;
+      const key=positionKey([atom.x,atom.y,atom.z]);
+      const existing=occupied.get(key);
+      if(existing && existing.moment.some((v,i)=>Math.abs(v-atom.magneticMoment[i])>1e-7*Math.max(1,Math.abs(v),Math.abs(atom.magneticMoment[i])))){
+        throw new Error(`Conflicting mCIF moments at (${[atom.x,atom.y,atom.z].map(v=>v.toFixed(6)).join(', ')}): ${existing.label} and ${atom.sourceLabel}.`);
+      }
+      if(!existing) occupied.set(key,{moment:atom.magneticMoment,label:atom.sourceLabel});
+    }
+  }
   if(missing.size) throw new Error(`No neutron coherent scattering length is available for CIF atom type(s): ${[...missing].join(', ')}`);
   if(invalidSites.length) throw new Error(`CIF atom site(s) could not be loaded because coordinates or occupancy are invalid: ${invalidSites.join(', ')}`);
   if(!atoms.length) throw new Error('CIF atom sites could not be expanded into a crystal structure.');
-  if(symops.length===1 && String(symops[0]).replace(/\s/g,'').toLowerCase()==='x,y,z') warnings.push('No symmetry-operation loop was found; identity symmetry only was used.');
+  if(!(magneticOps||superspaceOps) && symops.length===1 && String(symops[0]).replace(/\s/g,'').toLowerCase()==='x,y,z') warnings.push('No symmetry-operation loop was found; identity symmetry only was used.');
 
   const scalar=doc.scalar;
   const lattice={
@@ -335,13 +510,18 @@ export function parseCifStructure(text){
     gamma:parseCifNumber(firstScalar(scalar,['_cell_angle_gamma']))
   };
   const formula=firstScalar(scalar,['_chemical_formula_sum','_chemical_formula_structural']) || '';
-  const spaceGroup=firstScalar(scalar,['_space_group_name_h-m_alt','_symmetry_space_group_name_h-m','_space_group_name_hall']) || '';
-  const spaceGroupNumber=parseCifNumber(firstScalar(scalar,['_space_group_it_number','_symmetry_int_tables_number']),NaN);
+  const spaceGroup=firstScalar(scalar,['_space_group_name_h-m_alt','_symmetry_space_group_name_h-m','_space_group_name_hall','_parent_space_group.name_h-m_alt','_parent_space_group_name_h-m_alt']) || '';
+  const spaceGroupNumber=parseCifNumber(firstScalar(scalar,['_space_group_it_number','_symmetry_int_tables_number','_parent_space_group.it_number','_parent_space_group_it_number']),NaN);
   const name=firstScalar(scalar,['_chemical_name_common','_chemical_name_mineral']) || formula || doc.dataName || 'CIF structure';
   return {
     name:String(name), formula:String(formula), spaceGroup:String(spaceGroup),
     spaceGroupNumber:Number.isFinite(spaceGroupNumber)?spaceGroupNumber:null, dataName:doc.dataName,
-    lattice, atoms, asymmetricSites, symmetryOperationCount:symops.length, asymmetricSiteCount:asymmetricSites.length, warnings
+    lattice, atoms, asymmetricSites,
+    magnetic:!!magneticOps||!!momentLoop||fourierInfo.byLabel.size>0,
+    incommensurateSingleQ:!!fourierInfo.supported,
+    propagationVectors:fourierInfo.q ? [{id:'q1',h:fourierInfo.q[0],k:fourierInfo.q[1],l:fourierInfo.q[2]}] : [],
+    symmetryOperationCount:superspaceOps?.length||magneticOps?.length||symops.length,
+    asymmetricSiteCount:asymmetricSites.length, warnings
   };
 }
 

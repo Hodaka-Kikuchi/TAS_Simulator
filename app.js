@@ -3051,6 +3051,7 @@ async function initialize(){
   nuclearStructureFactorSquared, num, parseCifStructure, parseNumericValue, rad2deg, reciprocalSymmetryMatrices, reflectionStar,
   saveLeftPanelState:(...args)=>saveLeftPanelState(...args), scheduleRecalc, updateAutoW, updateModeVisibility, updateAbsorptionCalculator,
   getPropagationVectors:()=>propagationVectorValues(),
+  setPropagationVectorsFromFile:(values)=>replacePropagationVectors(values,{recalc:false}),
   getSelectedCifStructure:()=>selectedCifStructure, getSelectedCifFileName:()=>selectedCifFileName,
   getSelectedCifText:()=>selectedCifText,
   setSelectedCifState:(structure,fileName,text)=>{ selectedCifStructure=structure; selectedCifFileName=fileName; selectedCifText=text; }
