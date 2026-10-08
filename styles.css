@@ -3891,3 +3891,528 @@ main{
 }
 #structurePanel .structure-spin-editor-toolbar>[hidden]{display:none!important;}
 #cifSpinIndividualInfo[hidden]{display:none!important;}
+
+/* Toolbox sub-tabs: keep all four calculators in one workspace (v39). */
+#toolboxPanel{min-width:0;max-width:100%;}
+.toolbox-subtabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:0 0 12px;padding:5px;border:1px solid #dce0e6;border-radius:9px;background:#f4f5f7;}
+.toolbox-subtab{min-width:0;padding:10px 7px;font-size:inherit;font-weight:650;line-height:1.25;border:1px solid transparent;border-radius:6px;background:transparent;white-space:normal;overflow-wrap:anywhere;}
+.toolbox-subtab.active{background:white;border-color:#c5cad2;box-shadow:0 1px 3px #00000014;}
+.toolbox-subtab:focus-visible{outline:2px solid #5073b3;outline-offset:2px;}
+#toolboxPanel .toolbox-subpanel{min-width:0;max-width:100%;width:100%;margin-top:0;}
+#toolboxPanel .toolbox-subpanel.hidden{display:none!important;}
+.magff-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr));align-items:end;gap:10px;}
+.magff-controls>label{display:flex;flex-direction:column;min-width:0;gap:5px;}
+.magff-controls input,.magff-controls select{width:100%;min-width:0;max-width:100%;box-sizing:border-box;}
+.magff-info{margin-top:9px;min-height:18px;color:#555;font-size:12px;}
+.magff-info.error{color:#9c441d;border:0;padding:0;background:transparent;}
+.magff-result{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0;font-size:13px;}
+.magff-result>div{padding:7px 10px;border:1px solid #e0e4e7;background:#f8f9fa;border-radius:6px;}
+.magff-result strong{font-size:15px;}
+.magff-plot{width:100%;min-width:0;min-height:360px;}
+.magff-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#666;font-size:12px;}
+.magff-footer button{white-space:nowrap;}
+@container (max-width:700px){.toolbox-subtabs{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:700px){.toolbox-subtabs{grid-template-columns:repeat(2,minmax(0,1fr));}.magff-plot{min-height:300px;}}
+
+/* v40: compact magnetic form factor; same text size as the main tabs. */
+.toolbox-subtab{font-size:1rem;}
+.magff-controls{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));}
+.magff-interactive{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:14px 0 10px;align-items:start;}
+.magff-adjust{min-width:0;display:flex;flex-direction:column;gap:8px;}
+.magff-adjust>label{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.magff-adjust input[type=number]{width:100%;max-width:100%;min-width:0;}
+.magff-adjust input[type=range]{display:block;width:100%;min-width:0;margin:0;cursor:pointer;accent-color:#3e6b99;}
+.magff-advanced{border:0;padding:2px 0!important;margin:7px 0!important;}
+.magff-advanced summary{font-size:13px;font-weight:500;color:#555;cursor:pointer;width:max-content;}
+.magff-advanced .magff-controls{margin-top:10px;}
+.magff-info{min-height:0;margin:4px 0;font-size:13px;}
+.magff-info:empty{display:none;}
+.magff-plot{min-height:340px;}
+.magff-footer{justify-content:flex-end;}
+@media(max-width:700px){.magff-interactive{grid-template-columns:1fr;gap:12px;}.toolbox-subtab{font-size:1rem;}}
+
+/* v41: magnetic-ion selection, Q, and intensity on a single row, including phones. */
+.magff-primary-row{
+  display:grid;
+  grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+  margin:10px 0 12px;
+}
+.magff-primary-row>label,.magff-primary-row .magff-adjust>label{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  min-width:0;
+}
+.magff-primary-row .magff-adjust{min-width:0;gap:8px;}
+.magff-primary-row input,.magff-primary-row select{
+  display:block;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+}
+.magff-primary-row .magff-adjust input[type=range]{margin:0;}
+@media (max-width:700px){
+  .magff-primary-row{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr);gap:7px;}
+  .magff-primary-row>label,.magff-primary-row .magff-adjust>label{overflow-wrap:normal;}
+}
+
+
+/* v42: compact two-row magnetic form-factor controls and below-plot sliders. */
+.magff-top-row,.magff-value-row{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;
+  min-width:0;align-items:end;margin:10px 0;
+}
+.magff-extra-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.magff-top-row>label,.magff-value-row>label,.magff-extra-row>label{
+  min-width:0;display:grid;gap:5px;align-content:end;
+}
+.magff-top-row :is(input,select),.magff-value-row :is(input,select),.magff-extra-row :is(input,select){
+  box-sizing:border-box;width:100%;max-width:100%;min-width:0;
+}
+.magff-plot-slider,.absorption-plot-slider{
+  display:block;width:100%;min-width:0;box-sizing:border-box;
+  accent-color:#3e6b99;cursor:pointer;margin:3px 0 12px;
+}
+.absorption-plot-actions{display:flex;justify-content:flex-end;margin:4px 0 10px;}
+/* Neutron attenuation: first row E, wavelength, k; second row SE, thickness, overall. */
+#toolboxAttenuationPane .absorption-beam-controls,
+#toolboxAttenuationPane .absorption-thickness-control{
+  display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:10px!important;min-width:0;margin-bottom:10px;
+}
+#toolboxAttenuationPane .absorption-thickness-control>label,
+#toolboxAttenuationPane .absorption-beam-controls>label{
+  min-width:0;width:100%;max-width:none;justify-self:stretch;display:grid;gap:5px;
+}
+#toolboxAttenuationPane .absorption-thickness-control input,
+#toolboxAttenuationPane .absorption-beam-controls input{
+  width:100%;min-width:0;max-width:100%;box-sizing:border-box;
+}
+@media(max-width:420px){
+  .magff-top-row,.magff-value-row,.magff-extra-row{gap:7px;}
+  #toolboxAttenuationPane .absorption-beam-controls,
+  #toolboxAttenuationPane .absorption-thickness-control{gap:6px!important;}
+  #toolboxAttenuationPane .absorption-beam-controls label,
+  #toolboxAttenuationPane .absorption-thickness-control label{font-size:12px;overflow-wrap:anywhere;}
+  #toolboxAttenuationPane .absorption-beam-controls input,
+  #toolboxAttenuationPane .absorption-thickness-control input{padding:6px 4px;font-size:14px;}
+}
+.magff-extra-row>label.hidden{display:none!important;}
+
+/* v43: Keep the attenuation plot, thickness slider and CSV action together.
+   Previously .absorption-plot {height:100%} filled the entire clipped
+   .absorption-right card, hiding the controls that follow the graph. */
+#toolboxAttenuationPane .absorption-right{
+  display:flex;
+  flex-direction:column;
+  align-self:start;
+  box-sizing:border-box;
+  height:auto!important;
+  min-height:0!important;
+  padding:10px 12px 12px;
+  gap:8px;
+  overflow:visible;
+}
+#toolboxAttenuationPane .absorption-plot{
+  flex:0 0 auto;
+  width:100%!important;
+  height:380px!important;
+  min-height:0!important;
+  max-height:none;
+}
+#toolboxAttenuationPane .absorption-plot-slider{
+  display:block;
+  flex:0 0 auto;
+  width:100%;
+  margin:0 0 2px;
+}
+#toolboxAttenuationPane .absorption-plot-actions{
+  display:flex;
+  flex:0 0 auto;
+  justify-content:flex-end;
+  margin:0;
+}
+@media (max-width:760px){
+  #toolboxAttenuationPane .absorption-plot{height:310px!important;}
+}
+
+/* v44: Clear visual hierarchy between workspace tabs and nested tabs.
+   Main navigation stays lighter and carries the stronger outer border.
+   All nested tab bars share the main tab palette, with thinner borders and a single row.
+   The selected tab is white at every navigation level (v45).
+   On narrow screens swipe horizontally instead of wrapping or clipping labels. */
+.main-tabs{
+  display:flex;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  gap:5px;
+  border:2px solid #b9c4d0;
+  background:#f3f5f7;
+  scrollbar-width:thin;
+}
+.main-tabs .tab-button{
+  flex:1 0 auto;
+  white-space:nowrap;
+  padding:9px 11px;
+  font-size:16px;
+  line-height:1.25;
+  border:1px solid transparent;
+  background:#f3f5f7;
+}
+.main-tabs .tab-button:hover{background:#eaf0f6;}
+.main-tabs .tab-button.active{
+  background:#fff;
+  border-color:#aab7c5;
+  box-shadow:none;
+}
+@media(max-width:760px){
+  .main-tabs{background:#f3f5f7;}
+  .main-tabs .tab-button{flex:1 0 auto;padding:8px 10px;}
+}
+
+/* Shared colors for main and nested tab navigation; hierarchy uses border width and font size only. */
+.toolbox-subtabs,
+.geometry-card-tabs,
+.cif-output-tabs,
+#structurePanel .structure-config-tabs{
+  background:#f3f5f7;
+  border:1px solid #b9c4d0;
+}
+.toolbox-subtabs{
+  display:flex;
+  flex-wrap:nowrap;
+  grid-template-columns:none;
+  align-items:stretch;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  gap:4px;
+  padding:4px;
+}
+.toolbox-subtab{
+  flex:1 0 auto;
+  min-width:max-content;
+  padding:8px 11px;
+  font-size:14px;
+  font-weight:600;
+  line-height:1.2;
+  white-space:nowrap;
+  overflow-wrap:normal;
+  border:0;
+  background:#f3f5f7;
+  color:#222;
+}
+.toolbox-subtab:hover{background:#eaf0f6;}
+.toolbox-subtab.active{
+  background:#fff;
+  border:0;
+  box-shadow:none;
+  color:#222;
+}
+@container (max-width:700px){
+  .toolbox-subtabs{display:flex;grid-template-columns:none;}
+}
+@media(max-width:700px){
+  .toolbox-subtabs{display:flex;grid-template-columns:none;}
+  .toolbox-subtab{font-size:14px;}
+}
+
+/* Sub-tabs in Q-E plots, angle/scan views and both CIF preview areas. */
+.geometry-card-tabs,
+.cif-output-tabs{
+  display:flex;
+  flex-direction:row!important;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  gap:0;
+  padding:0;
+}
+.geometry-card-tabs .geometry-card-tab,
+.cif-output-tabs .cif-output-tab{
+  flex:1 0 auto;
+  min-width:max-content;
+  white-space:nowrap;
+  border:0;
+  border-right:1px solid #b9c4d0;
+  border-radius:0;
+  background:#f3f5f7;
+  color:#222;
+  font-size:14px;
+  line-height:1.25;
+  padding:8px 10px;
+  box-shadow:none;
+  position:static;
+  bottom:auto;
+}
+.geometry-card-tabs .geometry-card-tab:last-child,
+.cif-output-tabs .cif-output-tab:last-child{border-right:0;}
+.geometry-card-tabs .geometry-card-tab:hover,
+.cif-output-tabs .cif-output-tab:hover{background:#eaf0f6;}
+.geometry-card-tabs .geometry-card-tab.active,
+.cif-output-tabs .cif-output-tab.active{
+  background:#fff;
+  border-color:#aab7c5;
+  box-shadow:inset 0 -1px 0 #66798b;
+  color:#222;
+  position:static;
+  bottom:auto;
+}
+@media(max-width:760px){
+  .geometry-card-tabs{flex-direction:row!important;border-bottom:1px solid #b9c4d0;}
+}
+
+/* mCIF Generator: Atoms / Spins / Bonds. */
+#structurePanel .structure-config-tabs{
+  display:flex;
+  flex-wrap:nowrap;
+  grid-template-columns:none;
+  align-items:stretch;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  gap:4px;
+  padding:4px;
+}
+#structurePanel .structure-config-tabs button{
+  flex:1 0 auto;
+  min-width:max-content;
+  white-space:nowrap;
+  padding:8px 10px;
+  border:0;
+  background:#f3f5f7;
+  color:#222;
+  font-size:14px;
+}
+#structurePanel .structure-config-tabs button:hover{background:#eaf0f6;}
+#structurePanel .structure-config-tabs button.active{
+  background:#fff;
+  box-shadow:none;
+  color:#222;
+}
+
+
+/* v47: give the selected item a visible frame at every tab level. */
+.toolbox-subtab,
+#structurePanel .structure-config-tabs button{
+  border:1px solid transparent;
+  box-sizing:border-box;
+}
+.toolbox-subtab.active,
+#structurePanel .structure-config-tabs button.active{
+  border:1px solid #98a7b6;
+  border-radius:5px;
+  background:#fff;
+  box-shadow:none;
+}
+.geometry-card-tabs .geometry-card-tab,
+.cif-output-tabs .cif-output-tab{
+  box-sizing:border-box;
+  border:1px solid transparent;
+  border-radius:0;
+}
+.geometry-card-tabs .geometry-card-tab.active,
+.cif-output-tabs .cif-output-tab.active{
+  box-sizing:border-box;
+  border:1px solid #98a7b6;
+  border-radius:4px;
+  background:#fff;
+  box-shadow:none;
+}
+/* v47: compact four-field form-factor control row. */
+#toolboxFormFactorPane .magff-main-row{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  align-items:end;
+  min-width:0;
+  margin:10px 0;
+}
+#toolboxFormFactorPane .magff-main-row>label{
+  display:grid;
+  gap:5px;
+  align-content:end;
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+#toolboxFormFactorPane .magff-main-row :is(input,select){
+  display:block;
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+/* v47: preserve three beam fields, with Set default on their right. */
+#toolboxAttenuationPane .absorption-beam-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:end;
+  gap:10px;
+  min-width:0;
+  margin-bottom:10px;
+}
+#toolboxAttenuationPane .absorption-beam-row .absorption-beam-controls{
+  margin:0;
+}
+#toolboxAttenuationPane .absorption-set-default{
+  align-self:end;
+  white-space:nowrap;
+  min-width:0;
+  min-height:38px;
+  padding-inline:11px;
+}
+@media(max-width:620px){
+  #toolboxFormFactorPane .magff-main-row{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+  }
+  #toolboxAttenuationPane .absorption-beam-row{
+    grid-template-columns:minmax(0,1fr);
+    gap:5px;
+  }
+  #toolboxAttenuationPane .absorption-set-default{justify-self:end;}
+}
+@media(max-width:370px){
+  #toolboxFormFactorPane .magff-main-row :is(input,select){font-size:14px;padding-inline:4px;}
+  #toolboxFormFactorPane .magff-main-row>label{font-size:12px;}
+}
+/* Keep text labels and the four field baselines aligned even when a label wraps. */
+#toolboxFormFactorPane .magff-main-row{align-items:stretch;}
+#toolboxFormFactorPane .magff-main-row>label{
+  grid-template-rows:minmax(20px,1fr) 38px;
+  align-content:stretch;
+}
+#toolboxFormFactorPane .magff-main-row :is(input,select){height:38px;}
+
+/* v48: Angle calculation & TAS geometry / Time estimate have equal-width tabs.
+   Limit this to the outer geometry switch; inner Single/Scan tabs are unchanged. */
+#singleMain .chart-grid > .geometry-card > .geometry-card-tabs:first-child{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0;
+  overflow-x:hidden;
+}
+#singleMain .chart-grid > .geometry-card > .geometry-card-tabs:first-child > .geometry-card-tab{
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  flex:none;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  text-align:center;
+}
+
+/* On a narrow MAIN WORKSPACE (not just a narrow window), show the six
+   primary tabs in two rows of three instead of a horizontal scroller. */
+@container (max-width:850px){
+  main > .main-tabs{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    grid-template-rows:repeat(2,auto);
+    gap:5px;
+    overflow:visible;
+  }
+  main > .main-tabs > .tab-button{
+    flex:none;
+    width:100%;
+    min-width:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    text-align:center;
+    padding:8px 5px;
+  }
+}
+/* Viewport fallback for browsers without the main-column container query. */
+@media (max-width:760px){
+  main > .main-tabs{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    grid-template-rows:repeat(2,auto);
+    gap:5px;
+    overflow:visible;
+  }
+  main > .main-tabs > .tab-button{
+    flex:none;
+    width:100%;
+    min-width:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    text-align:center;
+    padding:8px 5px;
+  }
+}
+
+/* v49: equal-width items throughout every navigation tab group. */
+main > .main-tabs{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:5px;
+  overflow:visible;
+}
+main > .main-tabs > .tab-button{
+  width:100%;min-width:0;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  text-align:center;white-space:normal;overflow-wrap:anywhere;
+}
+/* Each two-item Q-E/geometry/scan/preview pair receives exactly half the row. */
+.geometry-card-tabs,
+.cif-output-tabs{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0;
+  overflow-x:hidden;
+}
+.geometry-card-tabs > .geometry-card-tab,
+.cif-output-tabs > .cif-output-tab{
+  width:100%;min-width:0;max-width:100%;flex:none;
+  white-space:normal;overflow-wrap:anywhere;
+  text-align:center;
+}
+/* Four calculators share equal widths; small viewports scroll the entire even grid. */
+.toolbox-subtabs{
+  display:grid!important;
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  gap:4px;
+  overflow-x:auto;
+}
+.toolbox-subtabs > .toolbox-subtab{
+  min-width:0;width:100%;flex:none;
+  white-space:normal;overflow-wrap:anywhere;
+  text-align:center;
+}
+/* Three Structure tabs are likewise 1:1:1. */
+#structurePanel .structure-config-tabs{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:4px;
+  overflow-x:hidden;
+}
+#structurePanel .structure-config-tabs > button{
+  width:100%;min-width:0;flex:none;
+  white-space:normal;overflow-wrap:anywhere;
+  text-align:center;
+}
+@container (max-width:850px){
+  main > .main-tabs{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media (max-width:760px){
+  main > .main-tabs{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media (max-width:600px){
+  .toolbox-subtabs{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+}

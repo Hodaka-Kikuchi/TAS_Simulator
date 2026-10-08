@@ -276,8 +276,14 @@
     </div>
   </div>
   <div id="toolboxPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabToolbox">
-    <section class="calc-card toolbox-card">
-      <h2>Unit conversion</h2>
+    <nav class="toolbox-subtabs" role="tablist" aria-label="Toolbox calculators">
+      <button id="toolboxTabUnit" type="button" class="toolbox-subtab active" role="tab" aria-controls="toolboxUnitPane" aria-selected="true" data-toolbox-target="toolboxUnitPane">Unit Conversion</button>
+      <button id="toolboxTabS2" type="button" class="toolbox-subtab" role="tab" aria-controls="toolboxS2Pane" aria-selected="false" data-toolbox-target="toolboxS2Pane">S2 Conversion</button>
+      <button id="toolboxTabAttenuation" type="button" class="toolbox-subtab" role="tab" aria-controls="toolboxAttenuationPane" aria-selected="false" data-toolbox-target="toolboxAttenuationPane">Neutron Attenuation</button>
+      <button id="toolboxTabFormFactor" type="button" class="toolbox-subtab" role="tab" aria-controls="toolboxFormFactorPane" aria-selected="false" data-toolbox-target="toolboxFormFactorPane">Magnetic Form Factor</button>
+    </nav>
+    <section id="toolboxUnitPane" class="calc-card toolbox-card toolbox-subpanel" role="tabpanel" aria-labelledby="toolboxTabUnit">
+
       <div class="toolbox-grid">
         <label>Wavelength (Å)<input id="toolLambda" type="number" value="2.359" step="0.001" min="0"></label>
         <label>Energy (meV)<input id="toolEnergy" type="number" step="0.001" min="0"></label>
@@ -296,8 +302,8 @@
       </div></div>
       
     </section>
-    <section class="calc-card s2-conversion-card">
-      <h2>S2 conversion</h2>
+    <section id="toolboxS2Pane" class="calc-card s2-conversion-card toolbox-subpanel hidden" role="tabpanel" aria-labelledby="toolboxTabS2">
+
       <div class="s2-conversion-grid">
         <label>X-ray source
           <select id="s2ConvSource">
@@ -318,8 +324,8 @@
       </div>
       <div id="s2ConvInfo" class="s2-conversion-info" aria-live="polite"></div>
     </section>
-    <section class="calc-card absorption-card">
-      <h2>Neutron Attenuation</h2>
+    <section id="toolboxAttenuationPane" class="calc-card absorption-card toolbox-subpanel hidden" role="tabpanel" aria-labelledby="toolboxTabAttenuation">
+
       <div class="absorption-workspace">
         <div class="absorption-left">
           <div class="absorption-source-row">
@@ -341,22 +347,48 @@
               <input id="absorptionCifFileInput" type="file" accept=".cif,.mcif,text/plain,chemical/x-cif" hidden>
             </div>
           </div>
-          <div class="absorption-beam-controls">
-            <label>Energy (meV)<input id="absorptionEnergy" type="number" min="0" step="0.001"></label>
-            <label>Wavelength (Å)<input id="absorptionLambda" type="number" min="0" step="0.001"></label>
-            <label>SE transmission (%)<input id="absorptionSETransmission" type="number" min="0" max="100" step="0.1" value="100"></label>
+          <div class="absorption-beam-row">
+            <div class="absorption-beam-controls">
+              <label>Energy (meV)<input id="absorptionEnergy" type="number" min="0" step="0.001"></label>
+              <label>Wavelength (Å)<input id="absorptionLambda" type="number" min="0" step="0.001"></label>
+              <label>Wave vector (Å⁻¹)<input id="absorptionK" type="number" min="0" step="0.001"></label>
+            </div>
+            <button id="absorptionSetDefault" class="absorption-set-default" type="button" title="Copy fixed Instrument energy">Set default</button>
           </div>
           <div class="absorption-thickness-control">
+            <label>SE transmission (%)<input id="absorptionSETransmission" type="number" min="0" max="100" step="0.1" value="100"></label>
             <label>Sample thickness (mm)<input id="absorptionThickness" type="number" value="1.00" min="0" step="0.01"></label>
-            <input id="absorptionThicknessSlider" type="range" min="0" max="20" step="0.01" value="1.00" aria-label="Sample thickness">
             <label>Overall transmission (%)<input id="absorptionTransmission" type="number" value="" min="0.000001" max="100" step="0.1"></label>
           </div>
           <div id="absorptionResults" class="absorption-results"></div>
         </div>
         <div class="absorption-right">
           <div id="absorptionPlot" class="absorption-plot"></div>
+          <input id="absorptionThicknessSlider" class="absorption-plot-slider" type="range" min="0" max="20" step="0.01" value="1.00" aria-label="Sample thickness slider">
+          <div class="absorption-plot-actions"><button id="absorptionDownload" type="button" disabled>Download CSV</button></div>
         </div>
       </div>
+    </section>
+    <section id="toolboxFormFactorPane" class="calc-card magnetic-form-factor-card toolbox-subpanel hidden" role="tabpanel" aria-labelledby="toolboxTabFormFactor">
+      <div class="magff-main-row">
+        <label>Magnetic ion<select id="magffIon" aria-label="Magnetic ion"></select></label>
+        <label>j2 contribution<select id="magffWeightMode">
+          <option value="auto" selected>Auto</option>
+          <option value="zero">Spin-only (c = 0)</option>
+          <option value="free">Free-ion Landé</option>
+          <option value="custom">Custom c</option>
+        </select></label>
+        <label>Q (Å⁻¹)<input id="magffQPoint" type="number" value="2" min="0" max="10" step="any" inputmode="decimal"></label>
+        <label>|f(Q)|²<input id="magffIntensity" type="number" value="" min="0" step="any" inputmode="decimal" aria-label="Squared magnetic form factor"></label>
+      </div>
+      <div class="magff-extra-row">
+        <label id="magffConfigLabel" class="hidden">Electron configuration<select id="magffConfig"></select></label>
+        <label id="magffWeightLabel" class="hidden">Custom c<input id="magffWeight" type="number" value="0" step="0.05"></label>
+      </div>
+      <div id="magffInfo" class="magff-info" role="status" aria-live="polite"></div>
+      <div id="magffPlot" class="magff-plot" role="img" aria-label="Squared magnetic form factor versus momentum transfer"></div>
+      <input id="magffQSlider" class="magff-plot-slider" type="range" value="2" min="0" max="10" step="0.01" aria-label="Q slider">
+      <div class="magff-footer"><button id="magffDownload" type="button">Download CSV</button></div>
     </section>
   </div>
 

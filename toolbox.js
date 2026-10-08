@@ -2,6 +2,7 @@
 // DOM behavior is preserved; app.js injects the small UI/state boundary.
 
 import {deg2rad, rad2deg, clamp} from "./tas-core.js";
+import {initializeMagneticFormFactorUI} from "./magnetic-form-factor.js";
 import {neutronAbsorptionSummary, absorptionCrossSectionBarn, scatteringCrossSectionBarn, coherentCrossSectionBarn, incoherentCrossSectionBarn, neutronDataRecord} from "./cif-structure.js";
 
 export function createToolbox({
@@ -20,8 +21,71 @@ export function createToolbox({
   const C_LIGHT=299792458;              // m/s
   const MEV_PER_TESLA=5.78838e-2;       // user convention: 1 T = 5.78838e-5 eV = 0.0578838 meV
   let toolboxUpdating=false;
+  let toolboxTabsBound=false;
+  let absorptionCsvRows=[];
+  function initializeToolboxSubtabs(){
+    if(toolboxTabsBound) return;
+    toolboxTabsBound=true;
+    const renderFormFactor=initializeMagneticFormFactorUI();
+    // Match the CIF Generator's Set default action: read the current fixed
+    // Instrument energy (Ei or Ef as selected there), update all three fields,
+    // then recalculate the attenuation curve.
+    $('absorptionSetDefault')?.addEventListener('click',()=>{
+      syncAbsorptionBeamFromInstrument();
+      updateAbsorptionCalculator();
+    });
+    // Keep the attenuation wavevector in sync with E and wavelength.
+    $('absorptionK')?.addEventListener('input',()=>{
+      syncAbsorptionBeamFrom('wavevector');
+      updateAbsorptionCalculator();
+    });
+    $('absorptionDownload')?.addEventListener('click',()=>{
+      if(!absorptionCsvRows.length)return;
+      const content=['sample_thickness_mm,overall_transmission_percent',
+        ...absorptionCsvRows.map(row=>row.map(v=>Number(v).toPrecision(12)).join(','))].join('\n')+'\n';
+      const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'}));
+      const a=document.createElement('a');a.href=url;a.download='neutron_attenuation.csv';
+      document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
+    const buttons=[...document.querySelectorAll('#toolboxPanel [data-toolbox-target]')];
+    const panes=[...document.querySelectorAll('#toolboxPanel .toolbox-subpanel')];
+    // Main navigation may hide a rendered Plotly graph; redraw upon returning.
+    document.getElementById('tabToolbox')?.addEventListener('click',()=>{
+      requestAnimationFrame(()=>{
+        if(!document.getElementById('toolboxPanel')?.classList.contains('hidden')){
+          if(document.getElementById('toolboxTabFormFactor')?.classList.contains('active')) renderFormFactor();
+          if(document.getElementById('toolboxTabAttenuation')?.classList.contains('active')) updateAbsorptionCalculator();
+        }
+      });
+    });
+    const storageKey='tas_simulator_toolbox_subtab_v1';
+    function activateSubtab(btn,{persist=true}={}){
+      for(const b of buttons){
+        const selected=b===btn;
+        b.classList.toggle('active',selected);
+        b.setAttribute('aria-selected',String(selected));
+        b.tabIndex=selected?0:-1;
+      }
+      for(const pane of panes) pane.classList.toggle('hidden',pane.id!==btn.dataset.toolboxTarget);
+      if(persist){
+        try{localStorage.setItem(storageKey,btn.dataset.toolboxTarget);}catch(_e){}
+      }
+      requestAnimationFrame(()=>{
+        if(btn.dataset.toolboxTarget==='toolboxFormFactorPane') renderFormFactor();
+        if(btn.dataset.toolboxTarget==='toolboxAttenuationPane') updateAbsorptionCalculator();
+      });
+    }
+    let remembered=null;
+    try{remembered=localStorage.getItem(storageKey);}catch(_e){}
+    const initial=buttons.find(b=>b.dataset.toolboxTarget===remembered) || buttons[0];
+    if(initial)activateSubtab(initial,{persist:false});
+    for(const btn of buttons)btn.addEventListener('click',()=>activateSubtab(btn));
+  }
+
 
   function ensureExtendedToolboxUI(){
+    initializeToolboxSubtabs();
     const grid=document.querySelector('#toolboxPanel .toolbox-grid');
     if(!grid) return;
     const fields=[
@@ -505,25 +569,36 @@ export function createToolbox({
     if(!(energy>0)) return;
     absorptionBeamUpdating=true;
     try{
+      const lambda=Math.sqrt(NEUTRON_E_LAMBDA/energy);
       if($('absorptionEnergy')) $('absorptionEnergy').value=formatAbsorptionNumber(energy,6);
-      if($('absorptionLambda')) $('absorptionLambda').value=formatAbsorptionNumber(Math.sqrt(NEUTRON_E_LAMBDA/energy),6);
+      if($('absorptionLambda')) $('absorptionLambda').value=formatAbsorptionNumber(lambda,6);
+      if($('absorptionK')) $('absorptionK').value=formatAbsorptionNumber(2*Math.PI/lambda,6);
     }finally{ absorptionBeamUpdating=false; }
   }
 
   function syncAbsorptionBeamFrom(kind){
     if(absorptionBeamUpdating) return;
-    const energyField=$('absorptionEnergy'), lambdaField=$('absorptionLambda');
+    const energyField=$('absorptionEnergy'),lambdaField=$('absorptionLambda'),kField=$('absorptionK');
     if(!energyField || !lambdaField) return;
+    let lambda;
+    if(kind==='energy'){
+      const E=Number(energyField.value);
+      if(!(E>0)) return;
+      lambda=Math.sqrt(NEUTRON_E_LAMBDA/E);
+    }else if(kind==='wavevector'){
+      const k=Number(kField?.value);
+      if(!(k>0)) return;
+      lambda=2*Math.PI/k;
+    }else{
+      lambda=Number(lambdaField.value);
+      if(!(lambda>0))return;
+    }
     absorptionBeamUpdating=true;
     try{
-      if(kind==='energy'){
-        const E=Number(energyField.value);
-        if(E>0) lambdaField.value=formatAbsorptionNumber(Math.sqrt(NEUTRON_E_LAMBDA/E),6);
-      }else{
-        const lambda=Number(lambdaField.value);
-        if(lambda>0) energyField.value=formatAbsorptionNumber(NEUTRON_E_LAMBDA/(lambda*lambda),6);
-      }
-    }finally{ absorptionBeamUpdating=false; }
+      if(kind!=='energy')energyField.value=formatAbsorptionNumber(NEUTRON_E_LAMBDA/(lambda*lambda),6);
+      if(kind!=='lambda')lambdaField.value=formatAbsorptionNumber(lambda,6);
+      if(kField && kind!=='wavevector')kField.value=formatAbsorptionNumber(2*Math.PI/lambda,6);
+    }finally{absorptionBeamUpdating=false;}
   }
 
   function attenuationWavelengthA(){
@@ -586,6 +661,9 @@ export function createToolbox({
     const transmissionOut=$('absorptionTransmission');
     const seTransmissionField=$('absorptionSETransmission');
     const plot=$('absorptionPlot');
+    const download=$('absorptionDownload');
+    absorptionCsvRows=[];
+    if(download)download.disabled=true;
     if(!host || !status || !energyField || !lambdaField || !thicknessEntry || !thicknessSlider || !transmissionOut) return;
 
     const lambda=attenuationWavelengthA();
@@ -660,10 +738,12 @@ export function createToolbox({
         </div>
         <div class="absorption-table-wrap"><table class="absorption-table absorption-atom-table"><thead><tr><th>Element</th><th>${r.mode==='manual'?'Atoms / formula':'Atoms / cell'}</th><th>Abs (cm⁻¹)</th><th>Scat total (cm⁻¹)</th><th>Ratio</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 
+      const n=241;
+      const x=Array.from({length:n},(_,i)=>sliderMax*i/(n-1));
+      const y=x.map(mm=>seTransPct*Math.exp(-muAtt*mm/10));
+      absorptionCsvRows=x.map((mm,i)=>[mm,y[i]]);
+      if(download)download.disabled=false;
       if(plot && window.Plotly){
-        const n=241;
-        const x=Array.from({length:n},(_,i)=>sliderMax*i/(n-1));
-        const y=x.map(mm=>seTransPct*Math.exp(-muAtt*mm/10));
         Plotly.react(plot,[
           {x,y,mode:'lines',name:'Overall transmission',hovertemplate:'Thickness %{x:.3f} mm<br>Transmission %{y:.3f}%<extra></extra>'},
           {x:[thicknessMm],y:[overallTransPct],mode:'markers',name:'Selected thickness',marker:{size:10},hovertemplate:'Thickness %{x:.3f} mm<br>Transmission %{y:.3f}%<extra></extra>'}
