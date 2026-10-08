@@ -3747,3 +3747,114 @@ main{
  #structurePanel .structure-spin-display-row{grid-template-columns:repeat(2,minmax(0,1fr));}
  #structurePanel .structure-moment-row{grid-template-columns:auto minmax(48px,.6fr) minmax(125px,3fr) auto!important;}
 }
+
+/* v20: responsive CIF Generator and Neutron Attenuation.
+   Keep these rules after the desktop refinements so they cannot be overridden. */
+#cifGeneratorPanel .cif-generator-card,
+#cifGeneratorPanel .cif-generator-workspace,
+#cifGeneratorPanel .cif-generator-input-pane,
+#cifGeneratorPanel .cif-generator-output-pane,
+.absorption-card,.absorption-workspace,.absorption-left,.absorption-source-row,
+.absorption-beam-controls,.absorption-thickness-control{min-width:0;max-width:100%}
+#cifGeneratorPanel .cif-generator-input-pane input:not([type=checkbox]):not([type=radio]):not([type=file]),
+#cifGeneratorPanel .cif-generator-input-pane select,
+.absorption-left input:not([type=checkbox]):not([type=radio]):not([type=file]),
+.absorption-left select{min-width:0;max-width:100%;width:100%;box-sizing:border-box}
+#cifGeneratorPanel .cif-atom-table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+#cifGeneratorPanel .cif-output-panel{min-width:0}
+#cifGeneratorPanel .cif-preview-note{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
+#cifGeneratorPanel .cif-reflection-table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.absorption-summary-value,.absorption-summary-subgrid strong{overflow-wrap:anywhere;white-space:normal}
+
+/* Stack the input pane over the preview/table on tablets and phones. */
+@media(max-width:1180px){
+  #cifGeneratorPanel .cif-generator-workspace{grid-template-columns:minmax(0,1fr);align-items:start}
+  #cifGeneratorPanel .cif-generator-input-pane,
+  #cifGeneratorPanel .cif-generator-output-pane{width:100%;min-width:0}
+  #cifGeneratorPanel .cif-generator-output-pane{height:auto!important;min-height:0}
+  #cifGeneratorPanel .cif-output-panel{flex:0 1 auto}
+  #cifGeneratorPanel .cif-preview-note{height:360px;min-height:240px;flex:0 0 auto}
+  #cifGeneratorPanel .cif-reflection-table-wrap{height:360px;min-height:240px;flex:0 0 auto}
+  .absorption-workspace{grid-template-columns:minmax(0,1fr)}
+  .absorption-right{min-height:340px}
+  .absorption-plot{min-height:340px}
+  .absorption-source-row{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto}
+  .absorption-thickness-control{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr)}
+  .absorption-thickness-control label:last-child{max-width:none}
+}
+@media(max-width:760px){
+  #cifGeneratorPanel .cif-generator-card{padding:9px}
+  #cifGeneratorPanel .cif-generator-input-pane{padding:9px}
+  #cifGeneratorPanel .cif-generator-workspace{gap:10px;margin-top:0}
+  #cifGeneratorPanel .cif-lattice-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #cifGeneratorPanel .cif-generator-beam-grid{grid-template-columns:minmax(0,1fr)}
+  #cifGeneratorPanel .cif-generator-source-row{grid-template-columns:minmax(0,1fr) auto}
+  #cifGeneratorPanel .cif-generator-source-row .cif-file-name{grid-column:1/-1;grid-row:2}
+  #cifGeneratorPanel .cif-generator-source-row #cifLoadExisting{grid-column:1;grid-row:1}
+  #cifGeneratorPanel .cif-generator-source-row #cifGeneratorSourceClear{grid-column:2;grid-row:1}
+  #cifGeneratorPanel .cif-source-button-row{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #cifGeneratorPanel .cif-source-button-row button{min-width:0;white-space:normal;overflow-wrap:anywhere}
+  #cifGeneratorPanel .cif-output-tab{min-width:0;padding:10px 5px;font-size:13px}
+  #cifGeneratorPanel .cif-reflection-toolbar{gap:8px 12px}
+  #cifGeneratorPanel .cif-preview-note{height:300px;min-height:240px;font-size:12px}
+  #cifGeneratorPanel .cif-reflection-table-wrap{height:340px;min-height:240px}
+  .absorption-source-row{grid-template-columns:minmax(0,1fr)}
+  .absorption-manual-row:not(.hidden),.absorption-cif-row:not(.hidden){display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+  .absorption-input-mode-row{grid-template-columns:minmax(0,1fr)}
+  .absorption-beam-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .absorption-thickness-control{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .absorption-thickness-control input[type=range]{grid-column:1/-1;grid-row:2;margin:3px 0 8px}
+  .absorption-thickness-control label:last-child{max-width:none;justify-self:stretch}
+  .absorption-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .absorption-summary-cards>.absorption-summary-card{grid-column:auto!important}
+  .absorption-summary-cards>.absorption-summary-card:nth-child(2){grid-column:1/-1!important}
+}
+@media(max-width:420px){
+  .absorption-beam-controls{grid-template-columns:minmax(0,1fr)}
+  .absorption-thickness-control{grid-template-columns:minmax(0,1fr)}
+  .absorption-thickness-control input[type=range]{grid-row:auto;grid-column:1}
+  .absorption-summary-cards{grid-template-columns:minmax(0,1fr)}
+  .absorption-summary-cards>.absorption-summary-card{grid-column:1!important}
+}
+
+/* v21: responsive field groups, no forced six-column scrolling. */
+.s2-conversion-card{min-width:0;max-width:100%;overflow:visible}
+.s2-conversion-grid{
+  min-width:0!important;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))!important;
+  gap:10px;
+}
+.s2-conversion-grid>label,.s2-conversion-grid input,.s2-conversion-grid select{min-width:0;max-width:100%;box-sizing:border-box}
+.s2-conversion-grid>label{display:grid;gap:5px}
+
+/* Keep mode and CIF filename in separate, shrinkable grid items. */
+.absorption-source-row{
+  display:grid;
+  grid-template-columns:minmax(140px,.8fr) minmax(0,2fr)!important;
+  align-items:end;
+  gap:10px;
+}
+.absorption-input-mode-row{min-width:0;grid-template-columns:minmax(0,1fr)!important}
+.absorption-cif-row:not(.hidden){display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:8px;min-width:0;align-items:end}
+.absorption-manual-row:not(.hidden){display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:8px;min-width:0}
+.absorption-cif-row>label,.absorption-cif-row input,.absorption-input-mode-row label,.absorption-input-mode-row select{min-width:0;max-width:100%;box-sizing:border-box}
+.absorption-beam-controls{grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr))!important;gap:10px}
+.absorption-thickness-control{grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr))!important;gap:10px}
+.absorption-thickness-control input[type=range]{grid-column:auto!important;grid-row:auto!important;min-width:0}
+.absorption-thickness-control label:last-child{justify-self:stretch;max-width:none}
+.absorption-beam-controls>label,.absorption-thickness-control>label{min-width:0}
+
+/* Four controls on wide screens; button wraps naturally on narrower panels. */
+#cifGeneratorPanel .cif-generator-beam-grid{grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end}
+#cifReflectionSetDefault{min-width:0;min-height:38px;white-space:nowrap;padding-inline:12px}
+@media(max-width:850px){
+  .absorption-source-row{grid-template-columns:minmax(0,1fr)!important}
+  #cifGeneratorPanel .cif-generator-beam-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:520px){
+  .absorption-cif-row:not(.hidden){grid-template-columns:minmax(0,1fr)}
+  .absorption-cif-row #absorptionCifSelectButton{justify-self:start}
+  #cifGeneratorPanel .cif-generator-beam-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  #cifReflectionSetDefault{align-self:end}
+}

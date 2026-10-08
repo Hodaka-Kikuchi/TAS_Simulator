@@ -3129,6 +3129,10 @@ async function initializeCifGenerator(){
     for(const id of reflectionFilterIds){
       $(id)?.addEventListener("change",recalculateGeneratedReflections);
     }
+    $("cifReflectionSetDefault")?.addEventListener("click",()=>{
+      syncCifReflectionBeamFromInstrument();
+      recalculateGeneratedReflections();
+    });
     $("cifReflectionEnergy")?.addEventListener("change",()=>syncCifReflectionBeamFrom("energy"));
     $("cifReflectionWavelength")?.addEventListener("change",()=>syncCifReflectionBeamFrom("wavelength"));
     $("cifReflectionWavevector")?.addEventListener("change",()=>syncCifReflectionBeamFrom("wavevector"));
