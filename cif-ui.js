@@ -1,3 +1,4 @@
+import {exportCommensurateMcif,rationalApprox} from './mcif-export.js';
 // Extracted from app.js without changing calculation/display behavior.
 // Dependencies are injected by app.js to keep module boundaries explicit.
 const LEFT_PANEL_STORAGE_KEY='tas-qe-left-panel-v1';
@@ -399,6 +400,9 @@ let structureMomentRotationAxis="c";
 let structureMomentChirality="CCW";
 let structureMomentPropagationIndex=0;
 let structureMomentDirectionMode="cartesian";
+let structureSpinEditingMode="sites";
+// Element only filters rows shown in Spins; it never changes moments or mCIF export.
+let structureSpinTableElement="*";
 let structureConfigActiveTab="atoms";
 let structureMomentGlobalLength=1;
 let structureMomentGlobalWidth=10;
@@ -475,6 +479,8 @@ function resetStructureViewerStateToDefaults(){
     structureMomentChirality="CCW";
     structureMomentPropagationIndex=0;
     structureMomentDirectionMode="cartesian";
+    structureSpinEditingMode="sites";
+    structureSpinTableElement="*";
     structureConfigActiveTab="atoms";
     structureMomentGlobalLength=1;
     structureMomentGlobalWidth=10;
@@ -511,6 +517,8 @@ function saveStructureViewerState(){
       momentChirality:structureMomentChirality,
       momentPropagationIndex:structureMomentPropagationIndex,
       momentDirectionMode:structureMomentDirectionMode,
+      spinEditingMode:structureSpinEditingMode,
+      spinTableElement:structureSpinTableElement,
       configActiveTab:structureConfigActiveTab,
       momentCoordinatesVersion:3,
       momentGlobalLength:structureMomentGlobalLength,
@@ -581,6 +589,8 @@ function restoreStructureViewerState(){
     if(["CW","CCW"].includes(String(saved.momentChirality||""))) structureMomentChirality=String(saved.momentChirality);
     { const n=Number(saved.momentPropagationIndex); structureMomentPropagationIndex=Number.isInteger(n)&&n>0?n:0; }
     if(["cartesian","polar"].includes(String(saved.momentDirectionMode||""))) structureMomentDirectionMode=String(saved.momentDirectionMode);
+    structureSpinEditingMode=saved.spinEditingMode==="individual"?"individual":"sites";
+    structureSpinTableElement=String(saved.spinTableElement||"*");
     structureConfigActiveTab=["atoms","spins","bonds"].includes(saved.configActiveTab)?saved.configActiveTab:"atoms";
     { const n=Number(saved.momentGlobalLength); if(Number.isFinite(n)&&n>=0) structureMomentGlobalLength=n; }
     { const n=Number(saved.momentGlobalWidth); if(Number.isFinite(n)&&n>=1) structureMomentGlobalWidth=n; }
@@ -1026,31 +1036,41 @@ function compressStructureSiteLabels(labels,element=""){
 }
 
 function setSpinEnabledForElement(element,enabled){
-  const target=String(element||"");
+  const structure=currentStructureForViewer()?.structure;
+  if(!structure)return;
   const live=currentMomentSettings();
-  for(const [key,value] of live) structureMomentSettings.set(key,value);
+  for(const [key,value] of live)structureMomentSettings.set(key,value);
   for(const row of document.querySelectorAll("#cifMagMomentRows .structure-moment-row")){
-    if(String(row.dataset.momentElement||"")!==target) continue;
-    const checkbox=row.querySelector('[data-moment-field="enabled"]');
-    if(checkbox) checkbox.checked=!!enabled;
-    const key=row.dataset.momentKey;
-    if(!key) continue;
-    const cur=structureMomentSettings.get(key)||{};
-    structureMomentSettings.set(key,{...cur,enabled:!!enabled});
+    if(row.dataset.momentElement===String(element)){
+      const checkbox=row.querySelector('[data-moment-field="enabled"]');
+      if(checkbox)checkbox.checked=!!enabled;
+    }
   }
+  const candidates=spinEditingIsIndividual(structure)?individualSpinCandidates(structure):magneticCandidateSites(structure);
+  for(const site of candidates){
+    if(String(site.element)!==String(element))continue;
+    const key=site.individualKey||momentKey(site);
+    const initial=site.individualKey?resolveIndividualSpin(site,structure,live):defaultMomentSetting(site,structure);
+    structureMomentSettings.set(key,{...initial,...(structureMomentSettings.get(key)||{}),enabled:!!enabled});
+  }
+  updateMagneticMomentRows(structure);
   syncSpinElementToggleStates();
 }
 function syncSpinElementToggleStates(){
-  const host=$("cifSpinElementToggles");
-  if(!host) return;
+  const host=$("cifSpinElementToggles"),structure=currentStructureForViewer()?.structure;
+  if(!host||!structure)return;
+  let candidates=[];
+  try{candidates=spinEditingIsIndividual(structure)?individualSpinCandidates(structure):magneticCandidateSites(structure);}catch(_e){return;}
+  const live=currentMomentSettings();
   for(const checkbox of host.querySelectorAll('input[data-spin-element]')){
     const element=String(checkbox.dataset.spinElement||"");
-    const rows=[...document.querySelectorAll("#cifMagMomentRows .structure-moment-row")].filter(row=>String(row.dataset.momentElement||"")===element);
-    const states=rows.map(row=>!!row.querySelector('[data-moment-field="enabled"]')?.checked);
-    const checked=states.length>0 && states.every(Boolean);
-    const any=states.some(Boolean);
+    const states=candidates.filter(site=>String(site.element)===element).map(site=>{
+      const key=site.individualKey||momentKey(site);
+      return !!(live.get(key)||structureMomentSettings.get(key)||(site.individualKey?initialIndividualSpin(site,structure):defaultMomentSetting(site,structure))).enabled;
+    });
+    const checked=states.length>0&&states.every(Boolean);
     checkbox.checked=checked;
-    checkbox.indeterminate=any && !checked;
+    checkbox.indeterminate=states.some(Boolean)&&!checked;
   }
 }
 function updateSpinElementToggles(structure){
@@ -1148,6 +1168,68 @@ function magneticCandidateSites(structure){
   });
 }
 function momentKey(site){ return `${site.siteIndex}:${site.label||site.element}`; }
+// The key uses the expanded atom index, not a crystallographic label: a CIF may
+// have multiple symmetry-equivalent positions with the same source label.
+const individualSpinKey=(ix,iy,iz,atomIndex)=>`individual:${ix},${iy},${iz}:${atomIndex}`;
+function individualSpinDimensions(){
+  const q=effectivePropagationVectorForStructure();
+  return [q.h,q.k,q.l].map(v=>rationalApprox(v).d);
+}
+function individualSpinCandidates(structure){
+  if(!Array.isArray(structure?.atoms)) return [];
+  const N=individualSpinDimensions();
+  if(N.reduce((a,b)=>a*b,1)*structure.atoms.length>1200)
+    throw new Error('Individual spin editor limit: 1200 atoms. Reduce k denominators or use linked sites.');
+  const out=[];
+  const labelCounts=new Map();
+  for(let ix=0;ix<N[0];ix++)for(let iy=0;iy<N[1];iy++)for(let iz=0;iz<N[2];iz++)
+    structure.atoms.forEach((atom,atomIndex)=>{
+      const key=individualSpinKey(ix,iy,iz,atomIndex);
+      const parent=structure.asymmetricSites?.[atom.sourceSiteIndex]||atom;
+      const pos=[atom.x+ix,atom.y+iy,atom.z+iz];
+      const label=String(atom.sourceLabel||atom.element);
+      const count=(labelCounts.get(label)||0)+1;
+      labelCounts.set(label,count);
+      out.push({...atom,siteIndex:atom.sourceSiteIndex,
+        label:`${label} #${count}`,
+        x:pos[0],y:pos[1],z:pos[2],individualKey:key,
+        parentSite:parent,individualIndex:atomIndex,individualCell:[ix,iy,iz]});
+    });
+  return out;
+}
+function spinEditingIsIndividual(structure){return structureSpinEditingMode==='individual' && !!structure && !structure.magnetic;}
+function initialIndividualSpin(site,structure){
+  const base=site.parentSite||site;
+  const key=momentKey({...base,siteIndex:site.siteIndex});
+  const parent={...defaultMomentSetting(base,structure),...(structureMomentSettings.get(key)||{})};
+  if(!parent.enabled)return parent;
+  const q=effectivePropagationVectorForStructure();
+  const approx=[q.h,q.k,q.l].map(v=>rationalApprox(v));
+  const vec=[parent.mx,parent.my,parent.mz];
+  const phase=2*PI*[site.x,site.y,site.z].reduce((sum,v,i)=>sum+v*approx[i].n/approx[i].d,0);
+  let result=vec;
+  if(structureMomentStructureType==='helical'){
+    const b=directLatticeBasis(structure.lattice);
+    result=rotateVectorAroundAxis(vec,structureMomentRotationAxisVector(b),(structureMomentChirality==='CW'?1:-1)*phase);
+  }else if(structureMomentStructureType==='sinusoidal') result=vecScale(vec,Math.cos(phase));
+  else if(Math.cos(phase)<0)result=vecScale(vec,-1);
+  return {...parent,mx:result[0],my:result[1],mz:result[2]};
+}
+
+function individualSettingForAtom(atom,structure,settings){
+  const N=individualSpinDimensions();
+  const cell=atom.cell||[0,0,0];
+  const component=(v,i)=>((Math.round(v)%N[i])+N[i])%N[i];
+  const key=individualSpinKey(...cell.map(component),atom.expandedAtomIndex);
+  const stored=settings.get(key)||structureMomentSettings.get(key);
+  if(stored)return stored;
+  const base=structure.atoms?.[atom.expandedAtomIndex];
+  if(!base)return null;
+  const parent=structure.asymmetricSites?.[base.sourceSiteIndex]||base;
+  return initialIndividualSpin({...base,x:atom.phaseX,y:atom.phaseY,z:atom.phaseZ,
+    siteIndex:base.sourceSiteIndex,parentSite:parent},structure);
+}
+
 // mCIF crystalaxis values are components along unit crystallographic
 // directions, not fractional atomic coordinates. Never multiply moments
 // by lattice lengths a, b, c (in Angstrom).
@@ -1249,20 +1331,57 @@ function currentMomentSettings(){
   }
   return out;
 }
+// Element selection only controls which rows are shown. Hidden rows retain their settings.
+function refreshSpinTableToolbar(structure){
+  const elements=structureElements(structure);
+  const select=$("cifSpinTableElement");
+  if(!elements.includes(structureSpinTableElement) && structureSpinTableElement!=="*")
+    structureSpinTableElement="*";
+  if(!select)return;
+  select.replaceChildren();
+  const add=(value,label)=>{
+    const option=document.createElement("option");
+    option.value=value;option.textContent=label;select.appendChild(option);
+  };
+  add("*","All elements");
+  for(const element of elements)add(element,element);
+  select.value=structureSpinTableElement;
+}
+function spinTableFilteredSites(sites){
+  if(structureSpinTableElement==="*")return sites;
+  return sites.filter(site=>String(site.element)===structureSpinTableElement);
+}
+function resolveIndividualSpin(site,structure,live){
+  return live.get(site.individualKey)||structureMomentSettings.get(site.individualKey)||initialIndividualSpin(site,structure);
+}
 function updateMagneticMomentRows(structure){
   const host=$("cifMagMomentRows");
   if(!host) return;
   const live=currentMomentSettings();
   for(const [key,value] of live) structureMomentSettings.set(key,value);
   host.replaceChildren();
-  const sites=magneticCandidateSites(structure);
+  const individual=spinEditingIsIndividual(structure);
+  let allSites=[];
+  try{allSites=individual?individualSpinCandidates(structure):magneticCandidateSites(structure);}
+  catch(err){const notice=$('cifSpinIndividualInfo');if(notice){notice.hidden=false;notice.textContent=err.message;}return;}
+  const notice=$('cifSpinIndividualInfo');
+  if(notice){notice.hidden=true;notice.textContent="";}
+  refreshSpinTableToolbar(structure);
+  const sites=spinTableFilteredSites(allSites);
   if(!sites.length){
-    const div=document.createElement("div"); div.className="structure-rows-empty"; div.textContent="No atomic sites were found in the CIF asymmetric unit."; host.appendChild(div); return;
+    const div=document.createElement("div"); div.className="structure-rows-empty";
+    div.textContent=allSites.length ? "No atoms match the selected element." : "No atomic sites were found.";
+    host.appendChild(div);
+    updateSpinElementToggles(structure);
+    return;
   }
   sites.forEach((site,siteOrder)=>{
-    const key=momentKey(site);
+    const key=site.individualKey||momentKey(site);
     const saved=structureMomentSettings.get(key)||{};
-    const setting={...defaultMomentSetting(site,structure),...saved};
+    const base=site.parentSite||site;
+    const parentKey=momentKey({...base,siteIndex:site.siteIndex});
+    const parentSetting=structureMomentSettings.get(parentKey)||defaultMomentSetting(base,structure);
+    const setting={...(site.individualKey?initialIndividualSpin(site,structure):defaultMomentSetting(site,structure)),...saved};
     // For mCIF, loaded components are physical Cartesian moments, not fractional coordinates.
     // Keep the original physical components in XYZ; Length is a visual-only control.
     if(!setting.colorCustomized && !saved.colorCustomized) setting.color=elementColor(site.element);
@@ -1486,11 +1605,11 @@ function replicatedAtoms(structure,range){
   const xb=rangeCellBounds(range.x), yb=rangeCellBounds(range.y), zb=rangeCellBounds(range.z);
   const eps=1e-9;
   for(let ix=xb.from-2;ix<=xb.to+2;ix++) for(let iy=yb.from-2;iy<=yb.to+2;iy++) for(let iz=zb.from-2;iz<=zb.to+2;iz++){
-    for(const atom of base){
+    for(const [expandedAtomIndex,atom] of base.entries()){
       const phaseX=fracWrap01(atom.x)+ix, phaseY=fracWrap01(atom.y)+iy, phaseZ=fracWrap01(atom.z)+iz;
       const x=phaseX, y=phaseY, z=phaseZ;
       if(x<range.x.min-eps||x>range.x.max+eps||y<range.y.min-eps||y>range.y.max+eps||z<range.z.min-eps||z>range.z.max+eps) continue;
-      out.push({...atom,x,y,z,phaseX,phaseY,phaseZ,cell:[ix,iy,iz]});
+      out.push({...atom,x,y,z,phaseX,phaseY,phaseZ,cell:[ix,iy,iz],expandedAtomIndex});
     }
   }
   return out;
@@ -1518,6 +1637,7 @@ function bondTraces(atoms,basis,rules){
   return traces;
 }
 function atomMomentSetting(atom,settings,structure){
+  if(spinEditingIsIndividual(structure)) return individualSettingForAtom(atom,structure,settings);
   const sourceIndex=Number.isInteger(atom.sourceSiteIndex)?atom.sourceSiteIndex:null;
   if(sourceIndex!==null){
     const site=(structure?.asymmetricSites||[])[sourceIndex];
@@ -1626,6 +1746,8 @@ function magneticStructureTraces(atoms,basis,structure){
     let amplitude=1;
     if(Array.isArray(atom.magneticMoment) || atom.magneticFourier){
       // Magnetic symmetry/Fourier modulation already provides the spin.
+    }else if(spinEditingIsIndividual(structure)){
+      // The user supplies each supercell vector; do not synthesize k modulation.
     }else if(structureMomentStructureType==="helical"){
       const chiralitySign=structureMomentChirality==="CW" ? 1 : -1;
       dir=vecNormalize(rotateVectorAroundAxis(moment,rotationAxis,chiralitySign*basePhase));
@@ -1864,6 +1986,11 @@ function prepareStructureViewerControls(){
     propagationSelect.addEventListener("change",()=>{
       const n=Number(propagationSelect.value);
       structureMomentPropagationIndex=Number.isInteger(n)&&n>0?n:0;
+      if(structureSpinEditingMode==='individual'){
+        for(const [key,value] of currentMomentSettings())structureMomentSettings.set(key,value);
+        $('cifMagMomentRows')?.replaceChildren();
+        updateMagneticMomentRows(currentStructureForViewer()?.structure||null);
+      }
       saveStructureViewerState();
       renderCifStructureIfVisible();
     });
@@ -1871,6 +1998,34 @@ function prepareStructureViewerControls(){
   const structureTypeSelect=$("cifMomentStructureType");
   const axisSelect=$("cifMomentRotationAxis");
   const chiralitySelect=$("cifMomentChirality");
+  const spinTableElementSelect=$("cifSpinTableElement");
+  if(spinTableElementSelect&&!spinTableElementSelect.dataset.structureBound){
+    spinTableElementSelect.dataset.structureBound="1";
+    spinTableElementSelect.addEventListener("change",()=>{
+      structureSpinTableElement=spinTableElementSelect.value;
+      updateMagneticMomentRows(currentStructureForViewer()?.structure||null);
+      saveStructureViewerState();
+    });
+  }
+  const editingSelect=$('cifSpinEditingMode');
+  if(editingSelect){
+    editingSelect.value=structureSpinEditingMode;
+    editingSelect.disabled=!!currentStructureForViewer()?.structure?.magnetic;
+    if(!editingSelect.dataset.structureBound){
+      editingSelect.dataset.structureBound='1';
+      editingSelect.addEventListener('change',()=>{
+        for(const [key,value] of currentMomentSettings())structureMomentSettings.set(key,value);
+        structureSpinEditingMode=editingSelect.value==='individual'?'individual':'sites';
+        if(structureSpinEditingMode==='individual' && structureSpinTableElement==='*'){
+          const info=currentStructureForViewer()?.structure;
+          structureSpinTableElement=structureElements(info).find(el=>DEFAULT_SPIN_ELEMENTS.has(String(el).toUpperCase()))||'*';
+        }
+        $('cifMagMomentRows')?.replaceChildren();
+        updateMagneticMomentRows(currentStructureForViewer()?.structure||null);
+        saveStructureViewerState();renderCifStructureIfVisible();
+      });
+    }
+  }
   const directionSelect=$("cifMomentDirectionMode");
   const lengthInput=$("cifMomentGlobalLength");
   const widthInput=$("cifMomentGlobalWidth");
@@ -2875,6 +3030,32 @@ function generateMcifForReview(){
   if(!source) throw new Error("Select a CIF/mCIF before generating.");
   const structure=getSelectedCifStructure();
   if(!structure) throw new Error("Selected structure is unavailable.");
+  if(!structure.magnetic){
+    const live=currentMomentSettings();
+    const settings=(structure.asymmetricSites||[]).map((site,siteIndex)=>{
+      const key=momentKey({...site,siteIndex});
+      return live.get(key)||structureMomentSettings.get(key)||defaultMomentSetting(site,structure);
+    });
+    const isIndividual=spinEditingIsIndividual(structure);
+    const allIndividualSites=isIndividual?individualSpinCandidates(structure):[];
+    const individualSettings=isIndividual ? Object.fromEntries(allIndividualSites.map(site=>[
+      site.individualKey.replace(/^individual:/,''),resolveIndividualSpin(site,structure,live)
+    ])) : null;
+    if(!(individualSettings ? Object.values(individualSettings).some(s=>s.enabled) : settings.some(s=>s.enabled)))
+      throw new Error('Enable at least one magnetic site to generate an mCIF.');
+    const q=effectivePropagationVectorForStructure();
+    const basis=directLatticeBasis(structure.lattice);
+    const result=exportCommensurateMcif({source,structure,settings,q:[q.h,q.k,q.l],mode:structureMomentStructureType,
+      axis:structureMomentRotationAxisVector(basis),chirality:structureMomentChirality,
+      fallbackOperations:findGeneratorSpaceGroup(structure)?.operations||[],
+      individualSettings});
+    const base=cleanMcifBaseName($('structureMcifGeneratedName')?.value);
+    lastGeneratedMcifText=result.text;lastGeneratedMcifName=`${base}.mcif`;
+    for(const id of ['structureMcifDownload','structureMcifSet'])if($(id))$(id).disabled=false;
+    mcifPreview(result.text);
+    mcifMessage(`Generated ${lastGeneratedMcifName}: ${result.atomCount} atoms in ${result.supercell.join('×')} supercell, ${result.operationCount} magnetic operations, ${result.representatives} independent sites. k ≈ (${result.approximatedQ.join(', ')}).`);
+    return;
+  }
   const hasMagOps=/_space_group_symop_magn_operation[._]/i.test(source);
   if(!hasMagOps) throw new Error("This generator currently requires an mCIF with magnetic symmetry operations. A nonmagnetic CIF cannot be converted without choosing a magnetic space group.");
   const live=currentMomentSettings();
@@ -3113,7 +3294,14 @@ async function initializeCifGenerator(){
     // compatibility; do not attach redraw handlers to them.
     const propagationStructureRefresh=()=>{ refreshMomentPropagationVectorSelect(); saveStructureViewerState(); renderCifStructureIfVisible(); };
     $("propagationVectors")?.addEventListener("input",propagationStructureRefresh);
-    $("propagationVectors")?.addEventListener("change",propagationStructureRefresh);
+    $("propagationVectors")?.addEventListener("change",()=>{
+      if(structureSpinEditingMode==='individual'){
+        for(const [key,value] of currentMomentSettings())structureMomentSettings.set(key,value);
+        $('cifMagMomentRows')?.replaceChildren();
+        updateMagneticMomentRows(currentStructureForViewer()?.structure||null);
+      }
+      propagationStructureRefresh();
+    });
     $("propagationVectors")?.addEventListener("click",()=>requestAnimationFrame(propagationStructureRefresh));
     $("addPropagationVector")?.addEventListener("click",()=>requestAnimationFrame(propagationStructureRefresh));
     for(const th of document.querySelectorAll(".cif-sortable-th")){

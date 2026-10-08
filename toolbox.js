@@ -658,7 +658,7 @@ export function createToolbox({
             </div>
           </div>
         </div>
-        <div class="absorption-table-wrap"><table class="absorption-table absorption-atom-table"><thead><tr><th>Atom</th><th>${r.mode==='manual'?'Atoms / formula':'Atoms / cell'}</th><th>Abs (cm⁻¹)</th><th>Scat total (cm⁻¹)</th><th>Ratio</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        <div class="absorption-table-wrap"><table class="absorption-table absorption-atom-table"><thead><tr><th>Element</th><th>${r.mode==='manual'?'Atoms / formula':'Atoms / cell'}</th><th>Abs (cm⁻¹)</th><th>Scat total (cm⁻¹)</th><th>Ratio</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 
       if(plot && window.Plotly){
         const n=241;

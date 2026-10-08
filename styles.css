@@ -3858,3 +3858,36 @@ main{
   #cifGeneratorPanel .cif-generator-beam-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
   #cifReflectionSetDefault{align-self:end}
 }
+
+/* Individual expanded-atom spin editing: keep long lists usable on mobile. */
+.structure-individual-selector{max-width:340px;width:100%;min-width:0;margin:8px 0 4px}
+#cifSpinIndividualInfo{font-size:.85em;line-height:1.4;margin:4px 0 8px;overflow-wrap:anywhere}
+#cifMagMomentRows .structure-moment-site{overflow-wrap:anywhere;min-width:0}
+
+/* Spin editing controls: consistent Atom label; equal-width Mode/Atom columns.
+   Keep both fields on one row even when the structure panel is narrow. */
+#structurePanel .structure-spin-editor-toolbar{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:end;
+  column-gap:10px;
+  margin:8px 0 6px;
+  min-width:0;
+  width:100%;
+}
+#structurePanel .structure-spin-editor-toolbar>.structure-entry-field,
+#structurePanel .structure-spin-editor-toolbar>.structure-individual-selector{
+  margin:0;
+  width:100%;
+  min-width:0;
+  max-width:none;
+  box-sizing:border-box;
+}
+#structurePanel .structure-spin-editor-toolbar select{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+#structurePanel .structure-spin-editor-toolbar>[hidden]{display:none!important;}
+#cifSpinIndividualInfo[hidden]{display:none!important;}

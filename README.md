@@ -215,3 +215,32 @@ Validation reference: `1.2_CuSe2O5(1).mcif` includes monoclinic
 `(0.13,0.50,0.00)`. Expanding the magnetic operations yields four Cu spins.
 This magnetic cell has *zero net vector* under a simple sum of the generated
 moments; do not infer a finite bulk ferromagnetic moment from this data alone.
+
+## v26: Generate an mCIF from a nonmagnetic CIF
+
+In the Structure tab, select a normal CIF, adjust the magnetic moment entries
+(Cartesian or Polar), select a propagation vector and a structure type, and
+click **Generate**. The preview can then be downloaded as `.mcif` or set as
+the currently selected structure.
+
+The exporter creates an explicit *commensurate magnetic supercell*. The phase
+of each atomic moment follows the Structure viewer's Collinear, Helical, or
+Sinusoidal rule. Values like `k = (0, 0, 0.25)` are represented by four parent
+cells. Near-rational inputs like `k = (0, 0, 0.33)` are approximated by 1/3,
+and the actual rationalized vector and supercell are displayed after Generate.
+The allowed denominator is <=16 per component; the total supercell is limited
+to 128 parent cells and 12,000 atoms.
+
+Magnetic symmetry discovery starts from the parent crystallographic symmetry
+operations and tests time-reversal signs and possible origin translations
+against every decorated atomic site and its magnetic moment. The resulting
+mCIF contains **only verified magnetic operations**, and reduced independent
+sites. This permits non-P1 magnetic symmetry when consistent with the entered
+structure. It does not assign an unverified BNS group number/name. If no
+nontrivial operations survive, the export uses P1 magnetic operations. This
+is not an automatic superspace or multi-Q magnetic-group identifier.
+
+After writing, the file is immediately parsed again and expanded coordinates
+and moments are compared with the generated magnetic supercell. A mismatch
+blocks Download/Set. An imported mCIF retains its existing moment-update
+export workflow.
