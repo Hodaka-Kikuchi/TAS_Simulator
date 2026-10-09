@@ -412,6 +412,8 @@ let structureCameraState=null;
 let structureProgrammaticCameraUpdate=false;
 let structureCameraWatchFrame=0;
 let structureCameraWatchSignature="";
+let structureCameraPresetRevision=0;
+let structureCameraRenderRevision=0;
 let structureMomentStructureType="collinear";
 let structureMomentRotationAxis="c";
 let structureMomentChirality="CCW";
@@ -793,21 +795,44 @@ function rangeCellBounds(rangeAxis){
   return {from:Math.floor(rangeAxis.min),to:Math.ceil(rangeAxis.max)-1};
 }
 function structureCameraForView(viewMode,basis,distance=2.4){
-  const viewVec=basis?.[viewMode] || basis?.cstar || [0,0,1];
-  const eye=vecScale(vecNormalize(viewVec),distance);
-  const upCandidates=[basis?.c,basis?.b,basis?.a,basis?.cstar,basis?.bstar,basis?.astar].filter(Boolean).map(vecNormalize);
-  let up=upCandidates.find(v=>Math.abs(vecDot(v,vecNormalize(viewVec)))<0.85) || [0,0,1];
-  if(vecNorm(up)<1e-12) up=[0,0,1];
-  return {eye:{x:eye[0],y:eye[1],z:eye[2]}, up:{x:up[0],y:up[1],z:up[2]}, center:{x:0,y:0,z:0}};
+  const viewVec=vecNormalize(basis?.[viewMode] || basis?.cstar || [0,0,1]);
+  const eye=vecScale(viewVec,distance);
+  // Fix the camera roll by choosing a crystallographic direction that should
+  // lie horizontally on screen.  This is especially important for oblique
+  // lattices: a global Cartesian up vector is not a reliable view reference.
+  const horizontalAxis={a:"b",b:"a",c:"a",astar:"b",bstar:"a",cstar:"a"}[viewMode] || "a";
+  // For b / b*, keep the positive c direction at the top of the view.
+  const horizontalSign=(viewMode==="b" || viewMode==="bstar")?-1:1;
+  const candidates=[basis?.[horizontalAxis],basis?.a,basis?.b,basis?.c,basis?.astar,basis?.bstar,basis?.cstar].filter(Boolean);
+  let right=null;
+  for(const candidate of candidates){
+    const projected=vecSub(candidate,vecScale(viewVec,vecDot(candidate,viewVec)));
+    if(vecNorm(projected)>1e-8){ right=vecScale(vecNormalize(projected),horizontalSign); break; }
+  }
+  if(!right){
+    const fallback=Math.abs(viewVec[2])<0.9?[0,0,1]:[0,1,0];
+    right=vecNormalize(vecCross(fallback,viewVec));
+  }
+  // Camera forward points from eye towards the origin.  up = right × forward.
+  const up=vecNormalize(vecCross(right,vecScale(viewVec,-1)));
+  return {eye:{x:eye[0],y:eye[1],z:eye[2]},up:{x:up[0],y:up[1],z:up[2]},center:{x:0,y:0,z:0}};
 }
 function currentStructureCameraDistance(){
-  const camera=$("cifStructurePlot")?._fullLayout?.scene?.camera;
+  const camera=currentStructureCamera() || $("cifStructurePlot")?._fullLayout?.scene?.camera;
   const eye=camera?.eye;
   const d=Math.hypot(Number(eye?.x)||0,Number(eye?.y)||0,Number(eye?.z)||0);
   return d>0.2 ? d : 2.4;
 }
 function currentStructureCamera(){
-  const camera=$("cifStructurePlot")?._fullLayout?.scene?.camera;
+  const scene=$("cifStructurePlot")?._fullLayout?.scene;
+  // _fullLayout.scene.camera can remain unchanged throughout a Plotly 3D drag.
+  // The live WebGL scene, in contrast, tracks orbit/touch gestures each frame.
+  let camera=null;
+  try{
+    const live=scene?._scene;
+    if(live?.glplot && typeof live.getCamera==="function") camera=live.getCamera();
+  }catch(_e){ /* fall back to Plotly's committed camera below */ }
+  camera ||= scene?.camera;
   if(!camera?.eye) return null;
   const copy={
     eye:{x:Number(camera.eye.x)||0,y:Number(camera.eye.y)||0,z:Number(camera.eye.z)||0},
@@ -856,50 +881,65 @@ function projectStructureDirection(v,camera){
 }
 function renderStructureTriad(svg,names,vectors,camera){
   if(!svg) return;
-  const NS='http://www.w3.org/2000/svg';
-  svg.replaceChildren();
-  const colors=['#d62728','#2ca02c','#1f77b4'];
+  const NS="http://www.w3.org/2000/svg";
+  const colors=["#d62728","#2ca02c","#1f77b4"];
   const center={x:80,y:80};
-  const axisLength=54; // 1.5x the original on-screen axis length.
+  const axisLength=54;
   const labelOffset=22;
+  // Build SVG elements only once.  During camera rotation, updating attributes
+  // instead of replacing the full SVG on every animation frame reduces jitter.
+  const id=names.join("|");
+  if(svg.dataset.triadAxes!==id || svg.querySelectorAll("line[data-triad-axis]").length!==3){
+    svg.replaceChildren();
+    const defs=document.createElementNS(NS,"defs");
+    svg.appendChild(defs);
+    names.forEach((name,i)=>{
+      const marker=document.createElementNS(NS,"marker");
+      marker.id=`${svg.id}-arrow-${i}`;
+      marker.setAttribute("markerWidth","18");
+      marker.setAttribute("markerHeight","18");
+      marker.setAttribute("refX","8");
+      marker.setAttribute("refY","5");
+      marker.setAttribute("orient","auto");
+      marker.setAttribute("markerUnits","userSpaceOnUse");
+      marker.setAttribute("viewBox","0 0 10 10");
+      const head=document.createElementNS(NS,"path");
+      head.setAttribute("d","M 0 0 L 10 5 L 0 10 z");
+      head.setAttribute("fill",colors[i]);
+      marker.appendChild(head);
+      defs.appendChild(marker);
+      const line=document.createElementNS(NS,"line");
+      line.dataset.triadAxis=String(i);
+      line.setAttribute("x1",String(center.x));
+      line.setAttribute("y1",String(center.y));
+      line.setAttribute("stroke",colors[i]);
+      line.setAttribute("stroke-width","4");
+      line.setAttribute("stroke-linecap","round");
+      line.setAttribute("marker-end",`url(#${marker.id})`);
+      svg.appendChild(line);
+      const text=document.createElementNS(NS,"text");
+      text.dataset.triadAxis=String(i);
+      text.setAttribute("fill",colors[i]);
+      text.setAttribute("font-size","36");
+      text.setAttribute("font-weight","700");
+      text.setAttribute("text-anchor","middle");
+      text.setAttribute("dominant-baseline","central");
+      text.textContent=name;
+      svg.appendChild(text);
+    });
+    svg.dataset.triadAxes=id;
+  }
+  const lines=svg.querySelectorAll("line[data-triad-axis]");
+  const labels=svg.querySelectorAll("text[data-triad-axis]");
   vectors.forEach((v,i)=>{
     const p=projectStructureDirection(v,camera);
     const x2=center.x+p.x*axisLength;
     const y2=center.y-p.y*axisLength;
-    const marker=document.createElementNS(NS,'marker');
-    marker.id=`${svg.id}-arrow-${i}`;
-    marker.setAttribute('markerWidth','18'); // 3x the original head size.
-    marker.setAttribute('markerHeight','18');
-    marker.setAttribute('refX','8');
-    marker.setAttribute('refY','5');
-    marker.setAttribute('orient','auto');
-    marker.setAttribute('markerUnits','userSpaceOnUse');
-    marker.setAttribute('viewBox','0 0 10 10');
-    const head=document.createElementNS(NS,'path');
-    head.setAttribute('d','M 0 0 L 10 5 L 0 10 z');
-    head.setAttribute('fill',colors[i]);
-    marker.appendChild(head);
-    let defs=svg.querySelector('defs');
-    if(!defs){ defs=document.createElementNS(NS,'defs'); svg.appendChild(defs); }
-    defs.appendChild(marker);
-    const line=document.createElementNS(NS,'line');
-    line.setAttribute('x1',String(center.x)); line.setAttribute('y1',String(center.y));
-    line.setAttribute('x2',String(x2)); line.setAttribute('y2',String(y2));
-    line.setAttribute('stroke',colors[i]); line.setAttribute('stroke-width','4');
-    line.setAttribute('stroke-linecap','round');
-    line.setAttribute('marker-end',`url(#${marker.id})`);
-    svg.appendChild(line);
-    const text=document.createElementNS(NS,'text');
+    lines[i].setAttribute("x2",String(x2));
+    lines[i].setAttribute("y2",String(y2));
     const n=Math.hypot(p.x,p.y)||1;
-    text.setAttribute('x',String(x2+(p.x/n)*labelOffset));
-    text.setAttribute('y',String(y2-(p.y/n)*labelOffset));
-    text.setAttribute('fill',colors[i]);
-    text.setAttribute('font-size','36'); // 3x the original label size.
-    text.setAttribute('font-weight','700');
-    text.setAttribute('text-anchor','middle');
-    text.setAttribute('dominant-baseline','central');
-    text.textContent=names[i];
-    svg.appendChild(text);
+    labels[i].setAttribute("x",String(x2+(p.x/n)*labelOffset));
+    labels[i].setAttribute("y",String(y2-(p.y/n)*labelOffset));
   });
 }
 function updateStructureOrientationTriads(basis,camera=null){
@@ -922,6 +962,7 @@ function startStructureCameraWatch(){
   stopStructureCameraWatch();
   const tick=()=>{
     if(!isStructurePanelVisible()){ structureCameraWatchFrame=0; return; }
+    if(structureProgrammaticCameraUpdate){ structureCameraWatchFrame=requestAnimationFrame(tick); return; }
     const camera=currentStructureCamera();
     const sig=structureCameraSignature(camera);
     if(camera && sig && sig!==structureCameraWatchSignature){
@@ -2245,12 +2286,26 @@ function renderCifStructureView(){
   const layout={
     margin:{l:0,r:0,t:8,b:0},paper_bgcolor:"#fff",plot_bgcolor:"#fff",showlegend:false,
     scene:{aspectmode:"data",dragmode:"orbit",xaxis:{visible:structureShowXYZ,title:{text:"x (Å)",font:{size:18,color:"#222"}},showticklabels:structureShowXYZ,tickfont:{size:12},ticks:"outside",showline:true,linecolor:"#666",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},yaxis:{visible:structureShowXYZ,title:{text:"y (Å)",font:{size:18,color:"#222"}},showticklabels:structureShowXYZ,tickfont:{size:12},ticks:"outside",showline:true,linecolor:"#666",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},zaxis:{visible:structureShowXYZ,title:{text:"z (Å)",font:{size:18,color:"#222"}},showticklabels:structureShowXYZ,tickfont:{size:12},ticks:"outside",showline:true,linecolor:"#666",backgroundcolor:"#fafafa",gridcolor:"#e5e5e5",zerolinecolor:"#ccc"},camera:mainCamera},
-    uirevision:"cif-structure-interactive"
+    // Changing a view preset must supersede Plotly's saved interactive camera.
+    // Other redraws keep the revision and preserve the current manual rotation.
+    uirevision:`cif-structure-interactive-${structureCameraPresetRevision}`
   };
-  Plotly.react(plot,traces,layout,{displaylogo:false,responsive:true,scrollZoom:true});
+  stopStructureCameraWatch();
+  structureProgrammaticCameraUpdate=true;
+  const renderRevision=++structureCameraRenderRevision;
+  const renderResult=Plotly.react(plot,traces,layout,{displaylogo:false,responsive:true,scrollZoom:true});
   if(plot._context) plot._context.scrollZoom=true;
   updateStructureOrientationTriads(basis,mainCamera);
-  startStructureCameraWatch();
+  Promise.resolve(renderResult).then(()=>{
+    if(renderRevision!==structureCameraRenderRevision) return;
+    structureProgrammaticCameraUpdate=false;
+    const camera=currentStructureCamera() || mainCamera;
+    structureCameraState=copyStructureCamera(camera);
+    updateStructureOrientationTriads(basis,camera);
+    startStructureCameraWatch();
+  }).catch(()=>{
+    if(renderRevision===structureCameraRenderRevision) structureProgrammaticCameraUpdate=false;
+  });
   if(!plot._structureCameraBound && typeof plot.on==="function"){
     plot._structureCameraBound=true;
     const syncTriadsFromCamera=camera=>{
@@ -2265,8 +2320,12 @@ function renderCifStructureView(){
       if(copied) syncTriadsFromCamera(copied);
     };
     const onCameraMotion=ev=>{
+      if(structureProgrammaticCameraUpdate) return;
+      // Prefer the live camera over relayout payloads, which can lag one frame.
+      const live=currentStructureCamera();
       const eventCamera=cameraFromRelayoutEvent(ev);
-      if(eventCamera) syncTriadsFromCamera(eventCamera);
+      if(live) syncTriadsFromCamera(live);
+      else if(eventCamera) syncTriadsFromCamera(eventCamera);
       else requestAnimationFrame(syncTriadsFromLiveCamera);
     };
     let trackingPointer=false, trackingFrame=0;
@@ -3306,6 +3365,11 @@ async function initializeCifGenerator(){
     for(const button of document.querySelectorAll("[data-cif-structure-view]")){
       button.addEventListener("click",()=>{
         cifStructureViewMode=button.dataset.cifStructureView || "a";
+        structureCameraPresetRevision++;
+        // Prevent the old WebGL camera from overwriting this preset while the
+        // replacement Plotly scene is being prepared.
+        stopStructureCameraWatch();
+        structureProgrammaticCameraUpdate=true;
         const source=currentStructureForViewer();
         const basis=directLatticeBasis(source?.structure?.lattice);
         if(basis){
