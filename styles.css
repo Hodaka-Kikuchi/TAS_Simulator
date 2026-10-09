@@ -4416,3 +4416,376 @@ main > .main-tabs > .tab-button{
 @media (max-width:600px){
   .toolbox-subtabs{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
 }
+
+/* v50: consistent full-width Structure sub-tabs and tab typography. */
+#structurePanel .structure-config-tabs{
+  box-sizing:border-box;
+  width:100%;
+  max-width:100%;
+  margin:0 0 8px;
+  padding:0;
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:4px;
+  overflow:visible;
+}
+#structurePanel .structure-config-tabs > button{
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  margin:0;
+  flex:none;
+}
+/* Keep all levels of navigation legible without altering selected states. */
+main > .main-tabs > .tab-button,
+.toolbox-subtabs > .toolbox-subtab,
+.geometry-card-tabs > .geometry-card-tab,
+.cif-output-tabs > .cif-output-tab,
+#structurePanel .structure-config-tabs > button,
+.qe-mode-tabs > button,
+.qe-subtabs > button{
+  font-weight:600!important;
+}
+/* Use the same button typography in CIF and mCIF generation actions. */
+#cifGeneratorPanel .cif-source-button-row > button,
+#structurePanel .structure-cif-section .cif-source-button-row > button{
+  font-size:14px;
+  font-weight:600;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  line-height:1.25;
+}
+
+/* v51: unified, two-pane CIF / mCIF Generator workspace.
+   Each side is one continuous card; sections inside the left card are separated
+   by unobtrusive rules, not independent card outlines. */
+#cifGeneratorPanel .cif-generator-workspace,
+#structurePanel .structure-viewer-layout{
+  gap:14px;
+  align-items:start;
+}
+#cifGeneratorPanel .cif-generator-input-pane,
+#cifGeneratorPanel .cif-generator-output-pane,
+#structurePanel .structure-viewer-controls,
+#structurePanel .structure-viewer-main{
+  box-sizing:border-box;
+  min-width:0;
+  width:100%;
+  border:1px solid #d5dbe3;
+  border-radius:8px;
+  background:#fff;
+}
+#structurePanel .structure-viewer-controls{
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  padding:12px;
+  align-self:start;
+}
+#structurePanel .structure-control-section{
+  box-sizing:border-box;
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+  background:transparent;
+  padding:12px 0;
+  min-width:0;
+  width:100%;
+  margin:0;
+}
+#structurePanel .structure-control-section:first-child{padding-top:0;}
+#structurePanel .structure-control-section + .structure-control-section{
+  border-top:1px solid #e1e5ea;
+}
+#structurePanel .structure-control-section:last-child{padding-bottom:0;}
+#structurePanel .structure-config-section{overflow:visible;}
+#structurePanel .structure-config-tabs{width:100%;margin:0 0 8px;}
+#structurePanel .structure-viewer-main{
+  overflow:hidden;
+  min-height:0;
+  align-self:stretch;
+}
+#structurePanel .structure-viewer-main > .cif-output-tabs,
+#cifGeneratorPanel .cif-generator-output-pane > .cif-output-tabs{
+  border-top:0;
+  border-left:0;
+  border-right:0;
+  border-radius:0;
+  margin:0;
+  width:100%;
+}
+#cifGeneratorPanel .cif-generator-input-pane{padding:12px;}
+#cifGeneratorPanel .cif-generator-section + .cif-generator-section{
+  border-top:1px solid #e1e5ea;
+}
+@media(max-width:760px){
+  #structurePanel .structure-viewer-controls{padding:10px;}
+  #cifGeneratorPanel .cif-generator-input-pane{padding:10px;}
+  #structurePanel .structure-viewer-layout,
+  #cifGeneratorPanel .cif-generator-workspace{grid-template-columns:minmax(0,1fr)!important;}
+}
+
+/* v52: Match the CIF Generator outer-to-inner spacing to mCIF Generator.
+   The CIF card previously had 14px inset plus a 12px workspace top margin,
+   while the mCIF card has a 10px inset with no extra top margin. */
+#cifGeneratorPanel .cif-generator-card{
+  padding:10px;
+  margin-top:0;
+}
+#cifGeneratorPanel .cif-generator-workspace{
+  margin-top:0;
+}
+
+
+/* v53: match CIF/mCIF source-section spacing and keep both interfaces legible. */
+#cifGeneratorPanel .cif-generator-source-section .cif-pane-heading,
+#structurePanel .structure-cif-section .cif-pane-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin:0;
+}
+#cifGeneratorPanel .cif-generator-source-section .cif-pane-heading h3,
+#structurePanel .structure-cif-section .cif-pane-heading h3{
+  margin:0 0 7px;
+}
+#cifGeneratorPanel .cif-generator-source-row,
+#structurePanel .structure-cif-section .structure-cif-row{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:end;
+  gap:8px;
+  margin:8px 0 12px;
+  min-width:0;
+  width:100%;
+}
+#structurePanel .structure-cif-section .structure-cif-row > input,
+#cifGeneratorPanel .cif-generator-source-row > input{
+  min-width:0;
+  width:100%;
+}
+#structurePanel .structure-cif-section .cif-generator-file-name,
+#cifGeneratorPanel .cif-generator-source-section .cif-generator-file-name{
+  display:block;
+  width:100%;
+  margin-top:8px;
+}
+#structurePanel .structure-cif-section .cif-source-button-row,
+#cifGeneratorPanel .cif-generator-source-section .cif-source-button-row{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin-top:8px;
+}
+#cifGeneratorPanel .cif-lattice-information-heading{
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:8px;
+}
+#cifGeneratorPanel .cif-lattice-information-heading h3{margin:0;}
+#cifGeneratorPanel .cif-lattice-information-section .cif-generator-setup{margin-top:8px;}
+#cifGeneratorPanel .cif-lattice-information-section .cif-lattice-grid{margin-top:12px;}
+#structurePanel .structure-config-section > .structure-section-title{
+  font-size:14px;
+  font-weight:600;
+  margin:0 0 9px;
+}
+@media(max-width:760px){
+  #structurePanel .structure-cif-section .structure-cif-row{
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;
+  }
+  #structurePanel .structure-cif-row #structureCifSelect{grid-column:1;grid-row:1;}
+  #structurePanel .structure-cif-row #structureCifClear{grid-column:2;grid-row:1;}
+  #structurePanel .structure-cif-row #structureCifName{grid-column:1 / -1;grid-row:2;}
+  #structurePanel .structure-cif-section .cif-source-button-row > button,
+  #cifGeneratorPanel .cif-generator-source-section .cif-source-button-row > button{
+    min-width:0;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+}
+
+/* v53: Narrow mCIF Bonds editors use exactly two rows.
+   Row 1: element A, element B, minimum and maximum distance.
+   Row 2: bond width, color and Remove action. */
+@container structure-viewer (max-width:760px){
+  #structurePanel .structure-bond-row{
+    display:grid!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+    grid-template-rows:auto auto!important;
+    gap:7px!important;
+    align-items:end!important;
+    width:100%!important;
+    min-width:0!important;
+  }
+  #structurePanel .structure-bond-row > select:nth-child(1){grid-column:1!important;grid-row:1!important;}
+  #structurePanel .structure-bond-row > select:nth-child(2){grid-column:2!important;grid-row:1!important;}
+  #structurePanel .structure-bond-range-pair{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    grid-column:3 / 5!important;
+    grid-row:1!important;
+    gap:6px!important;
+    min-width:0!important;
+    width:100%!important;
+  }
+  #structurePanel .structure-bond-row > .structure-entry-field{
+    grid-column:1 / 3!important;
+    grid-row:2!important;
+    min-width:0!important;
+  }
+  #structurePanel .structure-bond-row > input[type=color]{
+    grid-column:3!important;
+    grid-row:2!important;
+    width:100%!important;
+    max-width:55px!important;
+    min-width:0!important;
+    justify-self:center!important;
+    align-self:end!important;
+  }
+  #structurePanel .structure-bond-row > button{
+    grid-column:4!important;
+    grid-row:2!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    padding:6px 2px!important;
+    font-size:12px;
+    overflow-wrap:anywhere;
+    box-sizing:border-box!important;
+  }
+  #structurePanel .structure-bond-row .structure-entry-label{white-space:nowrap;font-size:11px;}
+  #structurePanel .structure-bond-row select,
+  #structurePanel .structure-bond-row input[type=number]{
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+    padding-left:3px;
+    padding-right:3px;
+  }
+}
+
+
+/* v54 patch: match Structure settings to View, and emphasize all tab labels. */
+#structurePanel .structure-config-section > .structure-section-title{
+  font-size:15px;
+  font-weight:700;
+  line-height:normal;
+  margin:0 0 8px;
+}
+/* Navigation only: keep the existing colors, borders and layout unchanged. */
+main [role="tablist"] > button[role="tab"],
+#structurePanel .structure-config-tabs > button[role="tab"]{
+  font-weight:700!important;
+}
+/* Larger Save figure action, including on narrow screens. */
+#structurePanel #cifSaveFigure{
+  font-size:14px;
+  font-weight:600;
+  line-height:1.3;
+  min-height:36px;
+  padding:7px 12px;
+}
+
+
+/* v55: Prevent long imported CIF/mCIF text from shrinking the CIF Preview tabs.
+   Tabs keep their original equal widths; scrolling happens inside the preview. */
+#cifGeneratorPanel .cif-generator-workspace,
+#cifGeneratorPanel .cif-generator-output-pane,
+#cifGeneratorPanel .cif-output-panel{
+  min-width:0;
+  max-width:100%;
+}
+#cifGeneratorPanel .cif-generator-output-pane > .cif-output-tabs{
+  flex:0 0 auto;
+  flex-shrink:0;
+  width:100%;
+  min-width:0;
+  min-height:43px;
+  max-width:100%;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+#cifGeneratorPanel .cif-generator-output-pane > .cif-output-tabs > .cif-output-tab{
+  min-width:0;
+  width:100%;
+  box-sizing:border-box;
+}
+#cifGeneratorPanel #cifPreviewPanel,
+#cifGeneratorPanel #cifReflectionsPanel{
+  flex:1 1 0;
+  height:0;
+  min-height:0;
+  min-width:0;
+  overflow:hidden;
+}
+#cifGeneratorPanel #cifPreview{
+  display:block;
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  min-height:0;
+  overflow:auto;
+  white-space:pre;
+  overflow-wrap:normal;
+  contain:layout;
+}
+@media(max-width:1180px){
+  /* Stacked output uses a definite preview height, not the desktop frame. */
+  #cifGeneratorPanel #cifPreviewPanel,
+  #cifGeneratorPanel #cifReflectionsPanel{
+    flex:0 0 auto;
+    height:auto;
+    min-height:0;
+  }
+}
+
+/* v56: A shared type scale for CIF and mCIF Generator.
+   Section headings match View / Structure settings: 15px bold.
+   File actions and labels use the same sizes in both generators. */
+#cifGeneratorPanel .cif-generator-input-pane :is(.cif-pane-heading h3, .cif-atom-heading h3),
+#structurePanel .structure-viewer-controls .structure-control-section > h3,
+#structurePanel .structure-cif-section .cif-pane-heading h3{
+  font-size:15px;
+  font-weight:700;
+  line-height:1.3;
+}
+#cifGeneratorPanel .cif-generator-input-pane .cif-pane-heading h3,
+#structurePanel .structure-cif-section .cif-pane-heading h3{
+  margin:0;
+}
+#cifGeneratorPanel .cif-generator-input-pane .cif-heading-actions button,
+#structurePanel .structure-cif-section .cif-heading-actions button,
+#cifGeneratorPanel .cif-generator-source-section .cif-generator-source-row > button,
+#structurePanel .structure-cif-section .structure-cif-row > button,
+#cifGeneratorPanel .cif-generator-source-section .cif-source-button-row > button,
+#structurePanel .structure-cif-section .cif-source-button-row > button{
+  box-sizing:border-box;
+  font-size:14px;
+  font-weight:600;
+  line-height:1.3;
+  min-height:36px;
+}
+#cifGeneratorPanel .cif-generator-source-section .cif-generator-file-name,
+#structurePanel .structure-cif-section .cif-generator-file-name{
+  font-size:14px;
+  font-weight:600;
+  line-height:1.35;
+}
+#cifGeneratorPanel .cif-generator-source-section :is(.cif-file-name, .cif-filename-entry input, .cif-filename-suffix),
+#structurePanel .structure-cif-section :is(.cif-file-name, .cif-filename-entry input, .cif-filename-suffix){
+  box-sizing:border-box;
+  font-size:14px;
+  font-weight:400;
+  line-height:1.35;
+  min-height:36px;
+}
+#cifGeneratorPanel .cif-generator-source-section .cif-generator-source-row > .cif-file-name,
+#structurePanel .structure-cif-section .structure-cif-row > .cif-file-name{
+  min-width:0;
+}

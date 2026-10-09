@@ -418,7 +418,10 @@
           </section>
 
           <section class="cif-generator-section cif-lattice-information-section">
-            <h3 class="cif-section-title">Lattice information</h3>
+            <div class="cif-pane-heading cif-lattice-information-heading">
+              <h3 class="cif-section-title">Lattice information</h3>
+              <div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button></div>
+            </div>
             <div class="cif-generator-setup">
               <div class="cif-space-group-picker">
                 <label class="cif-space-group-number-label">No.
@@ -431,10 +434,6 @@
               <div id="cifSpaceGroupInfo" class="cif-space-group-info"></div>
             </div>
 
-            <div class="cif-pane-heading cif-lattice-heading">
-              <h3>Lattice parameters</h3>
-              <div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button></div>
-            </div>
             <div class="cif-lattice-grid">
               <label>a (Å)<input id="cifA" type="number" value="5" step="0.001" min="0"></label>
               <label>b (Å)<input id="cifB" type="number" value="5" step="0.001" min="0"></label>
@@ -556,6 +555,7 @@
             </div>
           </div>
           <div class="structure-control-section structure-config-section">
+            <h3 class="structure-section-title">Structure settings</h3>
             <div class="structure-config-tabs" role="tablist" aria-label="Structure display controls">
               <button type="button" class="active" data-structure-config-tab="atoms" role="tab" aria-selected="true">Atoms</button>
               <button type="button" data-structure-config-tab="spins" role="tab" aria-selected="false">Spins</button>

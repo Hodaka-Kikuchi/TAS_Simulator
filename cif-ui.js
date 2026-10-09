@@ -63,8 +63,16 @@ function updateCifUI(){
   }
   const clearButton=$("cifClearButton");
   if(clearButton) clearButton.disabled=!getSelectedCifStructure();
+  // All three file selectors display the same shared, parsed CIF/mCIF state.
+  const generatorName=$("cifGeneratorSourceName");
+  if(generatorName){
+    generatorName.value=getSelectedCifFileName() || "No file selected";
+    generatorName.title=getSelectedCifFileName() || "";
+  }
+  const generatorClear=$("cifGeneratorSourceClear");
+  if(generatorClear) generatorClear.disabled=!getSelectedCifStructure();
   const structureName=$("structureCifName");
-  if(structureName) structureName.value=getSelectedCifFileName() || "No CIF selected";
+  if(structureName) structureName.value=getSelectedCifFileName() || "No file selected";
   const structureClear=$("structureCifClear");
   if(structureClear) structureClear.disabled=!getSelectedCifStructure();
   if($("structureMcifShowCurrent")) $("structureMcifShowCurrent").disabled=!getSelectedCifText();
@@ -206,10 +214,19 @@ async function selectCifFile(file){
 function clearSelectedCif(){
   saveStructureViewerState();
   setSelectedCifState(null,"","");
+  // Clear the separate Generator-only viewer cache as well: a later tab
+  // switch must not resurrect a CIF that was explicitly cleared.
+  loadedGeneratorCifStructure=null;
+  loadedGeneratorCifName="";
   resetStructureViewerStateToDefaults();
   try{ localStorage.removeItem(SELECTED_CIF_STORAGE_KEY); }catch(_e){}
   cifStructureSourcePreference="selected";
   if($("cifFileInput")) $("cifFileInput").value="";
+  if($("cifLoadFile")) $("cifLoadFile").value="";
+  if($("mcifPreviewText")) $("mcifPreviewText").textContent="Select a CIF/mCIF to preview it.";
+  // Do not leave download/Set actions enabled for an obsolete reviewed file.
+  invalidateGeneratedCif("");
+  invalidateGeneratedMcif();
   if(cifSpaceGroups.length) setSampleSpaceGroup(1,{recalc:false});
   else{
     if($("sampleSpaceGroup")) $("sampleSpaceGroup").value="1";
@@ -2389,12 +2406,20 @@ function applyCifLatticeConstraints(){
 }
 
 function copyCurrentLatticeToGenerator(){
+  // Copy the Sample's space group as well as its metric.  Updating the space
+  // group before applying constraints ensures the two sections use the same
+  // standard crystal-system setting (a=b, gamma=120, etc.).
+  const sg=selectedSampleSpaceGroup();
+  if(sg && $("cifSpaceGroup")) $("cifSpaceGroup").value=String(sg.number);
+  if(sg && $("cifSpaceGroupNumber")) $("cifSpaceGroupNumber").value=String(sg.number);
   const map={cifA:"a",cifB:"b",cifC:"c",cifAlpha:"alpha",cifBeta:"beta",cifGamma:"gamma"};
   for(const [dst,src] of Object.entries(map)){
-    const v=Number($(src)?.value);
+    const source=$(src);
+    if(!source || !String(source.value).trim()) continue;
+    const v=Number(source.value);
     if(Number.isFinite(v) && $(dst)) $(dst).value=String(v);
   }
-  applyCifLatticeConstraints();
+  updateCifSpaceGroupInfo();
 }
 
 function updateCifSpaceGroupInfo(){
@@ -2954,24 +2979,35 @@ function loadParsedCifIntoGenerator(parsed,fileName="selected_structure.cif",{me
 async function loadCifIntoGenerator(file){
   if(!file) return;
   const text=await file.text();
-  const parsed=parseCifStructure(text);
+  // The Generator used to keep its own private file snapshot.  As a result,
+  // Sample, Neutron Attenuation, mCIF Generator and the file-name display
+  // continued to reference a different CIF.  Import through the SAME shared
+  // loader used by the Sample and mCIF Set actions, preserving the original
+  // CIF/mCIF text (magnetic loops, propagation vectors, etc.).
+  const parsed=loadCifText(text,file.name);
   const sg=findGeneratorSpaceGroup(parsed);
-  if(!sg) throw new Error(`Could not identify a supported standard-setting space group from ${file.name}.`);
-  const lattice=parsed.lattice || {};
-  for(const key of ["a","b","c","alpha","beta","gamma"]){
-    const v=Number(lattice[key]);
-    if(!Number.isFinite(v)) throw new Error(`Could not load ${file.name}: lattice parameter ${key} is missing or invalid.`);
+  const lattice=parsed?.lattice||{};
+  const validLattice=["a","b","c","alpha","beta","gamma"]
+    .every(key=>Number.isFinite(Number(lattice[key])));
+  const editable=!!sg && validLattice &&
+    Array.isArray(parsed.asymmetricSites) && parsed.asymmetricSites.length>0;
+  if(editable){
+    // loadCifText already filled the editable Generator fields.  Preserve the
+    // previous "loaded" viewer behavior until an input is edited.
+    loadedGeneratorCifStructure=parsed;
+    loadedGeneratorCifName=file.name;
+    cifStructureSourcePreference="loaded";
+    setCifGeneratorMessage(`Selected ${file.name} for Sample, CIF Generator, mCIF Generator and Neutron Attenuation. Loaded #${sg.number} ${sg.hm} for editing.`);
+  }else{
+    // A CIF with an unusual space group can still be a valid shared source,
+    // even if the standard-setting CIF Generator cannot edit it automatically.
+    loadedGeneratorCifStructure=null;
+    loadedGeneratorCifName="";
+    cifStructureSourcePreference="selected";
+    setCifGeneratorMessage(`Selected ${file.name} for all CIF/mCIF tools. Its space group or atomic sites cannot be imported into the editable CIF Generator; the original file remains available in Show current file.`,true);
   }
-  if(!Array.isArray(parsed.asymmetricSites) || !parsed.asymmetricSites.length) throw new Error(`Could not load asymmetric-unit atoms from ${file.name}.`);
-  if(!loadParsedCifIntoGenerator(parsed,file.name,{message:true})) throw new Error(`Could not load ${file.name} into CIF Generator.`);
-  loadedGeneratorCifStructure=parsed;
-  loadedGeneratorCifName=file.name;
-  if($("mcifPreviewText")) $("mcifPreviewText").textContent=text;
-  cifStructureSourcePreference="loaded";
-  prepareStructureViewerControls();
   renderCifStructureIfVisible();
 }
-
 
 // mCIF Generator: preserve the complete source symmetry/orbit specification.
 let lastGeneratedMcifText="", lastGeneratedMcifName="";
@@ -3195,7 +3231,7 @@ async function initializeCifGenerator(){
 
     $("cifCopyLattice")?.addEventListener("click",()=>{
       copyCurrentLatticeToGenerator();
-      invalidateGeneratedCif("Current sample lattice copied — press Generate to review the updated CIF.");
+      invalidateGeneratedCif("Current sample space group and lattice copied — press Generate to review the updated CIF.");
     });
     $("cifShowCurrent")?.addEventListener("click",()=>{
       if(!getSelectedCifText()){
@@ -3212,6 +3248,8 @@ async function initializeCifGenerator(){
     $("cifCopyAtom")?.addEventListener("click",copyLastCifAtomRow);
     $("cifAddAtom")?.addEventListener("click",()=>addCifAtomRow());
     $("cifLoadExisting")?.addEventListener("click",()=>$("cifLoadFile")?.click());
+    // Clear is shared, too: all three filename fields and attenuation reset.
+    $("cifGeneratorSourceClear")?.addEventListener("click",clearSelectedCif);
     $("cifLoadFile")?.addEventListener("change",async ev=>{
       const file=ev.target.files?.[0];
       try{ await loadCifIntoGenerator(file); }
