@@ -3990,7 +3990,10 @@ function setGeneratorMode(name){
   try{localStorage.setItem('tas-simulator-generator-mode-v1',name);}catch(_e){}
 }
 function setGeneratorReflectionMode(name){
-  if(name!=='magnetic') name='nuclear';
+  // Magnetic reflections are temporarily unavailable, including saved selections.
+  name='nuclear';
+  const magneticTab=$('generatorReflectionsMagnetic');
+  if(magneticTab) magneticTab.disabled=true;
   for(const [mode,tabId,paneId] of [['nuclear','generatorReflectionsNuclear','generatorNuclearReflectionsPane'],['magnetic','generatorReflectionsMagnetic','generatorMagneticReflectionsPane']]){
     const on=mode===name;
     $(tabId)?.classList.toggle('active',on);
@@ -4231,11 +4234,16 @@ function initializeUnifiedOutputActions(){
     download=$("cifOutputDownload"), set=$("cifOutputSet");
   if(!format||!generate||!download||!set||format.dataset.outputBound) return;
   format.dataset.outputBound="1";
+  // Keep mCIF visible but unavailable, even if browser/localStorage restored it.
+  const mcifOption=format.querySelector('option[value="mcif"]');
+  if(mcifOption) mcifOption.disabled=true;
   format.value="cif";
+  try{localStorage.setItem("tas-cif-output-format-v1","cif");}catch(_e){}
   const ids={cif:["cifGenerate","cifDownload","cifSet"],
     mcif:["structureMcifGenerate","structureMcifDownload","structureMcifSet"]};
   const update=()=>{
-    const mcif=format.value==="mcif", word=mcif?"mCIF":"CIF";
+    if(format.value!=="cif") format.value="cif";
+    const mcif=false, word="CIF";
     const [g,d,s]=ids[mcif?"mcif":"cif"].map(id=>$(id));
     generate.textContent=`Generate ${word}`;
     download.textContent=`Download ${word}`;
@@ -4247,16 +4255,10 @@ function initializeUnifiedOutputActions(){
     if(suffix) suffix.textContent=mcif?".mcif":".cif";
   };
   format.addEventListener("change",()=>{
-    try{localStorage.setItem("tas-cif-output-format-v1",format.value);}catch(_e){}
+    format.value="cif";
+    try{localStorage.setItem("tas-cif-output-format-v1","cif");}catch(_e){}
     update();
   });
-  // Restore the last output format, but do not overwrite any currently chosen value.
-  try{
-    const saved=localStorage.getItem("tas-cif-output-format-v1");
-    if(saved==="cif"||saved==="mcif") format.value=saved;
-  }catch(_e){}
-  const mcifOption=format.querySelector('option[value="mcif"]');
-  if(mcifOption) mcifOption.disabled=false;
   for(const [index,el] of [generate,download,set].entries()){
     el.addEventListener("click",()=>{
       const id=ids[format.value==="mcif"?"mcif":"cif"][index];
@@ -4272,8 +4274,8 @@ function initializeUnifiedOutputActions(){
   update();
 }
 function initMcifGeneratorActions(){
-  // mCIF Generate is available; Download/Set remain disabled until generation.
-  if($("structureMcifGenerate")) $("structureMcifGenerate").disabled=false;
+  // mCIF generation is temporarily unavailable in the public UI.
+  if($("structureMcifGenerate")) $("structureMcifGenerate").disabled=true;
   invalidateGeneratedMcif();
   $("structureMcifShowCurrent")?.addEventListener("click",()=>{
     if(!getSelectedCifText()){mcifMessage("No current CIF/mCIF selected.",true);return;}
