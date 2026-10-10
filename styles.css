@@ -5466,3 +5466,24 @@ main > .main-tabs{grid-template-columns:repeat(5,minmax(0,1fr));}
 /* Set default was removed: use three equal-width fields. */
 #structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
 @media(max-width:620px){#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+
+
+/* Release UI correction: keep internal legacy output controls in the DOM
+   for existing JavaScript listeners, but never render duplicate buttons. */
+#structurePanel .cif-legacy-output-actions,
+#structurePanel .generator-legacy-file-controls { display: none !important; }
+
+/* Format + File name on one row, including narrow layouts. */
+#structurePanel .cif-unified-output-line {
+  display: grid !important;
+  grid-template-columns: minmax(82px,1fr) minmax(0,2fr) !important;
+  align-items: end;
+  gap: 8px;
+}
+#structurePanel .cif-unified-output-line > label { min-width: 0; }
+#structurePanel .cif-unified-output-line .cif-generator-file-name { display: block; }
+#structurePanel .cif-unified-output-line .cif-generator-file-name input { min-width: 0; width: 100%; box-sizing: border-box; }
+#structurePanel .cif-unified-output-line .cif-filename-entry { display: flex; align-items: center; min-width: 0; gap: 4px; margin-top: 5px; }
+#structurePanel .cif-unified-output-line .cif-filename-entry input { flex: 1 1 0; }
+#structurePanel .cif-unified-output-buttons { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+#structurePanel .cif-unified-output-buttons > button { min-width: 0; }

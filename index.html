@@ -394,7 +394,7 @@
 <section class="cif-generator-section cif-generator-source-section"><div class="cif-pane-heading"><h3 class="generator-output-heading">Output file</h3><div class="cif-heading-actions"><button type="button" id="cifShowGenerated">Show generate file</button></div></div>
 <div class="cif-unified-output-line">
 <label class="cif-output-format-label">Format
-<select id="cifOutputFormat" aria-label="Output file format"><option value="cif">CIF</option></select></label>
+<select id="cifOutputFormat" aria-label="Output file format"><option value="cif">CIF</option><option value="mcif" disabled>mCIF</option></select></label>
 <label class="cif-generator-file-name">File name
 <span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"/><span class="cif-filename-suffix" id="cifUnifiedFileSuffix">.cif</span></span>
 </label></div>
@@ -552,6 +552,7 @@
 <label>Energy (meV)<input id="cifReflectionEnergy" min="0" step="0.001" type="number"/></label>
 <label>Wavelength (Å)<input id="cifReflectionWavelength" min="0" step="0.0001" type="number"/></label>
 <label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" min="0" step="0.0001" type="number"/></label>
+
 </div>
 </section><div aria-label="Reflection type" class="generator-reflection-tabs" role="tablist"><button aria-controls="generatorNuclearReflectionsPane" aria-selected="true" class="generator-reflection-tab active" id="generatorReflectionsNuclear" role="tab" type="button">Nuclear</button><button aria-controls="generatorMagneticReflectionsPane" aria-selected="false" class="generator-reflection-tab" id="generatorReflectionsMagnetic" disabled aria-disabled="true" title="Magnetic reflection calculations are temporarily unavailable" role="tab" type="button">Magnetic</button></div><div aria-labelledby="generatorReflectionsNuclear" class="generator-reflection-pane" id="generatorNuclearReflectionsPane" role="tabpanel"><div aria-labelledby="cifOutputTabReflections" class="cif-output-panel" id="cifReflectionsPanel" role="tabpanel">
 <div class="cif-reflection-toolbar">
