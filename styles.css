@@ -5512,3 +5512,72 @@ main > .main-tabs{grid-template-columns:repeat(5,minmax(0,1fr));}
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 }
+
+/* 2026-10: Bonds list scrolling and one-line Spins controls. */
+#structurePanel #cifBondRows {
+  max-height: 330px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+}
+
+/* Mode / Display each take precisely half of the available row. */
+#structurePanel .structure-spin-editor-toolbar {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  width: 100%;
+  min-width: 0;
+}
+#structurePanel .structure-spin-editor-toolbar > .structure-entry-field {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+}
+
+/* Preserve checkbox, site label, direction fields and color in ONE row.
+   These rules intentionally override the older narrow-view 2-row breakpoint. */
+#structurePanel #cifMagMomentRows .structure-moment-row {
+  display: grid !important;
+  grid-template-columns: 20px minmax(33px, .65fr) minmax(0, 4fr) 30px !important;
+  grid-template-rows: auto !important;
+  column-gap: 4px !important;
+  row-gap: 0 !important;
+  min-width: 0 !important;
+  align-items: end !important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > input[type=checkbox] {
+  grid-column: 1 !important; grid-row: 1 !important;
+  margin: 0; align-self: center;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-site {
+  grid-column: 2 !important; grid-row: 1 !important;
+  min-width: 0 !important; overflow: hidden; text-overflow: ellipsis;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-four-fields,
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-vector {
+  grid-column: 3 !important; grid-row: 1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  min-width: 0 !important; width: 100% !important; gap: 3px !important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-four-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-color-swatch {
+  grid-column: 4 !important; grid-row: 1 !important;
+  width: 30px !important; min-width: 0 !important;
+  justify-self: end !important; align-self: end !important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row .structure-entry-field,
+#structurePanel #cifMagMomentRows .structure-moment-row input[type=number] {
+  width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row input[type=number] {
+  padding-left: 2px !important; padding-right: 2px !important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row .structure-entry-label {
+  font-size: 10px; white-space: nowrap;
+}
