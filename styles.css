@@ -4789,3 +4789,730 @@ main [role="tablist"] > button[role="tab"],
 #structurePanel .structure-cif-section .structure-cif-row > .cif-file-name{
   min-width:0;
 }
+
+/* v59 — One generator, two independent editing modes, four shared results.
+   Legacy control IDs and calculation modules are intentionally unchanged. */
+#structurePanel .generator-unified-card{
+  box-sizing:border-box;
+  width:100%;max-width:none;
+  padding:10px;
+  margin-top:0;
+  min-width:0;
+  container-type:inline-size;
+  container-name:generator-unified;
+}
+#structurePanel #cifGeneratorPanel.generator-unified-grid{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  gap:12px;
+  align-items:start;
+  width:100%;max-width:100%;
+  min-width:0;
+}
+#structurePanel .generator-unified-left,
+#structurePanel .generator-unified-right{
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  border:1px solid #d5dbe3;
+  border-radius:8px;
+  background:#fff;
+  overflow:hidden;
+}
+#structurePanel .generator-unified-left{padding:12px;}
+#structurePanel .generator-unified-right{
+  padding:0!important;
+  display:flex!important;
+  flex-direction:column!important;
+  min-height:615px;
+  align-self:stretch;
+}
+#structurePanel .generator-shared-file{
+  padding:0 0 12px;
+  margin:0 0 12px;
+  border-bottom:1px solid #e1e5ea;
+  min-width:0;
+}
+#structurePanel .generator-shared-file .cif-pane-heading{margin-bottom:9px;align-items:center;}
+#structurePanel .generator-shared-file .cif-pane-heading h3,
+#structurePanel .generator-output-heading{
+  font-size:15px!important;
+  font-weight:700!important;
+  line-height:1.3;
+  margin:0 0 8px;
+}
+#structurePanel .generator-shared-file .cif-pane-heading h3{margin:0;}
+#structurePanel .generator-shared-file button{
+  box-sizing:border-box;
+  min-height:36px;
+  font-size:14px;
+  font-weight:600;
+}
+#structurePanel .generator-shared-file .cif-generator-source-row{
+  min-width:0;max-width:100%;
+}
+#structurePanel .generator-shared-file .cif-file-name{min-width:0;font-size:14px;}
+#structurePanel .generator-mode-tabs,
+#structurePanel .generator-reflection-tabs{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:0;
+  min-width:0;
+  width:100%;
+  border:1px solid #b9c4d0;
+  background:#f3f5f7;
+}
+#structurePanel .generator-mode-tabs > button,
+#structurePanel .generator-reflection-tabs > button{
+  box-sizing:border-box;
+  min-width:0;
+  width:100%;
+  padding:9px 8px;
+  border:1px solid transparent;
+  border-right:1px solid #b9c4d0;
+  background:#f3f5f7;
+  color:#222;
+  border-radius:0;
+  font-size:14px;
+  line-height:1.3;
+  font-weight:700;
+  text-align:center;
+  white-space:normal;
+}
+#structurePanel .generator-mode-tabs > button:last-child,
+#structurePanel .generator-reflection-tabs > button:last-child{border-right:0;}
+#structurePanel .generator-mode-tabs > button.active,
+#structurePanel .generator-reflection-tabs > button.active{
+  background:#fff;
+  border-color:#98a7b6;
+}
+#structurePanel .generator-mode-pane{box-sizing:border-box;min-width:0;width:100%;}
+#structurePanel .generator-mode-pane.hidden,
+#structurePanel .generator-output-pane.hidden,
+#structurePanel .generator-reflection-pane.hidden{display:none!important;}
+#structurePanel .generator-mode-pane .cif-generator-input-pane,
+#structurePanel .generator-mode-pane .structure-viewer-controls{
+  box-sizing:border-box;
+  display:block;
+  border:0!important;
+  border-radius:0!important;
+  padding:12px 0 0!important;
+  margin:0!important;
+  width:100%;max-width:100%;
+  min-width:0;
+  box-shadow:none!important;
+  background:transparent;
+}
+#structurePanel .generator-mode-pane .structure-viewer-controls{
+  display:flex;flex-direction:column;gap:0;
+}
+#structurePanel .generator-mode-pane .structure-control-section{
+  padding:12px 0;
+  margin:0;
+}
+#structurePanel .generator-mode-pane .structure-control-section:first-child{padding-top:0;}
+#structurePanel .generator-mode-pane .structure-control-section:last-child{padding-bottom:0;}
+#structurePanel .generator-mode-pane .cif-generator-source-section{
+  padding-top:0;
+}
+#structurePanel .generator-mode-pane .cif-generator-section + .cif-generator-section{
+  border-top:1px solid #e1e5ea;
+}
+#structurePanel .generator-mode-pane .cif-generator-file-name{
+  font-size:14px;
+  font-weight:600;
+}
+#structurePanel .generator-mode-pane .cif-source-button-row > button{
+  font-size:14px;min-height:36px;font-weight:600;
+}
+#structurePanel .generator-legacy-file-controls{display:none!important;}
+#structurePanel .generator-unified-output-tabs{
+  display:grid!important;
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  gap:0!important;
+  width:100%;min-width:0;
+  flex:0 0 auto;
+  border:0;border-bottom:1px solid #b9c4d0;
+  border-radius:0;
+  overflow:visible;
+}
+#structurePanel .generator-unified-output-tabs > .cif-output-tab{
+  box-sizing:border-box;
+  display:flex;align-items:center;justify-content:center;
+  width:100%;min-width:0;max-width:100%;
+  min-height:46px;
+  padding:8px 5px;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  font-size:14px;
+  line-height:1.25;
+  font-weight:700;
+  border:1px solid transparent;
+  border-right:1px solid #b9c4d0;
+}
+#structurePanel .generator-unified-output-tabs > .cif-output-tab.active{
+  background:#fff;border-color:#98a7b6;
+}
+#structurePanel .generator-unified-output-tabs > .cif-output-tab:last-child{border-right:0;}
+#structurePanel .generator-unified-right > .generator-output-pane{
+  box-sizing:border-box;
+  display:block;
+  flex:1 1 auto;
+  height:auto!important;
+  min-height:560px;
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  padding:12px;
+  overflow:hidden;
+}
+#structurePanel #mcifStructurePane{padding:12px;}
+#structurePanel #generatorReflectionsPane{padding:12px;}
+#structurePanel .generator-reflection-tabs{margin-bottom:12px;}
+#structurePanel .generator-reflection-pane{min-width:0;}
+#structurePanel #cifReflectionsPanel{
+  display:block;
+  height:auto!important;
+  min-height:0;
+  padding:0;
+  overflow:visible;
+}
+#structurePanel #cifPreviewPanel,
+#structurePanel #mcifPreviewPane{
+  height:auto!important;
+  min-height:560px;
+  padding:12px;
+}
+#structurePanel #cifPreview,
+#structurePanel #mcifPreviewText{
+  display:block;
+  box-sizing:border-box;
+  width:100%;min-width:0;max-width:100%;
+  height:560px!important;
+  min-height:0;
+  overflow:auto;
+  contain:layout;
+}
+#structurePanel .generator-reflections-notice{
+  margin:12px 0;
+  color:#646d76;
+  font-size:14px;
+  line-height:1.5;
+}
+#structurePanel .generator-unified-right .cif-structure-plot{min-width:0;max-width:100%;}
+/* Five equal main tabs instead of the previous six. */
+main > .main-tabs{grid-template-columns:repeat(5,minmax(0,1fr));}
+@container (max-width:850px){
+  main > .main-tabs{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media(max-width:760px){
+  main > .main-tabs{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@container generator-unified (max-width:880px){
+  #structurePanel #cifGeneratorPanel.generator-unified-grid{
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:10px;
+  }
+  #structurePanel .generator-unified-right{min-height:0;}
+  #structurePanel .generator-unified-output-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+}
+@media(max-width:760px){
+  #structurePanel .generator-unified-card{padding:8px;}
+  #structurePanel #cifGeneratorPanel.generator-unified-grid{grid-template-columns:minmax(0,1fr)!important;}
+  #structurePanel .generator-unified-left{padding:10px;}
+  #structurePanel .generator-unified-output-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  #structurePanel .generator-unified-right > .generator-output-pane{min-height:520px;padding:9px;}
+  #structurePanel #cifPreviewPanel,#structurePanel #mcifPreviewPane{min-height:520px;}
+}
+
+/* v61 — Consistent Nuclear sections and reflection parameters in results pane. */
+/* Atomic positions is inside the Positions tab. No section divider here. */
+#structurePanel #generatorReflectionsPane > .generator-reflection-settings{
+  box-sizing:border-box;
+  margin:0 0 14px;
+  padding:0 0 14px;
+  width:100%;min-width:0;
+  border:0;
+  border-bottom:1px solid #e1e5ea;
+}
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-pane-heading{
+  align-items:center;
+}
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-pane-heading h3{
+  font-size:15px;
+  font-weight:700;
+  line-height:1.3;
+  margin:0;
+}
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-heading-actions button{
+  min-height:36px;
+  font-size:14px;
+  font-weight:600;
+}
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr)) auto;
+  gap:8px;
+  align-items:end;
+  min-width:0;
+  margin:10px 0 0;
+}
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid > label{
+  min-width:0;
+}
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid input{
+  box-sizing:border-box;
+  min-width:0;
+  width:100%;
+  max-width:100%;
+}
+#structurePanel #generatorReflectionsPane .generator-reflection-settings #cifReflectionSetDefault{
+  min-height:36px;
+  white-space:normal;
+  font-size:14px;
+  font-weight:600;
+}
+@media (max-width:620px){
+  #structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+
+/* v62 — Shared Structure view controls, compact Reflections, clear triad overlays. */
+#structurePanel .generator-structure-view-controls{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  box-sizing:border-box;
+  width:100%;min-width:0;
+  margin:0 0 12px;
+}
+#structurePanel .generator-structure-view-controls .cif-structure-view-buttons{
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  gap:6px!important;
+  margin:0!important;
+  width:100%;min-width:0;
+}
+#structurePanel .generator-structure-view-controls .cif-structure-view-buttons > button{
+  width:100%;min-width:0;min-height:36px;
+  padding:7px 3px;
+  box-sizing:border-box;
+  font-size:14px;
+  font-weight:700;
+}
+#structurePanel .generator-structure-view-controls .structure-range-six{
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  gap:6px!important;
+  align-items:end;
+  margin:0!important;
+  width:100%;min-width:0;
+}
+#structurePanel .generator-structure-view-controls .structure-entry-field{min-width:0;width:100%;}
+#structurePanel .generator-structure-view-controls .structure-entry-label{
+  font-size:12px;
+  font-weight:600;
+}
+#structurePanel .generator-structure-view-controls .structure-range-six input[type=number]{
+  box-sizing:border-box;
+  width:100%!important;
+  min-width:0;
+  min-height:36px;
+  padding:5px 6px;
+  font-size:14px;
+}
+/* The previous status line has been replaced by the shared view controls.
+   Keep status announcements available to assistive technology. */
+#structurePanel #cifStructureStatus{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  min-height:0!important;
+  max-height:1px!important;
+  margin:-1px!important;
+  padding:0!important;
+  overflow:hidden!important;
+  clip-path:inset(50%);
+  white-space:nowrap;
+  border:0!important;
+}
+/* The direct/reciprocal coordinate indicators must not occlude atoms. */
+#structurePanel .structure-triad{
+  background:transparent!important;
+  background-color:transparent!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+/* Keep beam parameters; remove the now-unneeded Reflection parameters heading. */
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid{
+  margin-top:0;
+}
+/* Download table belongs to the right of the Nuclear filtering checkboxes. */
+#structurePanel #cifReflectionsPanel .cif-reflection-toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px 14px;
+  min-width:0;
+}
+#structurePanel #cifReflectionsPanel .cif-reflection-toolbar > #cifDownloadTable{
+  box-sizing:border-box;
+  flex:0 0 auto;
+  margin-left:auto;
+  min-height:36px;
+  padding:7px 12px;
+  font-size:14px;
+  font-weight:600;
+  white-space:nowrap;
+}
+@container generator-unified (max-width:660px){
+  #structurePanel .generator-structure-view-controls .cif-structure-view-buttons,
+  #structurePanel .generator-structure-view-controls .structure-range-six{gap:4px!important;}
+  #structurePanel .generator-structure-view-controls .structure-range-six input[type=number]{
+    padding:4px 2px;
+    font-size:12px;
+  }
+  #structurePanel .generator-structure-view-controls .cif-structure-view-buttons > button{
+    padding:5px 2px;font-size:12px;
+  }
+  #structurePanel .generator-structure-view-controls .structure-entry-label{font-size:10px;}
+}
+/* Keep the existing header links accessible on very narrow phones. */
+@media(max-width:360px){
+  header{flex-wrap:wrap!important;gap:6px 12px!important;align-items:center!important;padding:8px 10px;}
+  header > h1{flex:1 1 100%;font-size:18px;}
+  header > #status{flex:1 1 100%;margin-left:0!important;}
+}
+/* Retain two tidy rows even at 280px, without overlapping x/y/z labels. */
+@media(max-width:340px){
+  #structurePanel .generator-structure-view-controls .structure-entry-label{
+    font-size:0!important;
+    line-height:1.3!important;
+  }
+  #structurePanel .generator-structure-view-controls .structure-entry-label::after{
+    content:attr(data-short-label);
+    display:block;
+    font-size:11px;
+    font-weight:700;
+    line-height:1.3;
+  }
+}
+
+/* v64: optional atom ADPs; keep the regular Atomic positions table compact. */
+#cifGeneratorPanel .cif-atom-detailed{
+  border:1px solid #d5d5d5;border-radius:6px;padding:0;margin-top:12px;
+  background:#fff;min-width:0;overflow:hidden;
+}
+#cifGeneratorPanel .cif-atom-detailed>summary{
+  cursor:pointer;font-size:15px;font-weight:700;padding:10px 12px;
+  background:#fff;list-style-position:inside;
+}
+#cifGeneratorPanel .cif-atom-detailed[open]>summary{border-bottom:1px solid #d5d5d5}
+#cifGeneratorPanel .cif-thermal-list{display:grid;gap:9px;padding:0 12px 12px;min-width:0}
+#cifGeneratorPanel .cif-thermal-row{border:1px solid #dfe3e8;border-radius:5px;padding:10px;min-width:0}
+#cifGeneratorPanel .cif-thermal-heading{font-weight:700;font-size:13px;margin-bottom:8px}
+#cifGeneratorPanel .cif-thermal-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,1fr);gap:10px;align-items:end}
+#cifGeneratorPanel .cif-thermal-toggle{flex-direction:row;align-items:center;gap:7px;min-height:36px;font-weight:600}
+#cifGeneratorPanel .cif-thermal-toggle input{width:auto;min-height:0;flex-shrink:0}
+#cifGeneratorPanel .cif-thermal-u-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:9px}
+#cifGeneratorPanel .cif-thermal-row input[type=number]{box-sizing:border-box;width:100%;max-width:100%;min-width:0}
+#cifGeneratorPanel .cif-thermal-row input:disabled{opacity:.65;background:#f3f5f7}
+#cifGeneratorPanel #cifGeneratorMessage.hidden{display:none!important}
+@media(max-width:360px){
+  #cifGeneratorPanel .cif-thermal-list{padding-left:8px;padding-right:8px}
+  #cifGeneratorPanel .cif-thermal-row{padding:8px}
+  #cifGeneratorPanel .cif-thermal-u-grid{gap:5px}
+  #cifGeneratorPanel .cif-thermal-top{gap:6px}
+}
+
+/* v66: Biso belongs in the Atomic positions grid. Keep the same column
+   alignment for data rows and header, with local (not page) scrolling. */
+#cifGeneratorPanel .cif-atom-table{
+  grid-template-columns:46px 78px repeat(5,minmax(76px,1fr)) 88px;
+  min-width:750px;
+}
+#cifGeneratorPanel .cif-atom-cell [data-cif-atom-field="Biso"]:disabled{
+  opacity:.65;background:#f3f5f7;cursor:not-allowed;
+}
+/* Compact Uij table: one atom per row. For many sites scroll inside the
+   expanded section instead of extending the whole page vertically. */
+#cifGeneratorPanel .cif-thermal-table-wrap{
+  width:100%;max-width:100%;min-width:0;
+  max-height:278px;overflow:auto;-webkit-overflow-scrolling:touch;
+}
+#cifGeneratorPanel .cif-thermal-table{
+  display:grid;
+  grid-template-columns:82px 78px repeat(6,minmax(78px,1fr));
+  min-width:730px;
+  border-left:1px solid #ccc;
+  border-top:1px solid #ccc;
+}
+#cifGeneratorPanel .cif-thermal-header{
+  font-size:12px;font-weight:700;text-align:center;
+  padding:8px 4px;background:#f7f7f7;
+  border-right:1px solid #ccc;border-bottom:1px solid #ccc;
+  position:sticky;top:0;z-index:2;
+}
+#cifGeneratorPanel .cif-thermal-list,
+#cifGeneratorPanel .cif-thermal-row{display:contents;}
+#cifGeneratorPanel .cif-thermal-row{border:0;padding:0;}
+#cifGeneratorPanel .cif-thermal-cell{
+  display:flex;align-items:center;justify-content:center;min-width:0;
+  padding:4px;background:#fff;
+  border-right:1px solid #ccc;border-bottom:1px solid #ccc;
+}
+#cifGeneratorPanel .cif-thermal-heading{
+  justify-content:flex-start;font-size:13px;font-weight:650;
+  margin:0;overflow-wrap:anywhere;
+}
+#cifGeneratorPanel .cif-thermal-toggle{
+  display:flex;justify-content:center;align-items:center;
+  width:100%;margin:0;min-height:32px;cursor:pointer;
+}
+#cifGeneratorPanel .cif-thermal-toggle input{margin:0;flex:0 0 auto;}
+#cifGeneratorPanel .cif-thermal-cell input[type=number]{
+  box-sizing:border-box;width:100%;max-width:none;min-width:0;
+  font-size:13px;padding:5px 4px;
+}
+#cifGeneratorPanel .cif-atom-detailed{overflow:hidden;}
+#cifGeneratorPanel .cif-atom-detailed > summary{background:#fff;}
+
+/* v67 — Draw all CIF atom/ADP table separators as a continuous 1px grid.
+   A grid background + 1px gaps avoids sporadically missing lines when
+   fractional column widths are rounded during horizontal scrolling. */
+#cifGeneratorPanel .cif-atom-table,
+#cifGeneratorPanel .cif-thermal-table{
+  column-gap:1px;
+  row-gap:1px;
+  background:#c9cdd1;
+  border:1px solid #c9cdd1;
+  box-sizing:border-box;
+}
+#cifGeneratorPanel .cif-atom-header,
+#cifGeneratorPanel .cif-atom-cell,
+#cifGeneratorPanel .cif-thermal-header,
+#cifGeneratorPanel .cif-thermal-cell{
+  border:0;
+  box-sizing:border-box;
+}
+/* Match Atomic positions: about 4–5 visible rows, followed by scrolling. */
+#cifGeneratorPanel .cif-thermal-table-wrap{
+  max-height:232px;
+}
+
+
+/* v68 — Pixel-stable cell boundaries at all viewport widths / zoom levels.
+   Put a true border on EACH cell (header and data), plus an inset seam, rather
+   than relying exclusively on fractional CSS-grid gap backgrounds. */
+#cifGeneratorPanel .cif-atom-table,
+#cifGeneratorPanel .cif-thermal-table{
+  column-gap:0;
+  row-gap:0;
+  background:#fff;
+  border:1px solid #afb7c0;
+  box-sizing:border-box;
+}
+#cifGeneratorPanel .cif-atom-header,
+#cifGeneratorPanel .cif-atom-cell,
+#cifGeneratorPanel .cif-thermal-header,
+#cifGeneratorPanel .cif-thermal-cell{
+  box-sizing:border-box;
+  min-width:0;
+  border-right:1px solid #afb7c0;
+  border-bottom:1px solid #afb7c0;
+  /* Back up borders where grid tracks occupy fractional device pixels. */
+  box-shadow:inset -1px 0 0 #afb7c0;
+}
+/* 7 columns: atom selector / row number / element, then U11–U23. */
+#cifGeneratorPanel .cif-thermal-table{
+  grid-template-columns:minmax(134px,1.5fr) repeat(6,minmax(82px,1fr));
+  min-width:750px;
+}
+#cifGeneratorPanel .cif-thermal-heading{
+  justify-content:flex-start;
+  padding:4px 7px;
+}
+#cifGeneratorPanel .cif-thermal-toggle{
+  display:flex;
+  flex-flow:row nowrap;
+  align-items:center;
+  justify-content:flex-start;
+  gap:7px;
+  width:100%;
+  min-width:0;
+  margin:0;
+  min-height:32px;
+  cursor:pointer;
+}
+#cifGeneratorPanel .cif-thermal-toggle > input[type="checkbox"]{
+  flex:0 0 auto;
+  margin:0;
+}
+#cifGeneratorPanel .cif-thermal-atom-name{
+  display:block;
+  flex:1 1 auto;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  min-width:0;
+}
+
+
+/* v69 — restore quiet table separators without doubled borders/inset shadows.
+   Draw soft 1px cell borders at every width, including full-screen. */
+#cifGeneratorPanel .cif-atom-table,
+#cifGeneratorPanel .cif-thermal-table{
+  column-gap:0;
+  row-gap:0;
+  background:#fff;
+  border:1px solid #dfe3e7;
+}
+#cifGeneratorPanel .cif-atom-header,
+#cifGeneratorPanel .cif-atom-cell,
+#cifGeneratorPanel .cif-thermal-header,
+#cifGeneratorPanel .cif-thermal-cell{
+  border-right:1px solid #dfe3e7;
+  border-bottom:1px solid #dfe3e7;
+  box-shadow:none;
+}
+/* Keep Atom compact: checkbox + index + element, about half the old width. */
+#cifGeneratorPanel .cif-thermal-table{
+  grid-template-columns:minmax(70px,76px) repeat(6,minmax(82px,1fr));
+  min-width:690px;
+}
+#cifGeneratorPanel .cif-thermal-heading{padding:4px 5px;}
+#cifGeneratorPanel .cif-thermal-toggle{gap:4px;}
+/* Both Biso and Uij can be edited; Use Uij only selects calculation priority. */
+#cifGeneratorPanel .cif-atom-cell [data-cif-atom-field="Biso"]{
+  opacity:1;background:#fff;cursor:text;
+}
+
+/* v70 — three equal atom actions and Script-style selection. */
+#cifGeneratorPanel .cif-atom-actions{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;
+}
+#cifGeneratorPanel .cif-atom-actions button{width:100%;min-width:0;}
+#cifGeneratorPanel .cif-atom-actions button:disabled{opacity:.45;cursor:not-allowed;}
+/* The per-row Remove column is gone; data/header have seven equal tracks. */
+#cifGeneratorPanel .cif-atom-table{
+  grid-template-columns:46px 78px repeat(5,minmax(76px,1fr));min-width:662px;
+}
+#cifGeneratorPanel .cif-atom-row .cif-atom-cell{cursor:pointer;}
+#cifGeneratorPanel .cif-atom-row.cif-atom-selected .cif-atom-cell,
+#cifGeneratorPanel .cif-thermal-row.cif-atom-selected .cif-thermal-cell{
+  background:#e8f2fc;
+}
+#cifGeneratorPanel .cif-atom-row.cif-atom-selected .cif-atom-index{color:#1d5281;}
+#cifGeneratorPanel .cif-atom-row.cif-atom-selected .cif-atom-cell input{
+  background:#fff;
+}
+
+/* v71 — compact atom reordering controls, separate from the 3 equal actions. */
+#cifGeneratorPanel .cif-atom-heading .cif-atom-reorder-actions,
+#structurePanel .cif-atom-heading .cif-atom-reorder-actions{
+  display:flex;flex-direction:row;gap:6px;align-items:center;
+}
+#cifGeneratorPanel .cif-atom-reorder-actions button,
+#structurePanel .cif-atom-reorder-actions button{
+  min-width:34px;min-height:32px;padding:4px 9px;font-size:17px;font-weight:700;
+}
+#cifGeneratorPanel .cif-atom-reorder-actions button:disabled,
+#structurePanel .cif-atom-reorder-actions button:disabled{opacity:.45;cursor:not-allowed;}
+
+/* v72: subtle drag handle and drop position for Script-style atom reordering. */
+#cifGeneratorPanel .cif-atom-index{cursor:grab;user-select:none;touch-action:pan-y;}
+#cifGeneratorPanel .cif-atom-index:active{cursor:grabbing;}
+#cifGeneratorPanel .cif-atom-row.cif-atom-dragging .cif-atom-cell{opacity:.5;}
+#cifGeneratorPanel .cif-atom-row.cif-atom-drop-before .cif-atom-cell{box-shadow:inset 0 2px 0 #4488bd;}
+#cifGeneratorPanel .cif-atom-row.cif-atom-drop-after .cif-atom-cell{box-shadow:inset 0 -2px 0 #4488bd;}
+
+/* Unified Structure editor: five equally accessible editor sections. */
+#structurePanel .structure-config-tabs{grid-template-columns:repeat(5,minmax(0,1fr))!important;}
+#structurePanel .generator-unified-editor{display:block!important;}
+#structurePanel .mcif-export-group{margin-top:14px;padding-top:12px;border-top:1px solid #dfe3e8;}
+#structurePanel .mcif-export-group .cif-source-button-row{margin-bottom:8px;}
+#structurePanel .mcif-export-group button:disabled{opacity:.5;cursor:not-allowed;}
+#structurePanel .structure-config-panel > .cif-lattice-information-section{border:0;margin:0;padding:0;}
+#structurePanel .structure-config-panel[data-structure-config-panel="positions"]{min-width:0;}
+@media(max-width:650px){
+  #structurePanel .structure-config-tabs{grid-template-columns:repeat(3,minmax(0,1fr))!important;}
+}
+
+/* One shared export filename and two output-action rows. */
+#structurePanel .mcif-export-group{margin-top:7px;padding-top:0;border-top:0;}
+#structurePanel .cif-filename-suffix{white-space:nowrap;}
+
+/* Protected imported mCIF state: checked Modify means editing is disabled. */
+.structure-modify-lock-field { display:flex; align-items:center; gap:0.45rem; justify-content:flex-end; white-space:nowrap; }
+.structure-modify-lock-field .structure-entry-label { white-space:nowrap; }
+.structure-modify-lock-field input[type="checkbox"] { width:1rem; height:1rem; margin:0; cursor:pointer; }
+
+/* Equal widths for Spins Mode / Element / Source. */
+#structurePanel .structure-spin-editor-toolbar{grid-template-columns:repeat(3,minmax(0,1fr));}
+#structurePanel .structure-spin-editor-toolbar .structure-modify-lock-field{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-end;gap:4px;}
+#structurePanel .structure-spin-editor-toolbar .structure-modify-lock-field select{width:100%;}
+
+/* Divider belongs directly above Structure editor, never inside Positions. */
+#structurePanel .generator-unified-editor > .structure-config-section {
+  border-top:1px solid #e1e5ea;
+  padding-top:12px;
+  margin-top:12px;
+}
+
+
+/* Spins: keep Use, site, three direction/moment inputs and arrow color
+   together in a single row even on narrow/mobile Structure editor layouts.
+   Overrides the legacy <=520px container rule which moved the inputs below. */
+#structurePanel #cifMagMomentRows .structure-moment-row{
+  display:grid!important;
+  grid-template-columns:22px minmax(38px,auto) minmax(0,1fr) 34px!important;
+  grid-template-rows:auto!important;
+  column-gap:5px!important;
+  align-items:end!important;
+  min-width:0!important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > input[type=checkbox]{
+  grid-column:1!important;grid-row:1!important;
+  align-self:center!important;margin:0!important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-site{
+  grid-column:2!important;grid-row:1!important;
+  max-width:74px!important;min-width:0!important;
+  overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
+  align-self:center!important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-vector{
+  grid-column:3!important;grid-row:1!important;
+  display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:3px!important;width:100%!important;min-width:0!important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-color-swatch{
+  grid-column:4!important;grid-row:1!important;
+  width:32px!important;min-width:0!important;justify-self:end!important;
+}
+#structurePanel #cifMagMomentRows .structure-moment-row .structure-entry-field,
+#structurePanel #cifMagMomentRows .structure-moment-row input[type=number]{
+  min-width:0!important;width:100%!important;box-sizing:border-box!important;
+}
+@container structure-viewer (max-width:520px){
+  #structurePanel #cifMagMomentRows .structure-moment-row{
+    grid-template-columns:20px minmax(34px,50px) minmax(0,1fr) 30px!important;
+    grid-template-rows:auto!important;
+    column-gap:4px!important;
+    padding:4px 0!important;
+  }
+  #structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-color-swatch{
+    width:28px!important;
+  }
+  #structurePanel #cifMagMomentRows .structure-moment-row .structure-entry-label{
+    font-size:10px!important;white-space:nowrap!important;
+  }
+  #structurePanel #cifMagMomentRows .structure-moment-row input[type=number]{
+    padding-left:2px!important;padding-right:2px!important;
+    font-size:12px!important;
+  }
+}

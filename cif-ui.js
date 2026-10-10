@@ -141,7 +141,9 @@ function propagationVectorsFromMcif(text,parsed){
       if(row==='loop_' || row.startsWith('_') || /^data_/i.test(row)) break;
       const match=row.match(/\[([^\]]+)\]/);
       const components=match ? match[1].split(/[\s,]+/) : row.split(/\s+/).slice(idx,idx+3);
-      const nums=components.map(Number);
+      // mCIF propagation vectors commonly use rational components (e.g. 3/2).
+      // Number("3/2") is NaN; use the shared numeric parser instead.
+      const nums=components.map(component=>parseNumericValue(component));
       if(nums.length===3 && nums.every(Number.isFinite)) result.push({h:nums[0],k:nums[1],l:nums[2],enabled:true});
       j++;
     }
@@ -155,8 +157,12 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   const cifText=String(text??"");
   const importedQ=propagationVectorsFromMcif(cifText,parsed);
   if(importedQ.length) setPropagationVectorsFromFile?.(importedQ);
+  importedMagneticEditMode=false;
+  structureModifyLocked=false;
+  importedOriginalQ=importedQ.map(q=>({...q}));
+  modifiedMagneticDraft=null;
   if($("mcifPreviewText")) $("mcifPreviewText").textContent=cifText;
-  if($("structureMcifGeneratedName")) $("structureMcifGeneratedName").value=cleanMcifBaseName(fileName);
+  // CIF and mCIF share a single filename entry.
   invalidateGeneratedMcif();
   // Save the currently displayed structure before switching.  Settings are
   // stored per structure fingerprint, so they can only return for the same CIF.
@@ -164,7 +170,11 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   setSelectedCifState(parsed,fileName,cifText);
   cifStructureSourcePreference="selected";
   restoreStructureViewerState();
+  // File changes must not navigate Structure editor away from the open tab.
+  structureConfigActiveTab=rememberedStructureEditorTab();
   if(parsed.magnetic){
+    structureModifyLocked=true;
+    restoreMagneticDraftFromStorage();
     // Imported mCIF vectors are authoritative. Restore visual preferences,
     // but never allow an old local XYZ value to override the file's moments.
     for(const [siteIndex,site] of (parsed.asymmetricSites||[]).entries()){
@@ -178,8 +188,20 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
     // XYZ vectors during updateMagneticMomentRows().
     $("cifMagMomentRows")?.replaceChildren();
     structureControlSignature="";
+  }else{
+    // Plain CIF imports must never suggest magnetic order.  This also clears
+    // auto-enabled checkboxes saved by earlier versions for the same CIF.
+    // A newly imported nonmagnetic CIF has no magnetic moments. Never
+    // inherit old nonzero vectors from browser storage or previous structures.
+    structureMomentSettings.clear();
+    // Old rows can otherwise override the reset via currentMomentSettings().
+    $("cifMagMomentRows")?.replaceChildren();
+    structureControlSignature="";
   }
   prepareStructureViewerControls();
+  // Refresh independent of the active right-hand preview/structure tab.
+  refreshMomentPropagationVectorSelect();
+  importedMagneticQSignature=propagationSignature();
   if(persist) saveSelectedCifLocal(cifText,fileName);
 
   // A selected/generated CIF defines the crystallographic unit cell. Keep the
@@ -197,6 +219,11 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   // Only editable generator fields are populated; file inputs are never set
   // programmatically.
   if(cifSpaceGroups.length) loadParsedCifIntoGenerator(parsed,fileName,{message:false});
+  // The selected CIF/mCIF, not just a newly generated CIF, is a valid source
+  // for the nuclear reflection table.  Drop any previous Generate snapshot and
+  // recalculate from the newly selected structure (even when the editable CIF
+  // Generator cannot import its space-group setting).
+  invalidateGeneratedCif("");
 
   updateAutoW();
   updateCifUI();
@@ -415,6 +442,165 @@ let structureCameraWatchSignature="";
 let structureCameraPresetRevision=0;
 let structureCameraRenderRevision=0;
 let structureMomentStructureType="collinear";
+// Checked Modify intentionally means protected/read-only (requested UI behavior).
+let structureModifyLocked=false;
+const GENERATOR_OUTPUT_TAB_STORAGE_KEY="tas-simulator-generator-output-tab-v1";
+// Capture the user's selection BEFORE any initialization can change the DOM.
+const initialGeneratorOutputTab=(()=>{
+  try { return localStorage.getItem(GENERATOR_OUTPUT_TAB_STORAGE_KEY)||"structure"; }
+  catch(_e){ return "structure"; }
+})();
+let generatorOutputTabRestored=false;
+function readSavedGeneratorOutputTab(){return initialGeneratorOutputTab;}
+const MCIF_EDIT_DRAFT_KEY="tas-simulator-mcif-modify-drafts-v1";
+let importedOriginalQ=[];
+let modifiedMagneticDraft=null;
+function magneticDraftIdentity(){
+  const structure=getSelectedCifStructure();
+  return structure?.magnetic ? structureStateFingerprint(structure)+":"+structureSignature(structure) : "";
+}
+function snapshotMagneticDraft(){
+  return {
+    propagationVectors:(getPropagationVectors?.()||[]).map(q=>({...q})),
+    moments:[...currentMomentSettings()].map(([k,v])=>[k,{...v}]),
+    structureType:structureMomentStructureType,
+    rotationAxis:structureMomentRotationAxis,
+    chirality:structureMomentChirality,
+    propagationIndex:structureMomentPropagationIndex,
+    spinEditingMode:structureSpinEditingMode,
+    directionMode:structureMomentDirectionMode
+  };
+}
+function persistMagneticDraft(){
+  const key=magneticDraftIdentity();
+  if(!key||!modifiedMagneticDraft) return;
+  try{
+    const data=JSON.parse(localStorage.getItem(MCIF_EDIT_DRAFT_KEY)||"{}");
+    data[key]=modifiedMagneticDraft;
+    // Avoid unbounded growth when many structures have been viewed.
+    for(const old of Object.keys(data).slice(0,Math.max(0,Object.keys(data).length-16))) delete data[old];
+    localStorage.setItem(MCIF_EDIT_DRAFT_KEY,JSON.stringify(data));
+  }catch(_e){}
+}
+function restoreMagneticDraftFromStorage(){
+  modifiedMagneticDraft=null;
+  try{
+    const saved=JSON.parse(localStorage.getItem(MCIF_EDIT_DRAFT_KEY)||"{}")[magneticDraftIdentity()];
+    if(saved && Array.isArray(saved.moments) && Array.isArray(saved.propagationVectors)) modifiedMagneticDraft=saved;
+  }catch(_e){}
+}
+function rememberModifiedMagneticDraft(){
+  if(!sourceIsMagneticCif()||structureModifyLocked||!importedMagneticEditMode) return;
+  modifiedMagneticDraft=snapshotMagneticDraft();
+  persistMagneticDraft();
+}
+// Moment colors are visual preferences, not part of the protected mCIF spin model.
+function captureMomentColors(){
+  const colors=new Map();
+  for(const [key,value] of currentMomentSettings()){
+    if(value?.color) colors.set(key,{color:value.color,colorCustomized:!!value.colorCustomized});
+  }
+  return colors;
+}
+function reapplyMomentColors(colors){
+  for(const [key,visual] of colors){
+    const setting=structureMomentSettings.get(key);
+    if(setting) structureMomentSettings.set(key,{...setting,...visual});
+  }
+}
+function applyModifiedMagneticDraft(draft){
+  if(!draft) return;
+  const visualColors=captureMomentColors();
+  if(Array.isArray(draft.propagationVectors)) setPropagationVectorsFromFile?.(draft.propagationVectors.map(q=>({...q})));
+  structureMomentSettings.clear();
+  for(const [key,value] of (draft.moments||[])) structureMomentSettings.set(key,{...value});
+  reapplyMomentColors(visualColors);
+  structureMomentStructureType=["collinear","helical","sinusoidal"].includes(draft.structureType)?draft.structureType:"collinear";
+  structureMomentRotationAxis=draft.rotationAxis||"c";
+  structureMomentChirality=draft.chirality||"CCW";
+  structureMomentPropagationIndex=Number(draft.propagationIndex)||1;
+  structureSpinEditingMode=draft.spinEditingMode==="individual"?"individual":"sites";
+  structureMomentDirectionMode=draft.directionMode==="polar"?"polar":"cartesian";
+  importedMagneticEditMode=true;
+  invalidateGeneratedMcif();
+  $("cifMagMomentRows")?.replaceChildren();
+  structureControlSignature="";
+}
+function restoreOriginalImportedMagnetism(){
+  const visualColors=captureMomentColors();
+  if(importedOriginalQ.length) setPropagationVectorsFromFile?.(importedOriginalQ.map(q=>({...q})));
+  const parsed=getSelectedCifStructure();
+  structureMomentSettings.clear();
+  for(const [siteIndex,site] of (parsed?.asymmetricSites||[]).entries()){
+    const key=momentKey({...site,siteIndex});
+    structureMomentSettings.set(key,defaultMomentSetting(site,parsed));
+  }
+  reapplyMomentColors(visualColors);
+  importedMagneticEditMode=false;
+  structureMomentPropagationIndex=importedOriginalQ.length?1:0;
+  $("cifMagMomentRows")?.replaceChildren();
+  structureControlSignature="";
+  importedMagneticQSignature=propagationSignature();
+}
+function setImportedMagneticMode(next){
+  if(!sourceIsMagneticCif()) return;
+  if(next==="mcif"){
+    rememberModifiedMagneticDraft();
+    structureModifyLocked=true;
+    restoreOriginalImportedMagnetism();
+  }else{
+    structureModifyLocked=false;
+    if(modifiedMagneticDraft) applyModifiedMagneticDraft(modifiedMagneticDraft);
+    else{
+      importedMagneticEditMode=true;
+      modifiedMagneticDraft=snapshotMagneticDraft();
+      persistMagneticDraft();
+    }
+  }
+  prepareStructureViewerControls();
+  refreshMomentPropagationVectorSelect();
+  renderCifStructureIfVisible();
+}
+function importedKDescription(){
+  const q=effectivePropagationVectorForStructure();
+  return `(${[q.h,q.k,q.l].map(v=>Number.isFinite(Number(v))?Number(v):0).join(", ")})`;
+}
+function syncSpinModifyLock(){
+  const selector=$("cifSpinEditSource");
+  if(selector) { selector.value=sourceIsMagneticCif() && structureModifyLocked?"mcif":"modify"; selector.disabled=!sourceIsMagneticCif(); }
+  const protect=structureModifyLocked && sourceIsMagneticCif();
+  for(const id of ["cifMomentPropagationVector","cifMomentStructureType","cifMomentRotationAxis",
+                    "cifMomentChirality","cifSpinEditingMode","cifMomentDirectionMode"]){
+    const el=$(id); if(el) el.disabled=protect || (id==="cifMomentRotationAxis"||id==="cifMomentChirality" ? structureMomentStructureType!=="helical":false);
+  }
+  const propagationHost=$("propagationVectors");
+  if(propagationHost) for(const field of propagationHost.querySelectorAll("input,select,button")) field.disabled=protect;
+  const addQ=$("addPropagationVector"); if(addQ) addQ.disabled=protect;
+  const rows=$("cifMagMomentRows");
+  if(rows) for(const field of rows.querySelectorAll("input,select,button")){
+    const isColor=field.matches('input[type="color"], [data-moment-field="color"]');
+    field.disabled=protect && !isColor;
+  }
+  const toggles=$("cifSpinElementToggles");
+  if(toggles) for(const field of toggles.querySelectorAll("input,select,button")) field.disabled=protect;
+}
+
+// Imported mCIF is displayed faithfully until the user edits its k or model.
+let importedMagneticEditMode=false;
+let importedMagneticQSignature="";
+function propagationSignature(){
+  const q=effectivePropagationVectorForStructure();
+  return [q.index,q.h,q.k,q.l].join('|');
+}
+function activateImportedMagneticEditing(){
+  if(!sourceIsMagneticCif() || importedMagneticEditMode || structureModifyLocked) return;
+  for(const [key,value] of currentMomentSettings()) structureMomentSettings.set(key,value);
+  importedMagneticEditMode=true;
+  rememberModifiedMagneticDraft();
+  invalidateGeneratedMcif();
+  syncImportedMomentStructureType();
+}
+
 let structureMomentRotationAxis="c";
 let structureMomentChirality="CCW";
 let structureMomentPropagationIndex=0;
@@ -422,7 +608,15 @@ let structureMomentDirectionMode="cartesian";
 let structureSpinEditingMode="sites";
 // Element only filters rows shown in Spins; it never changes moments or mCIF export.
 let structureSpinTableElement="*";
-let structureConfigActiveTab="atoms";
+const STRUCTURE_EDITOR_TAB_KEY="tas-simulator-structure-editor-active-tab-v1";
+const VALID_STRUCTURE_EDITOR_TABS=["cell","positions","appearance","spins","bonds"];
+function rememberedStructureEditorTab(){
+  try{
+    const value=localStorage.getItem(STRUCTURE_EDITOR_TAB_KEY);
+    return VALID_STRUCTURE_EDITOR_TABS.includes(value)?value:"cell";
+  }catch(_e){return "cell";}
+}
+let structureConfigActiveTab=rememberedStructureEditorTab();
 let structureMomentGlobalLength=1;
 let structureMomentGlobalWidth=10;
 let structureMomentGlobalHeadSize=0.51;
@@ -500,7 +694,8 @@ function resetStructureViewerStateToDefaults(){
     structureMomentDirectionMode="cartesian";
     structureSpinEditingMode="sites";
     structureSpinTableElement="*";
-    structureConfigActiveTab="atoms";
+    // Keep the user-selected editor tab when a different structure is loaded.
+    structureConfigActiveTab=rememberedStructureEditorTab();
     structureMomentGlobalLength=1;
     structureMomentGlobalWidth=10;
     structureMomentGlobalHeadSize=0.51;
@@ -540,6 +735,7 @@ function saveStructureViewerState(){
       spinTableElement:structureSpinTableElement,
       configActiveTab:structureConfigActiveTab,
       momentCoordinatesVersion:3,
+      zeroMomentDefaultsVersion:1,
       momentGlobalLength:structureMomentGlobalLength,
       momentGlobalWidth:structureMomentGlobalWidth,
       momentGlobalHeadSize:structureMomentGlobalHeadSize,
@@ -593,6 +789,9 @@ function restoreStructureViewerState(){
     for(const [element,visible] of Object.entries(saved.atomVisible||{})) structureAtomVisibility.set(element,visible!==false);
     structureMomentSettings.clear();
     for(const [key,value] of Object.entries(saved.moments||{})) if(value && typeof value==="object") structureMomentSettings.set(key,{...value});
+    // Old saved UI state can contain implicit +z, 1 μB defaults. Discard those
+    // only for nonmagnetic structures. New explicit edits remain persistent.
+    if(!sourceIsMagneticCif() && saved.zeroMomentDefaultsVersion!==1) structureMomentSettings.clear();
     if(sourceIsMagneticCif() && saved.momentCoordinatesVersion!==3) {
       for(const site of (currentStructureForViewer()?.structure?.asymmetricSites||[])) {
         if(!Array.isArray(site.magneticMoment)) continue;
@@ -610,7 +809,8 @@ function restoreStructureViewerState(){
     if(["cartesian","polar"].includes(String(saved.momentDirectionMode||""))) structureMomentDirectionMode=String(saved.momentDirectionMode);
     structureSpinEditingMode=saved.spinEditingMode==="individual"?"individual":"sites";
     structureSpinTableElement=String(saved.spinTableElement||"*");
-    structureConfigActiveTab=["atoms","spins","bonds"].includes(saved.configActiveTab)?saved.configActiveTab:"atoms";
+    // Editor navigation is a global UI preference, not structure-specific data.
+    structureConfigActiveTab=rememberedStructureEditorTab();
     { const n=Number(saved.momentGlobalLength); if(Number.isFinite(n)&&n>=0) structureMomentGlobalLength=n; }
     { const n=Number(saved.momentGlobalWidth); if(Number.isFinite(n)&&n>=1) structureMomentGlobalWidth=n; }
     { const n=Number(saved.momentGlobalHeadSize); if(Number.isFinite(n)&&n>0) structureMomentGlobalHeadSize=n; }
@@ -636,6 +836,7 @@ function vecCross(a,b){ return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1
 function vecNorm(v){ return Math.hypot(v[0],v[1],v[2]); }
 function vecNormalize(v){ const n=vecNorm(v); return n>1e-12 ? [v[0]/n,v[1]/n,v[2]/n] : [0,0,1]; }
 function directionToPolar(v){
+  if(vecNorm(v)<1e-12) return {theta:0,phi:0};
   const n=vecNormalize(v);
   const theta=Math.acos(Math.max(-1,Math.min(1,n[2])))*180/PI;
   let phi=Math.atan2(n[1],n[0])*180/PI;
@@ -732,6 +933,18 @@ function isStructurePanelVisible(){
   return !!panel && !panel.classList.contains("hidden");
 }
 function renderCifStructureIfVisible(){
+  // Keep the shared Structure editor up to date regardless of which output
+  // preview is selected. Updating Atoms/Spins/Bonds must not depend on Plotly
+  // or on the visibility of the 3D Structure tab.
+  const source=currentStructureForViewer();
+  if(source?.structure?.magnetic && !importedMagneticEditMode &&
+     !structureModifyLocked && importedMagneticQSignature && propagationSignature()!==importedMagneticQSignature){
+    activateImportedMagneticEditing();
+  }
+  syncImportedMomentStructureType();
+  if(source?.structure) syncStructureControlRows(source.structure);
+  syncSpinModifyLock();
+  rememberModifiedMagneticDraft();
   if(isStructurePanelVisible() && $("mcifStructurePane") && !$("mcifStructurePane").classList.contains("hidden")) renderCifStructureView();
 }
 function enabledPropagationVectorsForStructure(){
@@ -1145,6 +1358,7 @@ function updateSpinElementToggles(structure){
     const text=document.createElement("span");
     text.textContent=`All ${element}`;
     checkbox.addEventListener("change",()=>{
+      activateImportedMagneticEditing();
       setSpinEnabledForElement(element,checkbox.checked);
       saveStructureViewerState();
       renderCifStructureIfVisible();
@@ -1153,6 +1367,23 @@ function updateSpinElementToggles(structure){
     host.appendChild(label);
   }
   syncSpinElementToggleStates();
+}
+// Backward-compatible *display-only* labels for mCIF files emitted by older
+// versions (A1, A2, ...).  Never rewrite the parsed source labels: magnetic
+// moment references, state keys and re-export must remain tied to the file.
+function structureSiteDisplayLabels(structure){
+  const sites=structure?.asymmetricSites||[];
+  const generated=String(structure?.name||'').toLowerCase()==='generated_magnetic_structure';
+  if(!generated || !structure?.magnetic || !sites.length ||
+     !sites.every((s,i)=>/^A\d+$/i.test(String(s.label||'')))) return null;
+  const counts=new Map(),labels=new Map();
+  for(const site of sites){
+    const element=String(site.element||'X');
+    const number=(counts.get(element)||0)+1;
+    counts.set(element,number);
+    labels.set(String(site.label),`${element}${number}`);
+  }
+  return labels;
 }
 function updateStructureAtomColorRows(elements,structure=null){
   const host=$("cifAtomColorRows");
@@ -1168,7 +1399,8 @@ function updateStructureAtomColorRows(elements,structure=null){
     visible.checked=structureAtomVisibility.get(element)!==false;
     visible.title="Show this atom element";
     const name=document.createElement("span");
-    const siteLabels=[...new Set((structure?.asymmetricSites||[]).filter(site=>String(site.element||"")===element).map(site=>String(site.label||"").trim()).filter(Boolean))];
+    const displayLabels=structureSiteDisplayLabels(structure);
+    const siteLabels=[...new Set((structure?.asymmetricSites||[]).filter(site=>String(site.element||"")===element).map(site=>String(displayLabels?.get(String(site.label))||site.label||"").trim()).filter(Boolean))];
     name.textContent=siteLabels.length ? compressStructureSiteLabels(siteLabels,element) : element;
     name.title=siteLabels.length ? `${element}: ${siteLabels.join(", ")}` : element;
     const size=document.createElement("input");
@@ -1255,7 +1487,7 @@ function individualSpinCandidates(structure){
     });
   return out;
 }
-function spinEditingIsIndividual(structure){return structureSpinEditingMode==='individual' && !!structure && !structure.magnetic;}
+function spinEditingIsIndividual(structure){return structureSpinEditingMode==='individual' && !!structure && (!structure.magnetic || importedMagneticEditMode);}
 function initialIndividualSpin(site,structure){
   const base=site.parentSite||site;
   const key=momentKey({...base,siteIndex:site.siteIndex});
@@ -1337,8 +1569,11 @@ function defaultMomentSetting(site,structure=null){
   const representative=representativeCrystalMoment(site);
   const cart=(hasMoment||hasFourier)&&basis ? mcifCrystalAxisToCartesian(basis,representative) : null;
   const isMcif=structure?.magnetic===true;
-  return {enabled:hasMoment || hasFourier || (!isMcif&&DEFAULT_SPIN_ELEMENTS.has(element)),
-    mx:cart?.[0]??0,my:cart?.[1]??0,mz:cart?.[2]??(isMcif?0:1),
+  // All undefined moments begin at zero, independent of element or file type.
+  // Preserve physical moments explicitly supplied by an mCIF. Editing the
+  // Cartesian or Polar fields can create a nonzero moment later.
+  return {enabled:isMcif && (hasMoment || hasFourier),
+    mx:cart?.[0]??0,my:cart?.[1]??0,mz:cart?.[2]??0,
     size:1,width:10,headSize:0.51,color:elementColor(site.element),colorCustomized:false};
 }
 // Four significant digits are for display only; never round stored vectors.
@@ -1356,7 +1591,7 @@ function currentMomentSettings(){
     if(!key) continue;
     const fallback=structureMomentSettings.get(key)||{};
     let mx=Number(fallback.mx)||0, my=Number(fallback.my)||0, mz=Number(fallback.mz);
-    if(!Number.isFinite(mz)) mz=1;
+    if(!Number.isFinite(mz)) mz=0;
     const readEditedNumber=(field)=>{
       const input=row.querySelector(`[data-moment-field="${field}"]`);
       if(!input) return null;
@@ -1458,7 +1693,7 @@ function updateMagneticMomentRows(structure){
 
     const siteLabel=document.createElement("span");
     siteLabel.className="structure-moment-site";
-    siteLabel.textContent=site.label||site.element;
+    siteLabel.textContent=structureSiteDisplayLabels(structure)?.get(String(site.label))||site.label||site.element;
     siteLabel.title=`${site.element} @ (${Number(site.x).toFixed(5)}, ${Number(site.y).toFixed(5)}, ${Number(site.z).toFixed(5)})`;
 
     const makeField=(labelText,input)=>{
@@ -1502,6 +1737,10 @@ function updateMagneticMomentRows(structure){
     });
 
     const commit=()=>{
+      // A direct Spins edit must leave the imported mCIF display mode too.
+      // Previously only editing the left-hand k-vector activated this mode,
+      // so imported symmetry moments kept overriding these user inputs.
+      activateImportedMagneticEditing();
       const cur=currentMomentSettings().get(key);
       if(cur) structureMomentSettings.set(key,cur);
       saveStructureViewerState();
@@ -1769,7 +2008,7 @@ function refreshMomentPropagationVectorSelect(){
   for(const q of qs){
     const option=document.createElement("option");
     option.value=String(q.index);
-    option.textContent=`k${q.index}`;
+    option.textContent=sourceIsMagneticCif() && structureModifyLocked ? `k${q.index} ${`(${[q.h,q.k,q.l].join(", ")})`}` : `k${q.index}`;
     select.appendChild(option);
   }
   const chosen=qs.some(q=>q.index===previous)?previous:qs[0].index;
@@ -1792,18 +2031,23 @@ function magneticStructureTraces(atoms,basis,structure){
     // Their symmetry-transformed components are mapped to physical Cartesian
     // coordinates with the magnetic unit-cell basis exactly once (Sunny).
     // Never synthesize a spin along c for sites missing an mCIF moment.
-    if(structure?.magnetic && !Array.isArray(atom.magneticMoment) && !atom.magneticFourier) continue;
+    if(structure?.magnetic && !importedMagneticEditMode &&
+       !Array.isArray(atom.magneticMoment) && !atom.magneticFourier) continue;
     const frac=[Number.isFinite(atom.phaseX)?atom.phaseX:atom.x,Number.isFinite(atom.phaseY)?atom.phaseY:atom.y,Number.isFinite(atom.phaseZ)?atom.phaseZ:atom.z];
     const crystalMoment=(Array.isArray(atom.magneticMoment)||atom.magneticFourier)
       ? atomCrystalMoment(atom,frac) : null;
-    const moment=crystalMoment ? mcifCrystalAxisToCartesian(basis,crystalMoment) : [setting.mx,setting.my,setting.mz];
+    // After an edit, user-controlled site moments and the selected model take
+    // precedence over source magnetic symmetry. Do not reuse old symmetry.
+    const moment=(!importedMagneticEditMode && crystalMoment)
+      ? mcifCrystalAxisToCartesian(basis,crystalMoment)
+      : [Number(setting.mx)||0,Number(setting.my)||0,Number(setting.mz)||0];
     const mnorm=vecNorm(moment);
     if(!(mnorm>1e-12)) continue;
     const basePhase=2*PI*(q.h*frac[0]+q.k*frac[1]+q.l*frac[2]);
     let dir=vecNormalize(moment);
     let amplitude=1;
-    if(Array.isArray(atom.magneticMoment) || atom.magneticFourier){
-      // Magnetic symmetry/Fourier modulation already provides the spin.
+    if(!importedMagneticEditMode && (Array.isArray(atom.magneticMoment) || atom.magneticFourier)){
+      // Before editing, display the original symmetry/Fourier moments.
     }else if(spinEditingIsIndividual(structure)){
       // The user supplies each supercell vector; do not synthesize k modulation.
     }else if(structureMomentStructureType==="helical"){
@@ -1995,12 +2239,18 @@ function ensureSectionDefaultButton(hostId,buttonId,handler,titleWords,existingB
 function syncImportedMomentStructureType(){
   const select=$("cifMomentStructureType");
   if(!select) return;
-  const imported=sourceIsMagneticCif();
-  const option=select.querySelector('option[value="mcif"]');
-  if(option){ option.hidden=!imported; option.disabled=!imported; }
-  select.disabled=imported;
-  select.value=imported?"mcif":structureMomentStructureType;
-  select.title=imported?"The magnetic structure is defined by the loaded mCIF.":"Choose a generated magnetic structure type.";
+  let option=select.querySelector('option[value="mcif"]');
+  if(sourceIsMagneticCif() && !importedMagneticEditMode){
+    if(!option){ option=document.createElement("option");option.value="mcif";option.textContent="mCIF";select.prepend(option); }
+    select.value="mcif";
+  }else{
+    option?.remove();
+    select.value=structureMomentStructureType;
+  }
+  select.title=sourceIsMagneticCif() && !importedMagneticEditMode
+    ? "Original mCIF moments; uncheck Modify to edit the model."
+    : "Choose Collinear, Helical or Sinusoidal.";
+  syncSpinModifyLock();
 }
 function prepareStructureViewerControls(){
   ensureStructureViewerStyle();
@@ -2028,6 +2278,7 @@ function prepareStructureViewerControls(){
     button.addEventListener("click",()=>{
       const key=button.dataset.structureConfigTab;
       structureConfigActiveTab=key;
+      try{localStorage.setItem(STRUCTURE_EDITOR_TAB_KEY,key);}catch(_e){}
       saveStructureViewerState();
       for(const tab of document.querySelectorAll("[data-structure-config-tab]")){
         const active=tab===button; tab.classList.toggle("active",active); tab.setAttribute("aria-selected",active?"true":"false");
@@ -2037,13 +2288,23 @@ function prepareStructureViewerControls(){
       }
     });
   }
+  const modifyLock=$("cifSpinEditSource");
+  if(modifyLock && !modifyLock.dataset.structureBound){
+    modifyLock.dataset.structureBound="1";
+    modifyLock.addEventListener("change",()=>{
+      setImportedMagneticMode(modifyLock.value);
+    });
+  }
+
   refreshMomentPropagationVectorSelect();
+  syncSpinModifyLock();
   const propagationSelect=$("cifMomentPropagationVector");
   if(propagationSelect && !propagationSelect.dataset.structureBound){
     propagationSelect.dataset.structureBound="1";
     propagationSelect.addEventListener("change",()=>{
       const n=Number(propagationSelect.value);
       structureMomentPropagationIndex=Number.isInteger(n)&&n>0?n:0;
+      activateImportedMagneticEditing();
       if(structureSpinEditingMode==='individual'){
         for(const [key,value] of currentMomentSettings())structureMomentSettings.set(key,value);
         $('cifMagMomentRows')?.replaceChildren();
@@ -2068,7 +2329,7 @@ function prepareStructureViewerControls(){
   const editingSelect=$('cifSpinEditingMode');
   if(editingSelect){
     editingSelect.value=structureSpinEditingMode;
-    editingSelect.disabled=!!currentStructureForViewer()?.structure?.magnetic;
+    editingSelect.disabled=structureModifyLocked && sourceIsMagneticCif();
     if(!editingSelect.dataset.structureBound){
       editingSelect.dataset.structureBound='1';
       editingSelect.addEventListener('change',()=>{
@@ -2134,7 +2395,7 @@ function prepareStructureViewerControls(){
   bindGlobalArrowInput(widthInput,"width");
   bindGlobalArrowInput(headInput,"head");
   const syncMomentStructureModeControls=()=>{
-    const helical=!sourceIsMagneticCif() && structureMomentStructureType==="helical";
+    const helical=structureMomentStructureType==="helical";
     if(axisSelect) axisSelect.disabled=!helical;
     if(chiralitySelect) chiralitySelect.disabled=!helical;
   };
@@ -2143,10 +2404,7 @@ function prepareStructureViewerControls(){
     if(!structureTypeSelect.dataset.structureBound){
       structureTypeSelect.dataset.structureBound="1";
       structureTypeSelect.addEventListener("change",()=>{
-        if(sourceIsMagneticCif()){
-          syncImportedMomentStructureType();
-          return;
-        }
+        activateImportedMagneticEditing();
         structureMomentStructureType=["collinear","helical","sinusoidal"].includes(structureTypeSelect.value)?structureTypeSelect.value:"collinear";
         syncMomentStructureModeControls();
         saveStructureViewerState();
@@ -2159,6 +2417,7 @@ function prepareStructureViewerControls(){
     if(!axisSelect.dataset.structureBound){
       axisSelect.dataset.structureBound="1";
       axisSelect.addEventListener("change",()=>{
+        activateImportedMagneticEditing();
         structureMomentRotationAxis=["a","b","c"].includes(axisSelect.value)?axisSelect.value:"c";
         saveStructureViewerState();
         renderCifStructureIfVisible();
@@ -2170,6 +2429,7 @@ function prepareStructureViewerControls(){
     if(!chiralitySelect.dataset.structureBound){
       chiralitySelect.dataset.structureBound="1";
       chiralitySelect.addEventListener("change",()=>{
+        activateImportedMagneticEditing();
         structureMomentChirality=chiralitySelect.value==="CW"?"CW":"CCW";
         saveStructureViewerState();
         renderCifStructureIfVisible();
@@ -2360,12 +2620,14 @@ function renderCifStructureView(){
 
 function setCifGeneratedReady(ready){
   if($("cifDownload")) $("cifDownload").disabled=!ready;
-  if($("cifDownloadTable")) $("cifDownloadTable").disabled=!ready;
   if($("cifSet")) $("cifSet").disabled=!ready;
+  // Reflection CSV availability is independent of CIF Generate.  A selected
+  // CIF/mCIF can provide reflections without generating any new CIF file.
 }
 
-function clearCifReflectionTable(message="No generated reflections yet."){
+function clearCifReflectionTable(message="No reflections available."){
   lastGeneratedReflections=[];
+  if($("cifDownloadTable")) $("cifDownloadTable").disabled=true;
   const body=$("cifReflectionRows");
   if(body){
     body.replaceChildren();
@@ -2376,13 +2638,15 @@ function clearCifReflectionTable(message="No generated reflections yet."){
   if($("cifReflectionSummary")) $("cifReflectionSummary").textContent=message;
 }
 
-function invalidateGeneratedCif(message="Inputs changed — press Generate to refresh the CIF and reflection table."){
+function invalidateGeneratedCif(message="Inputs changed — press Generate to refresh the CIF."){
   lastGeneratedCifText="";
   lastGeneratedCifParsed=null;
   lastGeneratedCifSpaceGroup=null;
   setCifGeneratedReady(false);
   if($("cifPreview")) $("cifPreview").textContent="Press Generate to preview the CIF.";
-  clearCifReflectionTable("Press Generate to calculate reflections.");
+  // Keep Nuclear Reflections tied to the currently loaded CIF/mCIF even while
+  // the draft Nuclear editor is being changed.  No Generate is needed.
+  recalculateGeneratedReflections();
   if(message) setCifGeneratorMessage(message);
   renderCifStructureIfVisible();
 }
@@ -2390,8 +2654,11 @@ function invalidateGeneratedCif(message="Inputs changed — press Generate to re
 function setCifGeneratorMessage(text,isError=false){
   const box=$("cifGeneratorMessage");
   if(!box) return;
-  box.textContent=text || "";
+  // Routine load/generate notifications must not fill space under Atomic
+  // positions. Keep actionable errors near the Generate/Download controls.
+  box.textContent=isError ? (text || "") : "";
   box.classList.toggle("error-text",!!isError);
+  box.classList.toggle("hidden",!(isError && text));
 }
 
 const CIF_LATTICE_FIELDS={a:"cifA",b:"cifB",c:"cifC",alpha:"cifAlpha",beta:"cifBeta",gamma:"cifGamma"};
@@ -2501,13 +2768,258 @@ function refreshCifAtomRowIndices(){
 }
 
 function validateCifAtomNumericInput(input){
-  if(!input || !["x","y","z","occupancy"].includes(input.dataset.cifAtomField)) return true;
+  if(!input || !["x","y","z","occupancy","Biso"].includes(input.dataset.cifAtomField)) return true;
   const raw=String(input.value??"").trim();
   const n=parseNumericValue(raw);
-  const valid=raw!=="" && Number.isFinite(n) && (input.dataset.cifAtomField!=="occupancy" || (n>=0 && n<=1));
+  const valid=raw!=="" && Number.isFinite(n) &&
+    (input.dataset.cifAtomField!=="occupancy" || (n>=0 && n<=1)) &&
+    (input.dataset.cifAtomField!=="Biso" || n>=0);
   input.classList.toggle("cif-invalid-number",!valid);
   input.setAttribute("aria-invalid",valid?"false":"true");
   return valid;
+}
+
+// Script-style atom-row selection. The selection lives only in the UI;
+// stable row IDs keep the paired Uij data with each atom.
+let cifAtomSelectionAnchor=null;
+function cifSelectedAtomRows(){
+  return [...document.querySelectorAll("#cifAtomRows .cif-atom-row.cif-atom-selected")];
+}
+function setCifAtomRowSelection(row, event={}){
+  const rows=[...document.querySelectorAll("#cifAtomRows .cif-atom-row")];
+  const idx=rows.indexOf(row);
+  if(idx<0) return;
+  const multi=!!(event.ctrlKey||event.metaKey);
+  if(event.shiftKey){
+    const anchorIndex=rows.findIndex(r=>r.dataset.cifAtomUid===cifAtomSelectionAnchor);
+    const start=anchorIndex>=0?anchorIndex:idx;
+    if(!multi) rows.forEach(r=>r.classList.remove("cif-atom-selected"));
+    for(let i=Math.min(start,idx);i<=Math.max(start,idx);i++) rows[i].classList.add("cif-atom-selected");
+  }else if(multi){
+    row.classList.toggle("cif-atom-selected");
+    cifAtomSelectionAnchor=row.dataset.cifAtomUid;
+  }else{
+    rows.forEach(r=>r.classList.toggle("cif-atom-selected",r===row));
+    cifAtomSelectionAnchor=row.dataset.cifAtomUid;
+  }
+  refreshCifAtomSelectionUI();
+}
+function refreshCifAtomSelectionUI(){
+  const selected=new Set(cifSelectedAtomRows().map(r=>r.dataset.cifAtomUid));
+  document.querySelectorAll("#cifAtomDetailedRows .cif-thermal-row").forEach(r=>{
+    r.classList.toggle("cif-atom-selected",selected.has(r.dataset.cifAtomUid));
+  });
+  const count=selected.size;
+  for(const id of ["cifCopyAtom","cifRemoveAtom"]){
+    const btn=$(id); if(btn) btn.disabled=count===0;
+  }
+
+}
+// Drag from an index cell, as in Script. One selected row or a Ctrl/Shift
+// selection moves together; the target can be above the first or below the last.
+let cifAtomDragRows=null;
+let cifAtomDropTarget=null;
+function clearCifAtomDropMarker(){
+  if(cifAtomDropTarget){
+    cifAtomDropTarget.row.classList.remove("cif-atom-drop-before","cif-atom-drop-after");
+    cifAtomDropTarget=null;
+  }
+}
+function finishCifAtomDrag(){
+  clearCifAtomDropMarker();
+  document.querySelectorAll("#cifAtomRows .cif-atom-dragging").forEach(r=>r.classList.remove("cif-atom-dragging"));
+  cifAtomDragRows=null;
+}
+function cifAtomDropPosition(event,row){
+  const cell=row.querySelector(".cif-atom-index");
+  const rect=cell?.getBoundingClientRect();
+  return rect && event.clientY>=rect.top+rect.height/2 ? "after":"before";
+}
+function moveDraggedCifAtomRows(target,position){
+  const host=$("cifAtomRows");
+  if(!host || !cifAtomDragRows?.length || !target) return;
+  const original=[...host.querySelectorAll(".cif-atom-row")];
+  const moving=new Set(cifAtomDragRows);
+  const rest=original.filter(row=>!moving.has(row));
+  const targetIndex=rest.indexOf(target);
+  if(targetIndex<0) return; // Dropping onto the selection is a no-op.
+  const insertion=targetIndex+(position==="after"?1:0);
+  const ordered=[...rest.slice(0,insertion),...cifAtomDragRows,...rest.slice(insertion)];
+  if(ordered.every((row,i)=>row===original[i])) return;
+  host.append(...ordered);
+  const thermalHost=$("cifAtomDetailedRows");
+  if(thermalHost){
+    const thermalRows=new Map([...thermalHost.children].map(r=>[r.dataset.cifAtomUid,r]));
+    for(const row of ordered){
+      const paired=thermalRows.get(row.dataset.cifAtomUid);
+      if(paired) thermalHost.appendChild(paired);
+    }
+  }
+  refreshCifAtomRowIndices();
+  refreshCifAtomDetailedLabels();
+  refreshCifAtomSelectionUI();
+  saveCifGeneratorAtomsState();
+  invalidateGeneratedCif();
+}
+function initializeCifAtomDragRow(row){
+  const handle=row.querySelector(".cif-atom-index");
+  if(!handle) return;
+  handle.draggable=true;
+  handle.title="Drag to reorder selected atoms";
+  handle.addEventListener("dragstart",ev=>{
+    if(!row.classList.contains("cif-atom-selected")) setCifAtomRowSelection(row);
+    cifAtomDragRows=cifSelectedAtomRows();
+    if(!cifAtomDragRows.length){ev.preventDefault();return;}
+    cifAtomDragRows.forEach(r=>r.classList.add("cif-atom-dragging"));
+    ev.dataTransfer.effectAllowed="move";
+    ev.dataTransfer.setData("text/plain",row.dataset.cifAtomUid);
+  });
+  handle.addEventListener("dragend",finishCifAtomDrag);
+  // All cells are valid targets so the entire row can receive the drop.
+  row.querySelectorAll(".cif-atom-cell").forEach(cell=>{
+    cell.addEventListener("dragover",ev=>{
+      if(!cifAtomDragRows?.length) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect="move";
+      const position=cifAtomDropPosition(ev,row);
+      if(cifAtomDropTarget?.row===row && cifAtomDropTarget?.position===position) return;
+      clearCifAtomDropMarker();
+      if(cifAtomDragRows.includes(row)) return;
+      row.classList.add(position==="before"?"cif-atom-drop-before":"cif-atom-drop-after");
+      cifAtomDropTarget={row,position};
+    });
+    cell.addEventListener("drop",ev=>{
+      if(!cifAtomDragRows?.length) return;
+      ev.preventDefault();
+      const position=cifAtomDropPosition(ev,row);
+      moveDraggedCifAtomRows(row,position);
+      finishCifAtomDrag();
+    });
+  });
+}
+
+function copySelectedCifAtomRows(){
+  const selected=cifSelectedAtomRows();
+  if(!selected.length) return;
+  const values=selected.map(cifAtomRowValues);
+  // Copy the original selection snapshot once, in source-row order.
+  document.querySelectorAll("#cifAtomRows .cif-atom-selected").forEach(r=>r.classList.remove("cif-atom-selected"));
+  for(const atom of values){
+    addCifAtomRow(atom,{invalidate:false});
+    $("cifAtomRows").lastElementChild.classList.add("cif-atom-selected");
+  }
+  cifAtomSelectionAnchor=$("cifAtomRows")?.lastElementChild?.dataset.cifAtomUid??null;
+  refreshCifAtomSelectionUI();
+  invalidateGeneratedCif();
+}
+function removeSelectedCifAtomRows(){
+  const selected=cifSelectedAtomRows();
+  if(!selected.length) return;
+  for(const row of selected){
+    document.querySelector(`#cifAtomDetailedRows [data-cif-atom-uid="${row.dataset.cifAtomUid}"]`)?.remove();
+    row.remove();
+  }
+  cifAtomSelectionAnchor=null;
+  if(!$("cifAtomRows")?.querySelector(".cif-atom-row")) addCifAtomRow({}, {invalidate:false});
+  refreshCifAtomRowIndices();
+  refreshCifAtomDetailedLabels();
+  refreshCifAtomSelectionUI();
+  saveCifGeneratorAtomsState();
+  invalidateGeneratedCif();
+}
+
+let cifAtomDetailedSerial=0;
+const CIF_U_FIELDS=["11","22","33","12","13","23"];
+
+// Detailed rows are paired with atomic-position rows by a stable DOM key,
+// rather than by a mutable row number. This preserves ADPs on add/copy/delete.
+// Anisotropic Uij is an optional compact table paired to the Atomic positions
+// table by stable DOM keys. Biso itself is edited in Atomic positions.
+function addCifAtomDetailedRow(atomRow,values={}){
+  const host=$("cifAtomDetailedRows");
+  if(!host) return;
+  const uid=atomRow.dataset.cifAtomUid;
+  const tableRow=document.createElement("div");
+  tableRow.className="cif-thermal-row";
+  tableRow.dataset.cifAtomUid=uid;
+  // Keep the Uij checkbox, row index and element together in the first
+  // column. The 6 numeric columns then remain directly aligned with U11–U23.
+  const atomCell=document.createElement("div");
+  atomCell.className="cif-thermal-cell cif-thermal-heading";
+  const toggleLabel=document.createElement("label");
+  toggleLabel.className="cif-thermal-toggle";
+  const toggle=document.createElement("input");
+  toggle.type="checkbox";
+  toggle.dataset.cifThermalField="useUij";
+  toggle.checked=!!values.useUij || (Array.isArray(values.Uaniso) && values.Uaniso.length===3);
+  toggle.setAttribute("aria-label","Use anisotropic Uij for this atom");
+  const atomName=document.createElement("span");
+  atomName.className="cif-thermal-atom-name";
+  atomName.textContent="Atom";
+  toggleLabel.append(toggle,atomName);
+  atomCell.appendChild(toggleLabel);
+  tableRow.appendChild(atomCell);
+  const source=Array.isArray(values.Uij) ? values.Uij :
+    (Array.isArray(values.Uaniso) ? [values.Uaniso[0]?.[0],values.Uaniso[1]?.[1],values.Uaniso[2]?.[2],values.Uaniso[0]?.[1],values.Uaniso[0]?.[2],values.Uaniso[1]?.[2]] : null);
+  const fields=[];
+  for(let i=0;i<CIF_U_FIELDS.length;i++){
+    const cell=document.createElement("div");
+    cell.className="cif-thermal-cell";
+    const input=document.createElement("input");
+    input.type="number";
+    input.step="any";
+    input.dataset.cifThermalField=`U${CIF_U_FIELDS[i]}`;
+    input.setAttribute("aria-label",`U${CIF_U_FIELDS[i]} (Å²) for atom`);
+    input.value=String(source?.[i] ?? 0);
+    fields.push(input);
+    cell.appendChild(input);
+    tableRow.appendChild(cell);
+  }
+  host.appendChild(tableRow);
+  const bInput=atomRow.querySelector('[data-cif-atom-field="Biso"]');
+  function setUijEnabled(){
+    fields.forEach(input=>{input.disabled=!toggle.checked;});
+    // Biso stays editable even while Uij takes precedence in calculations.
+    // Retaining both values lets users switch between isotropic and anisotropic ADPs.
+  }
+  toggle.addEventListener("change",()=>{
+    if(toggle.checked && !toggle.dataset.initialized){
+      // Initialize newly enabled Uij from the current Biso (isotropic U).
+      const b=Number(bInput?.value ?? 0);
+      const u=Number.isFinite(b) && b>=0 ? b/(8*Math.PI*Math.PI) : 0;
+      for(let i=0;i<3;i++) if(Number(fields[i].value)===0) fields[i].value=String(Number(u.toPrecision(8)));
+      toggle.dataset.initialized="1";
+    }
+    setUijEnabled();
+    saveCifGeneratorAtomsState();
+  });
+  if(toggle.checked || source) toggle.dataset.initialized="1";
+  tableRow.addEventListener("input",saveCifGeneratorAtomsState);
+  tableRow.addEventListener("change",saveCifGeneratorAtomsState);
+  setUijEnabled();
+  return tableRow;
+}
+
+function refreshCifAtomDetailedLabels(){
+  const rows=[...document.querySelectorAll("#cifAtomRows .cif-atom-row")];
+  for(let i=0;i<rows.length;i++){
+    const card=document.querySelector(`#cifAtomDetailedRows [data-cif-atom-uid="${rows[i].dataset.cifAtomUid}"]`);
+    const label=rows[i].querySelector('[data-cif-atom-field="element"]')?.value.trim()||"Atom";
+    if(card){
+      const name=card.querySelector(".cif-thermal-atom-name");
+      if(name) name.textContent=`${i+1}. ${label}`;
+      const checkbox=card.querySelector('[data-cif-thermal-field="useUij"]');
+      if(checkbox) checkbox.setAttribute("aria-label",`Use anisotropic Uij for atom ${i+1}, ${label}`);
+    }
+  }
+}
+
+function cifAtomThermalValues(row){
+  const card=document.querySelector(`#cifAtomDetailedRows [data-cif-atom-uid="${row.dataset.cifAtomUid}"]`);
+  const get=k=>card?.querySelector(`[data-cif-thermal-field="${k}"]`)?.value ?? "0";
+  const biso=row.querySelector('[data-cif-atom-field="Biso"]')?.value ?? "0";
+  return {Biso:biso,useUij:!!card?.querySelector('[data-cif-thermal-field="useUij"]')?.checked,
+    Uij:CIF_U_FIELDS.map(k=>get(`U${k}`))};
 }
 
 function addCifAtomRow(values={}, {invalidate=true}={}){
@@ -2515,6 +3027,7 @@ function addCifAtomRow(values={}, {invalidate=true}={}){
   if(!host) return;
   const row=document.createElement("div");
   row.className="cif-atom-row";
+  row.dataset.cifAtomUid=String(++cifAtomDetailedSerial);
   const indexCell=document.createElement("div");
   indexCell.className="cif-atom-cell cif-atom-index";
   indexCell.setAttribute("aria-label","Atom row index");
@@ -2524,37 +3037,41 @@ function addCifAtomRow(values={}, {invalidate=true}={}){
     ["x","fraction",values.x ?? 0],
     ["y","fraction",values.y ?? 0],
     ["z","fraction",values.z ?? 0],
-    ["occupancy","fraction",values.occupancy ?? 1]
+    ["occupancy","fraction",values.occupancy ?? 1],
+    ["Biso","biso",values.Biso ?? 0]
   ];
   for(const [key,type,value] of specs){
     const cell=document.createElement("div"); cell.className="cif-atom-cell";
     const input=document.createElement("input");
-    input.type=type==="fraction" ? "text" : type;
+    input.type=type==="fraction" ? "text" : type==="biso" ? "number" : type;
+    if(type==="biso"){input.min="0";input.step="any";}
     input.dataset.cifAtomField=key;
     input.value=String(value);
     if(type==="fraction") input.inputMode="text";
     if(key==="element") input.placeholder="e.g. Cu";
-    if(type==="fraction"){
+    if(type==="fraction" || type==="biso"){
       input.addEventListener("input",()=>validateCifAtomNumericInput(input));
       input.addEventListener("change",()=>validateCifAtomNumericInput(input));
     }
-    input.addEventListener("input",saveCifGeneratorAtomsState);
+    input.addEventListener("input",()=>{
+      if(key==="element") refreshCifAtomDetailedLabels();
+      saveCifGeneratorAtomsState();
+    });
     input.addEventListener("change",saveCifGeneratorAtomsState);
     cell.appendChild(input); row.appendChild(cell);
-    if(type==="fraction") validateCifAtomNumericInput(input);
+    if(type==="fraction" || type==="biso") validateCifAtomNumericInput(input);
   }
-  const action=document.createElement("div"); action.className="cif-atom-cell";
-  const remove=document.createElement("button"); remove.type="button"; remove.textContent="Remove";
-  remove.addEventListener("click",()=>{
-    row.remove();
-    if(!host.querySelector(".cif-atom-row")) addCifAtomRow({}, {invalidate:false});
-    refreshCifAtomRowIndices();
-    saveCifGeneratorAtomsState();
-    invalidateGeneratedCif();
+  // Click cells to select. Shift selects a range; Ctrl/Cmd toggles rows.
+  // The click does not prevent text inputs from receiving focus.
+  row.querySelectorAll(".cif-atom-cell").forEach(cell=>{
+    cell.addEventListener("click",event=>setCifAtomRowSelection(row,event));
   });
-  action.appendChild(remove); row.appendChild(action);
   host.appendChild(row);
+  initializeCifAtomDragRow(row);
+  addCifAtomDetailedRow(row,values);
   refreshCifAtomRowIndices();
+  refreshCifAtomDetailedLabels();
+  refreshCifAtomSelectionUI();
   saveCifGeneratorAtomsState();
   if(invalidate) invalidateGeneratedCif();
 }
@@ -2567,7 +3084,8 @@ function cifAtomRowValues(row){
     x:get("x"),
     y:get("y"),
     z:get("z"),
-    occupancy:get("occupancy")
+    occupancy:get("occupancy"),
+    ...cifAtomThermalValues(row)
   };
 }
 
@@ -2585,9 +3103,12 @@ function replaceCifAtomRows(atoms){
   const host=$("cifAtomRows");
   if(!host) return;
   host.replaceChildren();
+  cifAtomSelectionAnchor=null;
+  $("cifAtomDetailedRows")?.replaceChildren();
   for(const atom of atoms) addCifAtomRow(atom,{invalidate:false});
   if(!atoms.length) addCifAtomRow({}, {invalidate:false});
   refreshCifAtomRowIndices();
+  refreshCifAtomSelectionUI();
   saveCifGeneratorAtomsState();
 }
 
@@ -2618,7 +3139,27 @@ function readCifGeneratorAtoms(){
     const x=parseNumericValue(get("x")), y=parseNumericValue(get("y")), z=parseNumericValue(get("z")), occupancy=parseNumericValue(get("occupancy"));
     if(!xyzValid.every(Boolean)) throw new Error(`Atom ${i+1}: x, y, and z must be finite fractional coordinates.`);
     if(!occValid) throw new Error(`Atom ${i+1}: occupancy must be between 0 and 1.`);
-    atoms.push({element,x,y,z,occupancy});
+    const thermal=cifAtomThermalValues(rows[i]);
+    const Biso=Number(thermal.Biso);
+    if(!String(thermal.Biso).trim() || !Number.isFinite(Biso) || Biso<0)
+      throw new Error(`Atom ${i+1}: Biso must be a non-negative finite value.`);
+    let Uaniso=null;
+    if(thermal.useUij){
+      const u=thermal.Uij.map((s,j)=>{
+        if(!String(s).trim() || !Number.isFinite(Number(s)))
+          throw new Error(`Atom ${i+1}: U${CIF_U_FIELDS[j]} must be a finite number.`);
+        return Number(s);
+      });
+      // A physically meaningful displacement tensor must be positive semidefinite.
+      const [a,b,c,d,e,f]=u;
+      const det=a*b*c+2*d*e*f-a*f*f-b*e*e-c*d*d;
+      const tol=1e-10*Math.max(1,...u.map(v=>Math.abs(v)))**3;
+      if(a < -1e-10 || b < -1e-10 || c < -1e-10 ||
+         a*b-d*d < -tol || a*c-e*e < -tol || b*c-f*f < -tol || det < -tol)
+        throw new Error(`Atom ${i+1}: Uij must be a positive-semidefinite tensor.`);
+      Uaniso=[[a,d,e],[d,b,f],[e,f,c]];
+    }
+    atoms.push({element,x,y,z,occupancy,Biso,Uaniso});
   }
   if(!atoms.length) throw new Error("Add at least one asymmetric-unit atom.");
   return atoms;
@@ -2691,11 +3232,18 @@ function buildGeneratedCif(){
     "_space_group_symop_operation_xyz"
   ];
   sg.operations.forEach((op,i)=>lines.push(`${i+1} '${op}'`));
-  lines.push("","loop_","_atom_site_label","_atom_site_type_symbol","_atom_site_fract_x","_atom_site_fract_y","_atom_site_fract_z","_atom_site_occupancy");
-  const counts=new Map();
+  lines.push("","loop_","_atom_site_label","_atom_site_type_symbol","_atom_site_fract_x","_atom_site_fract_y","_atom_site_fract_z","_atom_site_occupancy","_atom_site_B_iso_or_equiv");
+  const counts=new Map(),aniso=[];
   for(const atom of atoms){
     const n=(counts.get(atom.element)||0)+1; counts.set(atom.element,n);
-    lines.push(`${atom.element}${n} ${atom.element} ${atom.x} ${atom.y} ${atom.z} ${atom.occupancy}`);
+    const label=`${atom.element}${n}`;
+    lines.push(`${label} ${atom.element} ${atom.x} ${atom.y} ${atom.z} ${atom.occupancy} ${atom.Biso}`);
+    if(atom.Uaniso) aniso.push({label,U:atom.Uaniso});
+  }
+  if(aniso.length){
+    lines.push("","loop_","_atom_site_aniso_label","_atom_site_aniso_U_11","_atom_site_aniso_U_22","_atom_site_aniso_U_33","_atom_site_aniso_U_12","_atom_site_aniso_U_13","_atom_site_aniso_U_23");
+    for(const {label,U} of aniso)
+      lines.push(`${label} ${U[0][0]} ${U[1][1]} ${U[2][2]} ${U[0][1]} ${U[0][2]} ${U[1][2]}`);
   }
   lines.push("");
   const text=lines.join("\n");
@@ -2932,9 +3480,28 @@ function renderCifReflectionTable(){
   }
 }
 
+// A reflection table describes the selected nuclear crystal, regardless of
+// whether the user has opened Nuclear or Magnetic or pressed Generate CIF.
+// A freshly generated (but not yet Set) CIF takes precedence so its preview
+// and calculated reflections stay consistent with one another.
+function nuclearReflectionSource(){
+  if(lastGeneratedCifParsed && lastGeneratedCifSpaceGroup){
+    return {structure:lastGeneratedCifParsed,spaceGroup:lastGeneratedCifSpaceGroup,
+      fileName:lastGeneratedCifName};
+  }
+  const structure=getSelectedCifStructure();
+  if(!structure?.lattice || !structure?.atoms?.length) return null;
+  // Use the known nuclear space group for reflection-star multiplicities.
+  // For unfamiliar groups fall back to Friedel-pair grouping instead of
+  // preventing the structure-factor calculation altogether.
+  const spaceGroup=findGeneratorSpaceGroup(structure) || {operations:["x,y,z"]};
+  return {structure,spaceGroup,fileName:getSelectedCifFileName()||"selected_structure.cif"};
+}
+
 function recalculateGeneratedReflections(){
-  if(!lastGeneratedCifParsed || !lastGeneratedCifSpaceGroup){
-    clearCifReflectionTable("Press Generate to calculate reflections.");
+  const source=nuclearReflectionSource();
+  if(!source){
+    clearCifReflectionTable("Select a CIF/mCIF or Generate CIF to calculate nuclear reflections.");
     return;
   }
   try{
@@ -2946,24 +3513,56 @@ function recalculateGeneratedReflections(){
       twoThetaMax=Math.min(180,effectiveS2MaxAtEi(inst,beam.effectiveEnergy,beam.lambdaHalf));
       if(!Number.isFinite(twoThetaMax)) throw new Error("Instrument 2θ maximum is unavailable.");
     }
-    lastGeneratedReflections=buildCifReflectionTable(lastGeneratedCifParsed,lastGeneratedCifSpaceGroup,beam.wavelength,filters,twoThetaMax);
+    lastGeneratedReflections=buildCifReflectionTable(source.structure,source.spaceGroup,beam.wavelength,filters,twoThetaMax);
     renderCifReflectionTable();
+    if($("cifDownloadTable")) $("cifDownloadTable").disabled=!lastGeneratedReflections.length;
   }catch(err){
-    lastGeneratedReflections=[];
     clearCifReflectionTable(err?.message||String(err));
   }
 }
 
+// v59: Nuclear/magnetic editors and all four results share one output workspace.
+// Retain setCifOutputTab for legacy callers and restore logic.
+const GENERATOR_OUTPUT_TABS={
+  structure:['mcifTabStructure','mcifStructurePane'],
+  reflections:['cifOutputTabReflections','generatorReflectionsPane'],
+  'cif-preview':['cifOutputTabPreview','cifPreviewPanel'],
+  'mcif-preview':['mcifTabPreview','mcifPreviewPane']
+};
+function setUnifiedGeneratorOutputTab(name,{persist=false}={}){
+  if(!GENERATOR_OUTPUT_TABS[name]) name='structure';
+  for(const [key,[tabId,paneId]] of Object.entries(GENERATOR_OUTPUT_TABS)){
+    const selected=key===name;
+    $(tabId)?.classList.toggle('active',selected);
+    $(tabId)?.setAttribute('aria-selected',String(selected));
+    $(tabId)?.setAttribute('tabindex',selected?'0':'-1');
+    $(paneId)?.classList.toggle('hidden',!selected);
+  }
+  if(persist && generatorOutputTabRestored) try{ localStorage.setItem(GENERATOR_OUTPUT_TAB_STORAGE_KEY,name); }catch(_e){}
+  if(name==='structure') requestAnimationFrame(renderCifStructureIfVisible);
+}
 function setCifOutputTab(tab){
-  const name=tab==="reflections" ? "reflections" : "preview";
-  const preview=name==="preview";
-  const reflections=name==="reflections";
-  $("cifOutputTabPreview")?.classList.toggle("active",preview);
-  $("cifOutputTabReflections")?.classList.toggle("active",reflections);
-  $("cifOutputTabPreview")?.setAttribute("aria-selected",String(preview));
-  $("cifOutputTabReflections")?.setAttribute("aria-selected",String(reflections));
-  $("cifPreviewPanel")?.classList.toggle("hidden",!preview);
-  $("cifReflectionsPanel")?.classList.toggle("hidden",!reflections);
+  setUnifiedGeneratorOutputTab(tab==='reflections'?'reflections':'cif-preview');
+}
+function setGeneratorMode(name){
+  if(name!=='magnetic') name='nuclear';
+  for(const [mode,tabId,paneId] of [['nuclear','generatorModeNuclear','generatorNuclearPane'],['magnetic','generatorModeMagnetic','generatorMagneticPane']]){
+    const on=mode===name;
+    $(tabId)?.classList.toggle('active',on);
+    $(tabId)?.setAttribute('aria-selected',String(on));
+    $(tabId)?.setAttribute('tabindex',on?'0':'-1');
+    $(paneId)?.classList.toggle('hidden',!on);
+  }
+  try{localStorage.setItem('tas-simulator-generator-mode-v1',name);}catch(_e){}
+}
+function setGeneratorReflectionMode(name){
+  if(name!=='magnetic') name='nuclear';
+  for(const [mode,tabId,paneId] of [['nuclear','generatorReflectionsNuclear','generatorNuclearReflectionsPane'],['magnetic','generatorReflectionsMagnetic','generatorMagneticReflectionsPane']]){
+    const on=mode===name;
+    $(tabId)?.classList.toggle('active',on);
+    $(tabId)?.setAttribute('aria-selected',String(on));
+    $(paneId)?.classList.toggle('hidden',!on);
+  }
 }
 
 function generateCifForReview(){
@@ -2999,7 +3598,8 @@ function downloadCifReflectionTable(){
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url; a.download=`${cleanCifBaseName(lastGeneratedCifName)}_reflection_table.csv`;
+  const source=nuclearReflectionSource();
+  a.href=url; a.download=`${cleanCifBaseName(source?.fileName||"selected_structure.cif")}_reflection_table.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),0);
 }
@@ -3032,7 +3632,7 @@ function loadParsedCifIntoGenerator(parsed,fileName="selected_structure.cif",{me
   if(message){ cifStructureSourcePreference="loaded"; saveStructureViewerState(); }
   $("cifSpaceGroup").value=String(sg.number);
   for(const [key,id] of Object.entries(CIF_LATTICE_FIELDS)) if($(id)) $(id).value=String(lattice[key]);
-  replaceCifAtomRows(parsed.asymmetricSites.map(a=>({element:a.element,x:a.x,y:a.y,z:a.z,occupancy:a.occupancy})));
+  replaceCifAtomRows(parsed.asymmetricSites.map(a=>({element:a.element,x:a.x,y:a.y,z:a.z,occupancy:a.occupancy,Biso:a.Biso ?? 0,Uaniso:a.Uaniso ?? null})));
   if($("cifGeneratedName")) $("cifGeneratedName").value=cleanCifBaseName(fileName);
   updateCifSpaceGroupInfo();
   if(parsed.magnetic) for(const [key,id] of Object.entries(CIF_LATTICE_FIELDS)) if($(id)) $(id).value=String(lattice[key]);
@@ -3130,6 +3730,9 @@ function replaceMcifMoments(source,rows){
 function generateMcifForReview(){
   const source=getSelectedCifText();
   if(!source) throw new Error("Select a CIF/mCIF before generating.");
+  if(sourceIsMagneticCif() && importedMagneticEditMode) throw new Error(
+    "This imported mCIF has been modified. Export with the original magnetic symmetry is disabled because it may no longer be valid."
+  );
   const structure=getSelectedCifStructure();
   if(!structure) throw new Error("Selected structure is unavailable.");
   if(!structure.magnetic){
@@ -3151,9 +3754,9 @@ function generateMcifForReview(){
       axis:structureMomentRotationAxisVector(basis),chirality:structureMomentChirality,
       fallbackOperations:findGeneratorSpaceGroup(structure)?.operations||[],
       individualSettings});
-    const base=cleanMcifBaseName($('structureMcifGeneratedName')?.value);
+    const base=cleanMcifBaseName($('cifGeneratedName')?.value);
     lastGeneratedMcifText=result.text;lastGeneratedMcifName=`${base}.mcif`;
-    for(const id of ['structureMcifDownload','structureMcifSet'])if($(id))$(id).disabled=false;
+    for(const id of ['structureMcifDownload','structureMcifSet']) if($(id)) $(id).disabled=false;
     mcifPreview(result.text);
     mcifMessage(`Generated ${lastGeneratedMcifName}: ${result.atomCount} atoms in ${result.supercell.join('×')} supercell, ${result.operationCount} magnetic operations, ${result.representatives} independent sites. k ≈ (${result.approximatedQ.join(', ')}).`);
     return;
@@ -3180,23 +3783,22 @@ function generateMcifForReview(){
     const expected=structure.asymmetricSites.find(x=>x.label===site.label);
     if(!expected) throw new Error(`Magnetic site ${site.label} was lost.`);
   }
-  const base=cleanMcifBaseName($("structureMcifGeneratedName")?.value);
+  const base=cleanMcifBaseName($("cifGeneratedName")?.value);
   lastGeneratedMcifText=text; lastGeneratedMcifName=`${base}.mcif`;
   for(const id of ["structureMcifDownload","structureMcifSet"]) if($(id)) $(id).disabled=false;
   mcifPreview(text);
   mcifMessage(`Generated ${lastGeneratedMcifName}; magnetic symmetry checked (${check.atoms.filter(a=>Array.isArray(a.magneticMoment)).length} magnetic atoms).`);
 }
 function initMcifGeneratorActions(){
+  // Generate is always available; Download/Set require a valid generated mCIF.
+  if($("structureMcifGenerate")) $("structureMcifGenerate").disabled=false;
+  invalidateGeneratedMcif();
   $("structureMcifShowCurrent")?.addEventListener("click",()=>{
     if(!getSelectedCifText()){mcifMessage("No current CIF/mCIF selected.",true);return;}
     mcifPreview(getSelectedCifText());mcifMessage(`Showing ${getSelectedCifFileName()}.`);
   });
-  $("structureMcifGeneratedName")?.addEventListener("change",()=>{
-    $("structureMcifGeneratedName").value=cleanMcifBaseName($("structureMcifGeneratedName").value);
-    invalidateGeneratedMcif();
-  });
   $("structureMcifGenerate")?.addEventListener("click",()=>{
-    const el=$("structureMcifGeneratedName"),previous=el?.value;
+    const el=$("cifGeneratedName"),previous=el?.value;
     if(el) el.value=nextMcifGeneratedBaseName(previous);
     try{ generateMcifForReview(); }
     catch(err){if(el)el.value=previous;invalidateGeneratedMcif();mcifMessage(err.message||String(err),true);}
@@ -3246,8 +3848,9 @@ async function initializeCifGenerator(){
     else restoreCifGeneratorAtomsState();
 
     setCifGeneratedReady(false);
-    clearCifReflectionTable("Press Generate to calculate reflections.");
-    setCifOutputTab("preview");
+    recalculateGeneratedReflections();
+    setUnifiedGeneratorOutputTab(readSavedGeneratorOutputTab());
+    generatorOutputTabRestored=true;
     restoreStructureViewerState();
 
     select.addEventListener("change",updateCifSpaceGroupInfo);
@@ -3256,6 +3859,7 @@ async function initializeCifGenerator(){
     $("cifA")?.addEventListener("input",applyCifLatticeConstraints);
     $("cifGeneratedName")?.addEventListener("change",()=>{
       $("cifGeneratedName").value=cleanCifBaseName($("cifGeneratedName").value);
+      invalidateGeneratedMcif();
     });
 
     // Any structure-input edit invalidates the reviewed/generated snapshot.
@@ -3300,18 +3904,27 @@ async function initializeCifGenerator(){
       invalidateGeneratedCif("Current sample space group and lattice copied — press Generate to review the updated CIF.");
     });
     $("cifShowCurrent")?.addEventListener("click",()=>{
-      if(!getSelectedCifText()){
-        setCifGeneratorMessage("No current CIF is selected.",true);
+      const text=getSelectedCifText();
+      if(!text){
+        setCifGeneratorMessage("No current CIF/mCIF is selected.",true);
         return;
       }
+      const fileName=getSelectedCifFileName()||"selected CIF/mCIF";
+      const isMcif=/\.mcif$/i.test(fileName);
       cifStructureSourcePreference="selected";
       saveStructureViewerState();
-      if($("cifPreview")) $("cifPreview").textContent=getSelectedCifText();
-      setCifOutputTab("preview");
+      if(isMcif){
+        if($("mcifPreviewText")) $("mcifPreviewText").textContent=text;
+        setUnifiedGeneratorOutputTab("mcif-preview");
+      }else{
+        if($("cifPreview")) $("cifPreview").textContent=text;
+        setCifOutputTab("preview");
+      }
       renderCifStructureIfVisible();
-      setCifGeneratorMessage(`Showing current selected CIF: ${getSelectedCifFileName()||"selected CIF"}.`);
+      setCifGeneratorMessage(`Showing current selected ${isMcif?'mCIF':'CIF'}: ${fileName}.`);
     });
-    $("cifCopyAtom")?.addEventListener("click",copyLastCifAtomRow);
+    $("cifCopyAtom")?.addEventListener("click",copySelectedCifAtomRows);
+    $("cifRemoveAtom")?.addEventListener("click",removeSelectedCifAtomRows);
     $("cifAddAtom")?.addEventListener("click",()=>addCifAtomRow());
     $("cifLoadExisting")?.addEventListener("click",()=>$("cifLoadFile")?.click());
     // Clear is shared, too: all three filename fields and attenuation reset.
@@ -3357,10 +3970,14 @@ async function initializeCifGenerator(){
       }catch(err){ setCifGeneratorMessage(err?.message||String(err),true); }
     });
 
-    for(const button of document.querySelectorAll("[data-cif-output-tab]")){
-      button.addEventListener("click",()=>setCifOutputTab(button.dataset.cifOutputTab));
+    for(const button of document.querySelectorAll("[data-generator-output-tab]")){
+      button.addEventListener("click",()=>setUnifiedGeneratorOutputTab(button.dataset.generatorOutputTab,{persist:true}));
     }
-    $("tabStructure")?.addEventListener("click",()=>requestAnimationFrame(renderCifStructureView));
+    for(const [id,mode] of [['generatorReflectionsNuclear','nuclear'],['generatorReflectionsMagnetic','magnetic']]){
+      $(id)?.addEventListener('click',()=>setGeneratorReflectionMode(mode));
+    }
+    setGeneratorReflectionMode('nuclear');
+    $("tabCifGenerator")?.addEventListener("click",()=>requestAnimationFrame(renderCifStructureIfVisible));
     if($("cifSaveFigure")) $("cifSaveFigure").onclick=()=>saveStructureFigure().catch(err=>{alert(`Save figure failed: ${err?.message||err}`);});
     
     const unitCellSelect=$("cifUnitCellMode");
@@ -3452,21 +4069,7 @@ async function initializeCifGenerator(){
 }
 
   initMcifGeneratorActions();
-  // Structure / mCIF preview tabs: $ and rendering helpers are scoped to createCifUI.
-  for (const [tab, pane, otherTab, otherPane] of [
-    ["mcifTabStructure", "mcifStructurePane", "mcifTabPreview", "mcifPreviewPane"],
-    ["mcifTabPreview", "mcifPreviewPane", "mcifTabStructure", "mcifStructurePane"]
-  ]) {
-    $(tab)?.addEventListener("click", () => {
-      $(tab)?.classList.add("active");
-      $(tab)?.setAttribute("aria-selected", "true");
-      $(otherTab)?.classList.remove("active");
-      $(otherTab)?.setAttribute("aria-selected", "false");
-      $(pane)?.classList.remove("hidden");
-      $(otherPane)?.classList.add("hidden");
-      if (tab === "mcifTabStructure") requestAnimationFrame(renderCifStructureIfVisible);
-    });
-  }
+  // v59: All four output tabs are wired together during initializeCifGenerator.
 
   return {
     updateCifUI,

@@ -121,7 +121,7 @@ function scheduleVisiblePrimaryPlotRecovery(){
 
 function resizeVisiblePlots(){
   if(typeof Plotly === "undefined" || !Plotly.Plots) return;
-  const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel"),$("cifGeneratorPanel"),$("scriptPanel")].find(p=>p && !p.classList.contains("hidden"));
+  const panel = [$("qePanel"),$("resolutionPanel"),$("toolboxPanel"),$("structurePanel"),$("scriptPanel")].find(p=>p && !p.classList.contains("hidden"));
   if(!panel) return;
   panel.querySelectorAll(".js-plotly-plot").forEach(el=>{
     safeResizePlot(el);
@@ -151,7 +151,7 @@ function initializeResponsivePlotResize(){
 }
 
 function setActiveTab(name){
-  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox', isCifGenerator=name==='cif-generator', isStructure=name==='structure', isScript=name==='script';
+  const isQE=name==='qe', isResolution=name==='resolution', isToolbox=name==='toolbox', isGenerator=name==='cif-generator'||name==='structure', isScript=name==='script';
   mountTimeEstimateForScript(isScript);
   const sampleMode=$('sampleMode');
   if(isResolution){
@@ -168,12 +168,11 @@ function setActiveTab(name){
   $('qePanel').classList.toggle('hidden',!isQE);
   $('resolutionPanel').classList.toggle('hidden',!isResolution);
   $('toolboxPanel').classList.toggle('hidden',!isToolbox);
-  $('cifGeneratorPanel').classList.toggle('hidden',!isCifGenerator);
-  $('structurePanel')?.classList.toggle('hidden',!isStructure);
+  $('structurePanel')?.classList.toggle('hidden',!isGenerator);
   $('scriptPanel')?.classList.toggle('hidden',!isScript);
-  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox],['tabCifGenerator',isCifGenerator],['tabStructure',isStructure],['tabScript',isScript]]){
-    $(id).classList.toggle('active',on);
-    $(id).setAttribute('aria-selected',String(on));
+  for(const [id,on] of [['tabQe',isQE],['tabResolution',isResolution],['tabToolbox',isToolbox],['tabCifGenerator',isGenerator],['tabScript',isScript]]){
+    $(id)?.classList.toggle('active',on);
+    $(id)?.setAttribute('aria-selected',String(on));
   }
   if(isResolution){
     // Scan remains Calculate-driven.  Single is recovered after the visible
@@ -184,7 +183,7 @@ function setActiveTab(name){
     // tab was active; rebuild it only when the user actually returns here.
     scheduleRecalc(0);
   }
-  try{ localStorage.setItem(ACTIVE_TAB_STORAGE_KEY,name); }catch(_e){}
+  try{ localStorage.setItem(ACTIVE_TAB_STORAGE_KEY,isGenerator?'cif-generator':name); }catch(_e){}
   scheduleVisiblePrimaryPlotRecovery();
 }
 function updateCalcMode(){
@@ -339,7 +338,12 @@ function globalUIPersistentControls(){
 }
 
 function currentCifOutputTab(){
-  return $('cifOutputTabReflections')?.classList.contains('active') ? 'reflections' : 'preview';
+  // Report the actual four-way selection to global UI state, but leave
+  // persistence/restoration ownership with cif-ui.js.
+  for(const [id,value] of [['mcifTabStructure','structure'],['cifOutputTabReflections','reflections'],['cifOutputTabPreview','cif-preview'],['mcifTabPreview','mcif-preview']]){
+    if($(id)?.classList.contains('active')) return value;
+  }
+  return 'structure';
 }
 
 function saveGlobalUIState(){
@@ -383,7 +387,10 @@ function restoreGlobalUIState(){
     if(['angles','time'].includes(tabs.geometryCard)) setGeometryCardTab(tabs.geometryCard);
     if(['single','scan'].includes(tabs.geometryMode)) setGeometryCalculationMode(tabs.geometryMode);
     if(['table','plot'].includes(tabs.geometryOutput)) setGeometryScanOutputTab(tabs.geometryOutput);
-    if(['preview','reflections'].includes(tabs.cifOutput)) setCifOutputTab(tabs.cifOutput);
+    // CIF/mCIF generator output tabs have their own four-tab persistence in
+    // cif-ui.js (tas-simulator-generator-output-tab-v1). Do not restore the
+    // legacy two-tab `cifOutput` value here: it runs AFTER that restore and
+    // used to force the interface back to CIF Preview on every page reload.
     if(['qe','resolution','toolbox','cif-generator','structure','script'].includes(tabs.main)) setActiveTab(tabs.main);
     updateCalcMode(); updateModeVisibility(); updateOrientationReferenceUI();
     for(const slot of darkAssetSlots()) updateDarkReferenceUI(slot);

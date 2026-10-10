@@ -1,665 +1,610 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TAS Q-E Range & Resolution Simulator</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>TAS Q-E Range &amp; Resolution Simulator</title>
+<link href="data:," rel="icon"/>
+<link href="styles.css" rel="stylesheet"/>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
-<header><h1>TAS Q-E Range & Resolution Simulator</h1><div id="status" class="status"></div></header>
+<header><h1>TAS Q-E Range &amp; Resolution Simulator</h1><div class="status" id="status"></div></header>
 <div class="shell">
 <aside class="sidebar">
 <section>
-  <h2>Instrument configuration</h2>
-  <div class="instrument-primary-row">
-    <label>Instrument<select id="instrument"><option>Loading...</option></select></label>
-    <label>Fixed<select id="energyMode"><option value="Ei fixed">Ei</option><option value="Ef fixed" selected>Ef</option></select></label>
-    <label id="energyLabel">Ef (meV)<input id="energy" type="number" value="14.7" step="0.1"></label>
-  </div>
-  <div class="grid3" id="tasConventionRow">
-    <label id="geometryRow">Geometry<select id="geometry"><option>W</option><option>anti-W</option></select></label>
-    <label id="senseRow">Sense<select id="sense"><option>+++</option><option>+-+</option><option selected>-+-</option><option>---</option></select></label>
-  </div>
-  <div class="grid2">
-    <label class="checkbox-label"><input id="lambdaHalf" type="checkbox"><span>λ/2 (only elastic)</span></label>
-    <span></span>
-  </div>
-  <div class="grid3">
-    <label id="s1minWrap">S1 min (deg)<input id="S1min" type="number" value="-180" step="0.1"></label>
-    <label id="s1maxWrap">S1 max (deg)<input id="S1max" type="number" value="180" step="0.1"></label>
-    <label id="s2Label">S2 min (deg)<input id="S2min" type="number" value="8" step="0.1"></label>
-  </div>
-  <div class="grid3" id="s2MaxControlRow">
-    <label id="s2MaxBaseLabel">JSON S2 max (deg)<input id="S2maxBase" type="number" step="0.1" readonly></label>
-    <label id="s2MaxControlLabel">ΔS2 max (deg)<input id="S2maxUser" type="number" value="0" step="0.1"></label>
-    <label id="s2MaxEffectiveLabel">Effective S2 max (deg)<input id="S2maxEffective" type="number" step="0.1"></label>
-  </div>
+<h2>Instrument configuration</h2>
+<div class="instrument-primary-row">
+<label>Instrument<select id="instrument"><option>Loading...</option></select></label>
+<label>Fixed<select id="energyMode"><option value="Ei fixed">Ei</option><option selected="" value="Ef fixed">Ef</option></select></label>
+<label id="energyLabel">Ef (meV)<input id="energy" step="0.1" type="number" value="14.7"/></label>
+</div>
+<div class="grid3" id="tasConventionRow">
+<label id="geometryRow">Geometry<select id="geometry"><option>W</option><option>anti-W</option></select></label>
+<label id="senseRow">Sense<select id="sense"><option>+++</option><option>+-+</option><option selected="">-+-</option><option>---</option></select></label>
+</div>
+<div class="grid2">
+<label class="checkbox-label"><input id="lambdaHalf" type="checkbox"/><span>λ/2 (only elastic)</span></label>
+<span></span>
+</div>
+<div class="grid3">
+<label id="s1minWrap">S1 min (deg)<input id="S1min" step="0.1" type="number" value="-180"/></label>
+<label id="s1maxWrap">S1 max (deg)<input id="S1max" step="0.1" type="number" value="180"/></label>
+<label id="s2Label">S2 min (deg)<input id="S2min" step="0.1" type="number" value="8"/></label>
+</div>
+<div class="grid3" id="s2MaxControlRow">
+<label id="s2MaxBaseLabel">JSON S2 max (deg)<input id="S2maxBase" readonly="" step="0.1" type="number"/></label>
+<label id="s2MaxControlLabel">ΔS2 max (deg)<input id="S2maxUser" step="0.1" type="number" value="0"/></label>
+<label id="s2MaxEffectiveLabel">Effective S2 max (deg)<input id="S2maxEffective" step="0.1" type="number"/></label>
+</div>
 </section>
 <section>
-  <h2>Sample</h2>
-  <div class="sample-spacegroup-row">
-    <label>Type<select id="sampleMode"><option value="single" selected>Single crystal</option><option value="powder">Powder</option></select></label>
-    <label>Space group #
-      <input id="sampleSpaceGroupNumber" type="number" min="1" max="230" step="1" value="1" inputmode="numeric">
-    </label>
-    <label>Space group
+<h2>Sample</h2>
+<div class="sample-spacegroup-row">
+<label>Type<select id="sampleMode"><option selected="" value="single">Single crystal</option><option value="powder">Powder</option></select></label>
+<label>Space group #
+      <input id="sampleSpaceGroupNumber" inputmode="numeric" max="230" min="1" step="1" type="number" value="1"/>
+</label>
+<label>Space group
       <select id="sampleSpaceGroup"><option value="">Loading space groups...</option></select>
-    </label>
-  </div>
-  <div id="cifSelectRow" class="cif-select-row">
-    <button id="cifSelectButton" type="button">Select CIF/mCIF</button>
-    <input id="cifFileName" class="cif-file-name" type="text" value="No file selected" readonly aria-label="Selected CIF file">
-    <button id="cifClearButton" type="button" disabled>Clear</button>
-    <input id="cifFileInput" type="file" accept=".cif,.mcif,text/plain" hidden>
-  </div>
-  <h3>Lattice parameters</h3>
-  <div class="grid3">
-    <label>a (Å)<input id="a" type="number" value="5" step="0.01"></label><label>b (Å)<input id="b" type="number" value="5" step="0.01"></label><label>c (Å)<input id="c" type="number" value="5" step="0.01"></label>
-    <label>α (deg)<input id="alpha" type="number" value="90" step="1"></label><label>β (deg)<input id="beta" type="number" value="90" step="1"></label><label>γ (deg)<input id="gamma" type="number" value="90" step="1"></label>
-  </div>
-  <div id="singleCrystalInputs">
-    <h3>Scattering plane</h3>
-    <div class="uv-entry-grid">
-      <div class="vector uv-vector-u"><span>U</span><input id="Uh" type="number" value="1"><input id="Uk" type="number" value="0"><input id="Ul" type="number" value="0"></div>
-      <div class="vector uv-vector-v"><span>V</span><input id="Vh" type="number" value="0"><input id="Vk" type="number" value="1"><input id="Vl" type="number" value="0"></div>
-      <button id="flipUV" class="uv-flip-button" type="button" title="Swap U and V" aria-label="Swap U and V">↕</button>
-    </div>
-    <div class="vector auto-row"><span>W</span><span id="Wauto" class="auto-vector">auto: (0, 0, 1)</span></div>
-  </div>
-  <h3>Propagation vectors</h3>
-  <label class="checkbox-label"><input id="showPropagation" type="checkbox" checked><span>show</span></label>
-  <input id="propagationCount" type="hidden" value="1">
-  <div id="propagationVectors" class="propagation-vectors">
-    <div class="propagation-row" data-q-index="1"><label class="checkbox-label propagation-enable"><input id="q_enable1" type="checkbox" checked><span>k1</span></label><label>k1_h<input id="q1_h" type="text" inputmode="text" value="0"></label><label>k1_k<input id="q1_k" type="text" inputmode="text" value="0"></label><label>k1_l<input id="q1_l" type="text" inputmode="text" value="0"></label><button type="button" class="remove-propagation-vector" data-q-index="1">Remove</button></div>
-  </div>
-  <button id="addPropagationVector" class="dynamic-add-wide" type="button">+ Add propagation vector</button>
-  <div id="referenceSection">
-    <h3>Sample orientation</h3>
-    <label>Orientation reference<select id="orientationReference"><option value="perpU" selected>k<sub>i</sub> ⟂ U</option><option value="perpV">k<sub>i</sub> ⟂ V</option><option value="parallelU">k<sub>i</sub> ∥ U</option><option value="parallelV">k<sub>i</sub> ∥ V</option><option value="bragg">Bragg peak position</option></select></label>
-    <div id="braggReferenceInputs" class="grid4 hidden"><label>h<input id="refh" type="number" value="1" step="0.1"></label><label>k<input id="refk" type="number" value="0" step="0.1"></label><label>l<input id="refl" type="number" value="0" step="0.1"></label><label>S1 (deg)<input id="refs1" type="number" value="0" step="0.1"></label></div>
-    <div id="braggPlaneWarning" class="orientation-plane-warning hidden" role="status" aria-live="polite"></div>
-  </div>
-  <h3>Background scattering</h3>
-  <input id="backgroundCount" type="hidden" value="1">
-  <div id="backgroundRows" class="background-rows">
-    <div class="background-row" data-background-index="1"><label><span class="background-label"><i class="bg-swatch bg1"></i>BG1</span><select id="backgroundSelect1"><option value="">None</option></select></label><button type="button" class="remove-background" data-background-index="1">Remove</button></div>
-  </div>
-  <button id="addBackground" class="dynamic-add-wide" type="button">+ Add background</button>
+</label>
+</div>
+<div class="cif-select-row" id="cifSelectRow">
+<button id="cifSelectButton" type="button">Select CIF/mCIF</button>
+<input aria-label="Selected CIF file" class="cif-file-name" id="cifFileName" readonly="" type="text" value="No file selected"/>
+<button disabled="" id="cifClearButton" type="button">Clear</button>
+<input accept=".cif,.mcif,text/plain" hidden="" id="cifFileInput" type="file"/>
+</div>
+<h3>Lattice parameters</h3>
+<div class="grid3">
+<label>a (Å)<input id="a" step="0.01" type="number" value="5"/></label><label>b (Å)<input id="b" step="0.01" type="number" value="5"/></label><label>c (Å)<input id="c" step="0.01" type="number" value="5"/></label>
+<label>α (deg)<input id="alpha" step="1" type="number" value="90"/></label><label>β (deg)<input id="beta" step="1" type="number" value="90"/></label><label>γ (deg)<input id="gamma" step="1" type="number" value="90"/></label>
+</div>
+<div id="singleCrystalInputs">
+<h3>Scattering plane</h3>
+<div class="uv-entry-grid">
+<div class="vector uv-vector-u"><span>U</span><input id="Uh" type="number" value="1"/><input id="Uk" type="number" value="0"/><input id="Ul" type="number" value="0"/></div>
+<div class="vector uv-vector-v"><span>V</span><input id="Vh" type="number" value="0"/><input id="Vk" type="number" value="1"/><input id="Vl" type="number" value="0"/></div>
+<button aria-label="Swap U and V" class="uv-flip-button" id="flipUV" title="Swap U and V" type="button">↕</button>
+</div>
+<div class="vector auto-row"><span>W</span><span class="auto-vector" id="Wauto">auto: (0, 0, 1)</span></div>
+</div>
+<h3>Propagation vectors</h3>
+<label class="checkbox-label"><input checked="" id="showPropagation" type="checkbox"/><span>show</span></label>
+<input id="propagationCount" type="hidden" value="1"/>
+<div class="propagation-vectors" id="propagationVectors">
+<div class="propagation-row" data-q-index="1"><label class="checkbox-label propagation-enable"><input checked="" id="q_enable1" type="checkbox"/><span>k1</span></label><label>k1_h<input id="q1_h" inputmode="text" type="text" value="0"/></label><label>k1_k<input id="q1_k" inputmode="text" type="text" value="0"/></label><label>k1_l<input id="q1_l" inputmode="text" type="text" value="0"/></label><button class="remove-propagation-vector" data-q-index="1" type="button">Remove</button></div>
+</div>
+<button class="dynamic-add-wide" id="addPropagationVector" type="button">+ Add propagation vector</button>
+<div id="referenceSection">
+<h3>Sample orientation</h3>
+<label>Orientation reference<select id="orientationReference"><option selected="" value="perpU">k<sub>i</sub> ⟂ U</option><option value="perpV">k<sub>i</sub> ⟂ V</option><option value="parallelU">k<sub>i</sub> ∥ U</option><option value="parallelV">k<sub>i</sub> ∥ V</option><option value="bragg">Bragg peak position</option></select></label>
+<div class="grid4 hidden" id="braggReferenceInputs"><label>h<input id="refh" step="0.1" type="number" value="1"/></label><label>k<input id="refk" step="0.1" type="number" value="0"/></label><label>l<input id="refl" step="0.1" type="number" value="0"/></label><label>S1 (deg)<input id="refs1" step="0.1" type="number" value="0"/></label></div>
+<div aria-live="polite" class="orientation-plane-warning hidden" id="braggPlaneWarning" role="status"></div>
+</div>
+<h3>Background scattering</h3>
+<input id="backgroundCount" type="hidden" value="1"/>
+<div class="background-rows" id="backgroundRows">
+<div class="background-row" data-background-index="1"><label><span class="background-label"><i class="bg-swatch bg1"></i>BG1</span><select id="backgroundSelect1"><option value="">None</option></select></label><button class="remove-background" data-background-index="1" type="button">Remove</button></div>
+</div>
+<button class="dynamic-add-wide" id="addBackground" type="button">+ Add background</button>
 </section>
 <section id="darkSection"><h2>Dark angle</h2>
-  <label class="checkbox-label"><input id="addDark" type="checkbox"><span>show</span></label>
-  <input id="darkAssetCount" type="hidden" value="1">
-  <div id="darkAssets">
-    <div class="dark-asset" data-dark-slot="1">
-      <div class="dark-asset-head"><label class="checkbox-label"><input id="darkEnable1" type="checkbox" checked><span>Dark angle 1</span></label><label>Sample environment<select id="seSelect"><option value="">Standard</option></select></label><button type="button" class="remove-dark-asset" data-dark-slot="1">Remove</button></div>
-      <div class="grid2"><label>Reference<select id="darkRef"><option>Reference Q</option><option>Direct beam</option><option>Fixed</option></select></label><label>Rotation (deg)<input id="darkRotation" type="number" value="0" step="1"></label></div>
-      <div id="darkRefQRow1" class="grid3"><label>h<input id="darkRefH1" type="number" value="1" step="0.1"></label><label>k<input id="darkRefK1" type="number" value="0" step="0.1"></label><label>l<input id="darkRefL1" type="number" value="0" step="0.1"></label></div>
-      <input id="darkRangeCount1" type="hidden" value="1">
-      <div class="dark-table" data-dark-range-table="1"><div>No.</div><div>From</div><div>To</div><div>Offset</div><div></div>
-        <span class="dark-range-number" data-dark-range="0">1</span><input id="darkFrom0" data-dark-range="0" type="number" value="0"><input id="darkTo0" data-dark-range="0" type="number" value="0"><input id="darkOffset0" data-dark-range="0" type="number" value="0"><button type="button" class="remove-dark-range" data-dark-slot="1" data-dark-range="0">Remove</button>
-      </div>
-      <button type="button" class="add-dark-range dynamic-add-wide" data-dark-slot="1">+ Add range</button>
-    </div>
-  </div>
-  <button id="addDarkAsset" class="dynamic-add-wide" type="button">+ Add dark angle</button>
+<label class="checkbox-label"><input id="addDark" type="checkbox"/><span>show</span></label>
+<input id="darkAssetCount" type="hidden" value="1"/>
+<div id="darkAssets">
+<div class="dark-asset" data-dark-slot="1">
+<div class="dark-asset-head"><label class="checkbox-label"><input checked="" id="darkEnable1" type="checkbox"/><span>Dark angle 1</span></label><label>Sample environment<select id="seSelect"><option value="">Standard</option></select></label><button class="remove-dark-asset" data-dark-slot="1" type="button">Remove</button></div>
+<div class="grid2"><label>Reference<select id="darkRef"><option>Reference Q</option><option>Direct beam</option><option>Fixed</option></select></label><label>Rotation (deg)<input id="darkRotation" step="1" type="number" value="0"/></label></div>
+<div class="grid3" id="darkRefQRow1"><label>h<input id="darkRefH1" step="0.1" type="number" value="1"/></label><label>k<input id="darkRefK1" step="0.1" type="number" value="0"/></label><label>l<input id="darkRefL1" step="0.1" type="number" value="0"/></label></div>
+<input id="darkRangeCount1" type="hidden" value="1"/>
+<div class="dark-table" data-dark-range-table="1"><div>No.</div><div>From</div><div>To</div><div>Offset</div><div></div>
+<span class="dark-range-number" data-dark-range="0">1</span><input data-dark-range="0" id="darkFrom0" type="number" value="0"/><input data-dark-range="0" id="darkTo0" type="number" value="0"/><input data-dark-range="0" id="darkOffset0" type="number" value="0"/><button class="remove-dark-range" data-dark-range="0" data-dark-slot="1" type="button">Remove</button>
+</div>
+<button class="add-dark-range dynamic-add-wide" data-dark-slot="1" type="button">+ Add range</button>
+</div>
+</div>
+<button class="dynamic-add-wide" id="addDarkAsset" type="button">+ Add dark angle</button>
 </section>
 </aside>
 <main>
-  <div id="errorBox" class="error hidden"></div>
-
-  <nav class="main-tabs" role="tablist" aria-label="Simulator view">
-    <button id="tabQe" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="qePanel" data-tab="qe">Q-E Range</button>
-    <button id="tabResolution" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="resolutionPanel" data-tab="resolution">Resolution</button>
-    <button id="tabToolbox" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="toolboxPanel" data-tab="toolbox">Toolbox</button>
-    <button id="tabCifGenerator" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="cifGeneratorPanel" data-tab="cif-generator">CIF Generator</button>
-    <button id="tabStructure" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="structurePanel" data-tab="structure">mCIF Generator</button>
-    <button id="tabScript" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scriptPanel" data-tab="script">Script</button>
-  </nav>
-
-  <div id="qePanel" class="tab-panel" role="tabpanel" aria-labelledby="tabQe">
-    <div id="singleMain">
-      <div class="chart-grid"><div class="qe-main-plot-column">
-        <div class="geometry-card-tabs qe-map-tabs" role="tablist" aria-label="Q-E map view">
-          <button id="qeMapTabConstant" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="qeConstantMapPane">Constant E map</button>
-          <button id="qeMapTabVector" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="qeVectorMapPane">Q vector–E map</button>
-        </div>
-        <div class="qe-map-toolbar"><label>Q unit<select id="qeMapUnit"><option value="ainv">Å⁻¹</option><option value="rlu">r.l.u.</option></select></label></div>
-        <div id="qeConstantMapPane" class="qe-map-pane" role="tabpanel" aria-labelledby="qeMapTabConstant">
-          <div id="singlePlot" class="qe-plot"></div><div id="powderPlot" class="qe-plot powder hidden"></div>
-          <div class="energy-slider-row"><label>ħω<input id="hwSlider" type="range" min="0" max="0" step="1" value="0"></label><output id="hwValue">0.0 meV</output></div>
-        </div>
-        <div id="qeVectorMapPane" class="qe-map-pane hidden" role="tabpanel" aria-labelledby="qeMapTabVector">
-          <div class="qe-vector-inputs">
-            <div class="qe-vector-point"><strong>HKL 1</strong><label>H<input id="qeVecH0" type="number" value="-1" step="0.1"></label><label>K<input id="qeVecK0" type="number" value="-1" step="0.1"></label><label>L<input id="qeVecL0" type="number" value="0" step="0.1"></label></div>
-            <div class="qe-vector-point"><strong>HKL 2</strong><label>H<input id="qeVecH1" type="number" value="1" step="0.1"></label><label>K<input id="qeVecK1" type="number" value="-2" step="0.1"></label><label>L<input id="qeVecL1" type="number" value="0" step="0.1"></label></div>
-          </div>
-          <div id="qeVectorPlaneWarning" class="orientation-plane-warning hidden" aria-live="polite"></div>
-          <div id="qeVectorPlot" class="qe-plot"></div>
-          <div id="qeVectorMessage" class="time-estimate-message" aria-live="polite"></div>
-        </div>
-      </div><div class="geometry-card">
-        <div class="geometry-card-tabs" role="tablist" aria-label="Angle calculation and time estimate">
-          <button id="geometryTabAngles" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="geometryAnglesPane">Angle calculation & TAS geometry</button>
-          <button id="geometryTabTime" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="geometryTimePane">Time estimate</button>
-        </div>
-        <div id="geometryAnglesPane" class="geometry-card-pane" role="tabpanel" aria-labelledby="geometryTabAngles">
-          <div id="geometrySpurionWarning" class="qe-spurion-warning geometry-spurion-warning" aria-live="polite"></div>
-          <div id="geometryCalcModeTabs" class="geometry-card-tabs geometry-inner-tabs" role="tablist" aria-label="Angle calculation mode">
-            <button id="geometryModeSingle" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="singleGeometryTarget">Single</button>
-            <button id="geometryModeScan" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="scanGeometryTarget">Scan</button>
-          </div>
-          <div class="geometry-target">
-            <div id="singleGeometryTarget">
-              <div class="geometry-target-row"><div class="grid4"><label>h<input id="geomH" type="number" value="1" step="0.1"></label><label>k<input id="geomK" type="number" value="0" step="0.1"></label><label>l<input id="geomL" type="number" value="0" step="0.1"></label><label>ħω (meV)<input id="geomHW" type="number" value="0" step="0.1"></label></div><div class="geometry-target-buttons"><div class="geometry-target-all-buttons"><button id="geomSetU" type="button">Set U</button><button id="geomSetV" type="button">Set V</button><button id="geomPerpU" type="button">ki ⟂ U</button><button id="geomPerpV" type="button">ki ⟂ V</button><button id="geomParallelU" type="button" class="hidden">ki ∥ U</button><button id="geomParallelV" type="button" class="hidden">ki ∥ V</button><button id="geomSetBragg" type="button" class="hidden">Set Bragg peak</button></div></div></div>
-            </div>
-            <div id="scanGeometryTarget" class="geometry-scan-target hidden">
-              <div class="geometry-scan-grid geometry-scan-grid-initial"><label>H initial<input id="geomScanH0" type="number" value="1" step="0.1"></label><label>K initial<input id="geomScanK0" type="number" value="0" step="0.1"></label><label>L initial<input id="geomScanL0" type="number" value="0" step="0.1"></label><label>ħω initial (meV)<input id="geomScanHW0" type="number" value="0" step="0.1"></label><label>Points<input id="geomScanNpts" type="number" min="2" step="1" value="11"></label></div>
-              <div class="geometry-scan-grid geometry-scan-grid-final"><label>H final<input id="geomScanH1" type="number" value="1" step="0.1"></label><label>K final<input id="geomScanK1" type="number" value="0" step="0.1"></label><label>L final<input id="geomScanL1" type="number" value="0" step="0.1"></label><label>ħω final (meV)<input id="geomScanHW1" type="number" value="10" step="0.1"></label><div class="geometry-scan-empty" aria-hidden="true"></div></div>
-            </div>
-            <div id="powderGeometryTarget" class="powder-geometry-target hidden">
-              <label>S2 (deg)<input id="powderGeomS2" type="text" inputmode="text" value="-30"></label>
-              <label>Q (Å⁻¹)<input id="powderGeomQ" type="text" inputmode="text" value="1.0"></label>
-              <label>ħω (meV)<input id="powderGeomHW" type="text" inputmode="text" value="0"></label>
-            </div>
-            <div id="geometryPlaneWarning" class="orientation-plane-warning hidden" aria-live="polite"></div>
-            <div id="geometryAngles" class="geometry-angles">Enter a target Q and ħω to calculate TAS angles.</div>
-          </div>
-          <div id="geometryDefaultPlotMount"><div id="geometryPlot" class="qe-plot geometry"></div></div>
-          <div id="geometryScanOutput" class="geometry-scan-output hidden">
-            <div class="geometry-card-tabs geometry-inner-tabs" role="tablist" aria-label="Scan output">
-              <button id="geometryScanTabTable" class="geometry-card-tab active" type="button" role="tab" aria-selected="true" aria-controls="geometryScanTablePane">Table</button>
-              <button id="geometryScanTabPlot" class="geometry-card-tab" type="button" role="tab" aria-selected="false" aria-controls="geometryScanPlotPane">TAS geometry</button>
-            </div>
-            <div id="geometryScanTablePane" class="geometry-scan-output-pane" role="tabpanel" aria-labelledby="geometryScanTabTable">
-              <div id="geometryScanTableHost" class="geometry-scan-table-panel"></div>
-            </div>
-            <div id="geometryScanPlotPane" class="geometry-scan-output-pane hidden" role="tabpanel" aria-labelledby="geometryScanTabPlot">
-              <div class="geometry-scan-point-row"><label>No.<input id="geomScanPointSlider" type="range" min="1" max="11" step="1" value="1"></label><output id="geomScanPointValue">1 / 11</output></div>
-              <div id="geometryScanPlotMount"></div>
-            </div>
-          </div>
-        </div>
-        <div id="geometryTimePane" class="geometry-card-pane time-estimate-pane hidden" role="tabpanel" aria-labelledby="geometryTabTime">
-          <div id="timeEstimateInfoPanel" class="time-info-panel hidden">
-            <div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count uses MCU; wait remains in seconds. Scan/count MCU values are converted to real time using the MCU setting below. Fractions are accepted in numeric Details.</div>
-            <div class="time-mcu-help"><strong>Calc MCU:</strong> Scan and count durations use the MCU value above together with the configured seconds per MCU. Ranged scan MCU values are used as relative weights and only unfixed scans are rescaled to fit the Scan start–finish time. Loop repetitions and Movement time are included. Fixed-Details commands use MCU = 0; wait remains in seconds. Adjusted MCU values are whole numbers and are truncated downward.</div>
-          </div>
-          <div class="time-estimate-settings" aria-label="Time estimate settings">
-            <label><span>1 MCU =</span><span class="time-setting-entry"><input id="timeMcuSecondsPerUnit" type="number" min="0.000001" step="0.001" value="1" inputmode="decimal"><span>s</span></span></label>
-            <label><span>Movement time</span><span class="time-setting-entry"><input id="timeMovementPercent" type="number" min="0" step="0.1" value="1" inputmode="decimal"><span>%</span></span></label>
-            <button id="timeEstimateInfoToggle" class="info-toggle-button" type="button" aria-expanded="false" aria-controls="timeEstimateInfoPanel" title="Show Time estimate information">ⓘ Info</button>
-          </div>
-          <div class="time-scan-table-wrap">
-            <div class="time-scan-table">
-              <div class="time-scan-header">Index</div>
-              <div class="time-scan-header">Command</div>
-              <div class="time-scan-header">Target</div>
-              <div class="time-scan-header">Details</div>
-              <div class="time-scan-header">MCU</div>
-              <div class="time-scan-header time-fix-header"><span>Fix</span><input id="timeFixAll" type="checkbox" aria-label="Fix selected scans or all scans"></div>
-              <div id="timeScanRows" class="time-scan-rows"></div>
-            </div>
-          </div>
-          <div class="time-scan-actions">
-            <button id="timeCopyScan" type="button">+ Copy scan</button>
-            <button id="timeAddScan" type="button">+ Add scan</button>
-            <button id="timeRemoveScan" type="button" disabled>Remove</button>
-          </div>
-
-
-          <div class="time-estimate-controls">
-            <div class="time-estimate-button-row">
-              <button id="timeEstimateNow" class="time-set-now" type="button">Set now</button>
-              <button id="timeEstimateCalc" type="button">Calc finish</button>
-              <button id="timeEstimateCalcMcu" type="button">Calc MCU</button>
-            </div>
-            <label class="time-datetime-label time-start-row">
-              <span class="time-datetime-title">Scan start</span>
-              <span class="time-datetime-entry">
-                <input id="timeEstimateStartDate" type="date" aria-label="Scan start date">
-                <span class="time-clock-entry"><input id="timeEstimateStartHour" type="text" inputmode="numeric" maxlength="2" placeholder="HH" aria-label="Scan start hour"><span>:</span><input id="timeEstimateStartMinute" type="text" inputmode="numeric" maxlength="2" placeholder="MM" aria-label="Scan start minute"></span>
-              </span>
-            </label>
-            <label class="time-datetime-label time-finish-row">
-              <span class="time-datetime-title">Scan finish</span>
-              <span class="time-datetime-entry">
-                <input id="timeEstimateEndDate" type="date" aria-label="Scan finish date">
-                <span class="time-clock-entry"><input id="timeEstimateEndHour" type="text" inputmode="numeric" maxlength="2" placeholder="HH" aria-label="Scan finish hour"><span>:</span><input id="timeEstimateEndMinute" type="text" inputmode="numeric" maxlength="2" placeholder="MM" aria-label="Scan finish minute"></span>
-              </span>
-            </label>
-          </div>
-          <div id="timeEstimateMessage" class="time-estimate-message" aria-live="polite"></div>
-        </div>
-      </div></div>
-    </div>
-  </div>
-
-  <div id="resolutionPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabResolution">
-    <div class="resolution-workspace">
-      <aside id="resolutionInstrumentDetails" class="resolution-instrument-details">
-        <div class="resolution-detail-title">Instrument details</div>
+<div class="error hidden" id="errorBox"></div>
+<nav aria-label="Simulator view" class="main-tabs" role="tablist">
+<button aria-controls="qePanel" aria-selected="true" class="tab-button active" data-tab="qe" id="tabQe" role="tab" type="button">Q-E Range</button>
+<button aria-controls="resolutionPanel" aria-selected="false" class="tab-button" data-tab="resolution" id="tabResolution" role="tab" type="button">Resolution</button>
+<button aria-controls="toolboxPanel" aria-selected="false" class="tab-button" data-tab="toolbox" id="tabToolbox" role="tab" type="button">Toolbox</button>
+<button aria-controls="structurePanel" aria-selected="false" class="tab-button" data-tab="cif-generator" id="tabCifGenerator" role="tab" type="button">CIF/mCIF Generator</button>
+<button aria-controls="scriptPanel" aria-selected="false" class="tab-button" data-tab="script" id="tabScript" role="tab" type="button">Script</button>
+</nav>
+<div aria-labelledby="tabQe" class="tab-panel" id="qePanel" role="tabpanel">
+<div id="singleMain">
+<div class="chart-grid"><div class="qe-main-plot-column">
+<div aria-label="Q-E map view" class="geometry-card-tabs qe-map-tabs" role="tablist">
+<button aria-controls="qeConstantMapPane" aria-selected="true" class="geometry-card-tab active" id="qeMapTabConstant" role="tab" type="button">Constant E map</button>
+<button aria-controls="qeVectorMapPane" aria-selected="false" class="geometry-card-tab" id="qeMapTabVector" role="tab" type="button">Q vector–E map</button>
+</div>
+<div class="qe-map-toolbar"><label>Q unit<select id="qeMapUnit"><option value="ainv">Å⁻¹</option><option value="rlu">r.l.u.</option></select></label></div>
+<div aria-labelledby="qeMapTabConstant" class="qe-map-pane" id="qeConstantMapPane" role="tabpanel">
+<div class="qe-plot" id="singlePlot"></div><div class="qe-plot powder hidden" id="powderPlot"></div>
+<div class="energy-slider-row"><label>ħω<input id="hwSlider" max="0" min="0" step="1" type="range" value="0"/></label><output id="hwValue">0.0 meV</output></div>
+</div>
+<div aria-labelledby="qeMapTabVector" class="qe-map-pane hidden" id="qeVectorMapPane" role="tabpanel">
+<div class="qe-vector-inputs">
+<div class="qe-vector-point"><strong>HKL 1</strong><label>H<input id="qeVecH0" step="0.1" type="number" value="-1"/></label><label>K<input id="qeVecK0" step="0.1" type="number" value="-1"/></label><label>L<input id="qeVecL0" step="0.1" type="number" value="0"/></label></div>
+<div class="qe-vector-point"><strong>HKL 2</strong><label>H<input id="qeVecH1" step="0.1" type="number" value="1"/></label><label>K<input id="qeVecK1" step="0.1" type="number" value="-2"/></label><label>L<input id="qeVecL1" step="0.1" type="number" value="0"/></label></div>
+</div>
+<div aria-live="polite" class="orientation-plane-warning hidden" id="qeVectorPlaneWarning"></div>
+<div class="qe-plot" id="qeVectorPlot"></div>
+<div aria-live="polite" class="time-estimate-message" id="qeVectorMessage"></div>
+</div>
+</div><div class="geometry-card">
+<div aria-label="Angle calculation and time estimate" class="geometry-card-tabs" role="tablist">
+<button aria-controls="geometryAnglesPane" aria-selected="true" class="geometry-card-tab active" id="geometryTabAngles" role="tab" type="button">Angle calculation &amp; TAS geometry</button>
+<button aria-controls="geometryTimePane" aria-selected="false" class="geometry-card-tab" id="geometryTabTime" role="tab" type="button">Time estimate</button>
+</div>
+<div aria-labelledby="geometryTabAngles" class="geometry-card-pane" id="geometryAnglesPane" role="tabpanel">
+<div aria-live="polite" class="qe-spurion-warning geometry-spurion-warning" id="geometrySpurionWarning"></div>
+<div aria-label="Angle calculation mode" class="geometry-card-tabs geometry-inner-tabs" id="geometryCalcModeTabs" role="tablist">
+<button aria-controls="singleGeometryTarget" aria-selected="true" class="geometry-card-tab active" id="geometryModeSingle" role="tab" type="button">Single</button>
+<button aria-controls="scanGeometryTarget" aria-selected="false" class="geometry-card-tab" id="geometryModeScan" role="tab" type="button">Scan</button>
+</div>
+<div class="geometry-target">
+<div id="singleGeometryTarget">
+<div class="geometry-target-row"><div class="grid4"><label>h<input id="geomH" step="0.1" type="number" value="1"/></label><label>k<input id="geomK" step="0.1" type="number" value="0"/></label><label>l<input id="geomL" step="0.1" type="number" value="0"/></label><label>ħω (meV)<input id="geomHW" step="0.1" type="number" value="0"/></label></div><div class="geometry-target-buttons"><div class="geometry-target-all-buttons"><button id="geomSetU" type="button">Set U</button><button id="geomSetV" type="button">Set V</button><button id="geomPerpU" type="button">ki ⟂ U</button><button id="geomPerpV" type="button">ki ⟂ V</button><button class="hidden" id="geomParallelU" type="button">ki ∥ U</button><button class="hidden" id="geomParallelV" type="button">ki ∥ V</button><button class="hidden" id="geomSetBragg" type="button">Set Bragg peak</button></div></div></div>
+</div>
+<div class="geometry-scan-target hidden" id="scanGeometryTarget">
+<div class="geometry-scan-grid geometry-scan-grid-initial"><label>H initial<input id="geomScanH0" step="0.1" type="number" value="1"/></label><label>K initial<input id="geomScanK0" step="0.1" type="number" value="0"/></label><label>L initial<input id="geomScanL0" step="0.1" type="number" value="0"/></label><label>ħω initial (meV)<input id="geomScanHW0" step="0.1" type="number" value="0"/></label><label>Points<input id="geomScanNpts" min="2" step="1" type="number" value="11"/></label></div>
+<div class="geometry-scan-grid geometry-scan-grid-final"><label>H final<input id="geomScanH1" step="0.1" type="number" value="1"/></label><label>K final<input id="geomScanK1" step="0.1" type="number" value="0"/></label><label>L final<input id="geomScanL1" step="0.1" type="number" value="0"/></label><label>ħω final (meV)<input id="geomScanHW1" step="0.1" type="number" value="10"/></label><div aria-hidden="true" class="geometry-scan-empty"></div></div>
+</div>
+<div class="powder-geometry-target hidden" id="powderGeometryTarget">
+<label>S2 (deg)<input id="powderGeomS2" inputmode="text" type="text" value="-30"/></label>
+<label>Q (Å⁻¹)<input id="powderGeomQ" inputmode="text" type="text" value="1.0"/></label>
+<label>ħω (meV)<input id="powderGeomHW" inputmode="text" type="text" value="0"/></label>
+</div>
+<div aria-live="polite" class="orientation-plane-warning hidden" id="geometryPlaneWarning"></div>
+<div class="geometry-angles" id="geometryAngles">Enter a target Q and ħω to calculate TAS angles.</div>
+</div>
+<div id="geometryDefaultPlotMount"><div class="qe-plot geometry" id="geometryPlot"></div></div>
+<div class="geometry-scan-output hidden" id="geometryScanOutput">
+<div aria-label="Scan output" class="geometry-card-tabs geometry-inner-tabs" role="tablist">
+<button aria-controls="geometryScanTablePane" aria-selected="true" class="geometry-card-tab active" id="geometryScanTabTable" role="tab" type="button">Table</button>
+<button aria-controls="geometryScanPlotPane" aria-selected="false" class="geometry-card-tab" id="geometryScanTabPlot" role="tab" type="button">TAS geometry</button>
+</div>
+<div aria-labelledby="geometryScanTabTable" class="geometry-scan-output-pane" id="geometryScanTablePane" role="tabpanel">
+<div class="geometry-scan-table-panel" id="geometryScanTableHost"></div>
+</div>
+<div aria-labelledby="geometryScanTabPlot" class="geometry-scan-output-pane hidden" id="geometryScanPlotPane" role="tabpanel">
+<div class="geometry-scan-point-row"><label>No.<input id="geomScanPointSlider" max="11" min="1" step="1" type="range" value="1"/></label><output id="geomScanPointValue">1 / 11</output></div>
+<div id="geometryScanPlotMount"></div>
+</div>
+</div>
+</div>
+<div aria-labelledby="geometryTabTime" class="geometry-card-pane time-estimate-pane hidden" id="geometryTimePane" role="tabpanel">
+<div class="time-info-panel hidden" id="timeEstimateInfoPanel">
+<div class="time-range-help">Command selects the action (drive / driverel / scan / scanrel / scantitle / count / wait / loop); Target selects the motor or logical variable for motion commands. Scan/scanrel Details use initial final step. HKLE uses H, K, L and E fields; at least one field must be ranged for a scan. br uses one HKL field with three space-separated values. scantitle accepts free text and enclosing loopN references (for example T=loop1), which export as SPICE loop variables such as T=%i. loop automatically creates its paired endloop. count uses MCU; wait remains in seconds. Scan/count MCU values are converted to real time using the MCU setting below. Fractions are accepted in numeric Details.</div>
+<div class="time-mcu-help"><strong>Calc MCU:</strong> Scan and count durations use the MCU value above together with the configured seconds per MCU. Ranged scan MCU values are used as relative weights and only unfixed scans are rescaled to fit the Scan start–finish time. Loop repetitions and Movement time are included. Fixed-Details commands use MCU = 0; wait remains in seconds. Adjusted MCU values are whole numbers and are truncated downward.</div>
+</div>
+<div aria-label="Time estimate settings" class="time-estimate-settings">
+<label><span>1 MCU =</span><span class="time-setting-entry"><input id="timeMcuSecondsPerUnit" inputmode="decimal" min="0.000001" step="0.001" type="number" value="1"/><span>s</span></span></label>
+<label><span>Movement time</span><span class="time-setting-entry"><input id="timeMovementPercent" inputmode="decimal" min="0" step="0.1" type="number" value="1"/><span>%</span></span></label>
+<button aria-controls="timeEstimateInfoPanel" aria-expanded="false" class="info-toggle-button" id="timeEstimateInfoToggle" title="Show Time estimate information" type="button">ⓘ Info</button>
+</div>
+<div class="time-scan-table-wrap">
+<div class="time-scan-table">
+<div class="time-scan-header">Index</div>
+<div class="time-scan-header">Command</div>
+<div class="time-scan-header">Target</div>
+<div class="time-scan-header">Details</div>
+<div class="time-scan-header">MCU</div>
+<div class="time-scan-header time-fix-header"><span>Fix</span><input aria-label="Fix selected scans or all scans" id="timeFixAll" type="checkbox"/></div>
+<div class="time-scan-rows" id="timeScanRows"></div>
+</div>
+</div>
+<div class="time-scan-actions">
+<button id="timeCopyScan" type="button">Copy</button>
+<button id="timeAddScan" type="button">Add</button>
+<button disabled="" id="timeRemoveScan" type="button">Remove</button>
+</div>
+<div class="time-estimate-controls">
+<div class="time-estimate-button-row">
+<button class="time-set-now" id="timeEstimateNow" type="button">Set now</button>
+<button id="timeEstimateCalc" type="button">Calc finish</button>
+<button id="timeEstimateCalcMcu" type="button">Calc MCU</button>
+</div>
+<label class="time-datetime-label time-start-row">
+<span class="time-datetime-title">Scan start</span>
+<span class="time-datetime-entry">
+<input aria-label="Scan start date" id="timeEstimateStartDate" type="date"/>
+<span class="time-clock-entry"><input aria-label="Scan start hour" id="timeEstimateStartHour" inputmode="numeric" maxlength="2" placeholder="HH" type="text"/><span>:</span><input aria-label="Scan start minute" id="timeEstimateStartMinute" inputmode="numeric" maxlength="2" placeholder="MM" type="text"/></span>
+</span>
+</label>
+<label class="time-datetime-label time-finish-row">
+<span class="time-datetime-title">Scan finish</span>
+<span class="time-datetime-entry">
+<input aria-label="Scan finish date" id="timeEstimateEndDate" type="date"/>
+<span class="time-clock-entry"><input aria-label="Scan finish hour" id="timeEstimateEndHour" inputmode="numeric" maxlength="2" placeholder="HH" type="text"/><span>:</span><input aria-label="Scan finish minute" id="timeEstimateEndMinute" inputmode="numeric" maxlength="2" placeholder="MM" type="text"/></span>
+</span>
+</label>
+</div>
+<div aria-live="polite" class="time-estimate-message" id="timeEstimateMessage"></div>
+</div>
+</div></div>
+</div>
+</div>
+<div aria-labelledby="tabResolution" class="tab-panel hidden" id="resolutionPanel" role="tabpanel">
+<div class="resolution-workspace">
+<aside class="resolution-instrument-details" id="resolutionInstrumentDetails">
+<div class="resolution-detail-title">Instrument details</div>
 <section class="instrument-fixed-section"><div class="instrument-fixed-heading">Focusing conditions</div>
-  <div class="grid2 compact-checks">
-    <div><b>Monochromator</b><label><input id="monoHF" type="checkbox"> Horizontal</label><label><input id="monoVF" type="checkbox" checked> Vertical</label><label>H blades<input id="monoHB" type="number" value="1" min="1"></label><label>V blades<input id="monoVB" type="number" value="1" min="1"></label></div>
-    <div><b>Analyzer</b><label><input id="anaHF" type="checkbox"> Horizontal</label><label><input id="anaVF" type="checkbox" checked> Vertical</label><label>H blades<input id="anaHB" type="number" value="1" min="1"></label><label>V blades<input id="anaVB" type="number" value="1" min="1"></label></div>
-  </div>
+<div class="grid2 compact-checks">
+<div><b>Monochromator</b><label><input id="monoHF" type="checkbox"/> Horizontal</label><label><input checked="" id="monoVF" type="checkbox"/> Vertical</label><label>H blades<input id="monoHB" min="1" type="number" value="1"/></label><label>V blades<input id="monoVB" min="1" type="number" value="1"/></label></div>
+<div><b>Analyzer</b><label><input id="anaHF" type="checkbox"/> Horizontal</label><label><input checked="" id="anaVF" type="checkbox"/> Vertical</label><label>H blades<input id="anaHB" min="1" type="number" value="1"/></label><label>V blades<input id="anaVB" min="1" type="number" value="1"/></label></div>
+</div>
 </section>
 <section class="instrument-fixed-section"><div class="instrument-fixed-heading">Collimator conditions <small>(min)</small></div><div class="grid2">
-  <label class="checkbox-label"><input id="gm1" type="checkbox"><span>1st supermirror</span></label><label>m-value<input id="div1m" type="number" value="2" step="0.1"></label>
-  <label>1st H<input id="div1h" type="number" value="40"></label><label>1st V<input id="div1v" type="number" value="40"></label><label>2nd H<input id="div2h" type="number" value="40"></label><label>2nd V<input id="div2v" type="number" value="40"></label><label>3rd H<input id="div3h" type="number" value="40"></label><label>3rd V<input id="div3v" type="number" value="40"></label><label>4th H<input id="div4h" type="number" value="80"></label><label>4th V<input id="div4v" type="number" value="80"></label></div></section>
-<details><summary>Crystal & Mosaic <small>(min)</small></summary>
-  <h3>Monochromator</h3><div class="grid2"><label>Crystal<select id="monoCrystal"></select></label><label>d (Å)<input id="dMono" type="number" value="3.355" step="0.001"></label><label>Mosaic H<input id="mosMonoH" type="number" value="30"></label><label>Mosaic V<input id="mosMonoV" type="number" value="30"></label></div>
-  <h3>Sample</h3><div class="grid2"><label>Mosaic H<input id="mosSamH" type="number" value="60"></label><label>Mosaic V<input id="mosSamV" type="number" value="60"></label></div>
-  <h3>Analyzer</h3><div class="grid2"><label>Crystal<select id="anaCrystal"></select></label><label>d (Å)<input id="dAna" type="number" value="3.355" step="0.001"></label><label>Mosaic H<input id="mosAnaH" type="number" value="30"></label><label>Mosaic V<input id="mosAnaV" type="number" value="30"></label></div>
+<label class="checkbox-label"><input id="gm1" type="checkbox"/><span>1st supermirror</span></label><label>m-value<input id="div1m" step="0.1" type="number" value="2"/></label>
+<label>1st H<input id="div1h" type="number" value="40"/></label><label>1st V<input id="div1v" type="number" value="40"/></label><label>2nd H<input id="div2h" type="number" value="40"/></label><label>2nd V<input id="div2v" type="number" value="40"/></label><label>3rd H<input id="div3h" type="number" value="40"/></label><label>3rd V<input id="div3v" type="number" value="40"/></label><label>4th H<input id="div4h" type="number" value="80"/></label><label>4th V<input id="div4v" type="number" value="80"/></label></div></section>
+<details><summary>Crystal &amp; Mosaic <small>(min)</small></summary>
+<h3>Monochromator</h3><div class="grid2"><label>Crystal<select id="monoCrystal"></select></label><label>d (Å)<input id="dMono" step="0.001" type="number" value="3.355"/></label><label>Mosaic H<input id="mosMonoH" type="number" value="30"/></label><label>Mosaic V<input id="mosMonoV" type="number" value="30"/></label></div>
+<h3>Sample</h3><div class="grid2"><label>Mosaic H<input id="mosSamH" type="number" value="60"/></label><label>Mosaic V<input id="mosSamV" type="number" value="60"/></label></div>
+<h3>Analyzer</h3><div class="grid2"><label>Crystal<select id="anaCrystal"></select></label><label>d (Å)<input id="dAna" step="0.001" type="number" value="3.355"/></label><label>Mosaic H<input id="mosAnaH" type="number" value="30"/></label><label>Mosaic V<input id="mosAnaV" type="number" value="30"/></label></div>
 </details>
 <details><summary>Component size <small>(m)</small></summary>
-  <h3>Distance</h3><div class="grid4"><label>L0<input id="L0" type="number" value="1.5" step="0.01"></label><label>L1<input id="L1" type="number" value="1.5" step="0.01"></label><label>L2<input id="L2" type="number" value="1.5" step="0.01"></label><label>L3<input id="L3" type="number" value="1.5" step="0.01"></label></div>
-  <h3>Beam</h3><div class="grid2"><label>Width<input id="beamW" type="number" value="0.02" step="0.001"></label><label>Height<input id="beamH" type="number" value="0.02" step="0.001"></label></div>
-  <h3>Monochromator per piece</h3><div class="grid3"><label>Width<input id="monoW" type="number" value="0.02" step="0.001"></label><label>Height<input id="monoH" type="number" value="0.02" step="0.001"></label><label>Thickness<input id="monoT" type="number" value="0.002" step="0.001"></label></div>
-  <h3>Analyzer per piece</h3><div class="grid3"><label>Width<input id="anaW" type="number" value="0.02" step="0.001"></label><label>Height<input id="anaH" type="number" value="0.02" step="0.001"></label><label>Thickness<input id="anaT" type="number" value="0.002" step="0.001"></label></div>
-  <h3>Detector</h3><div class="grid2"><label>Width<input id="detW" type="number" value="0.02" step="0.001"></label><label>Height<input id="detH" type="number" value="0.02" step="0.001"></label></div>
+<h3>Distance</h3><div class="grid4"><label>L0<input id="L0" step="0.01" type="number" value="1.5"/></label><label>L1<input id="L1" step="0.01" type="number" value="1.5"/></label><label>L2<input id="L2" step="0.01" type="number" value="1.5"/></label><label>L3<input id="L3" step="0.01" type="number" value="1.5"/></label></div>
+<h3>Beam</h3><div class="grid2"><label>Width<input id="beamW" step="0.001" type="number" value="0.02"/></label><label>Height<input id="beamH" step="0.001" type="number" value="0.02"/></label></div>
+<h3>Monochromator per piece</h3><div class="grid3"><label>Width<input id="monoW" step="0.001" type="number" value="0.02"/></label><label>Height<input id="monoH" step="0.001" type="number" value="0.02"/></label><label>Thickness<input id="monoT" step="0.001" type="number" value="0.002"/></label></div>
+<h3>Analyzer per piece</h3><div class="grid3"><label>Width<input id="anaW" step="0.001" type="number" value="0.02"/></label><label>Height<input id="anaH" step="0.001" type="number" value="0.02"/></label><label>Thickness<input id="anaT" step="0.001" type="number" value="0.002"/></label></div>
+<h3>Detector</h3><div class="grid2"><label>Width<input id="detW" step="0.001" type="number" value="0.02"/></label><label>Height<input id="detH" step="0.001" type="number" value="0.02"/></label></div>
 </details>
-      </aside>
-      <div class="resolution-main-column">
-    <section class="calc-card" id="resolutionCalculation">
-      <h2>Calculation point</h2>
-      <div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
-      <div id="singleInputs" class="grid4"><label>H<input id="h" type="number" value="1" step="0.001"></label><label>K<input id="k" type="number" value="0" step="0.001"></label><label>L<input id="l" type="number" value="0" step="0.001"></label><label>ℏω (meV)<input id="hw" type="number" value="0" step="0.001"></label></div>
-      <div id="scanInputs" class="scan hidden"><div class="grid5"><label>H initial<input id="h0" type="number" value="1"></label><label>K initial<input id="k0" type="number" value="0"></label><label>L initial<input id="l0" type="number" value="0"></label><label>ℏω initial<input id="hw0" type="number" value="0"></label><label>Points<input id="npts" type="number" min="2" value="11"></label></div><div class="grid5"><label>H final<input id="h1" type="number" value="1"></label><label>K final<input id="k1" type="number" value="0"></label><label>L final<input id="l1" type="number" value="0"></label><label>ℏω final<input id="hw1" type="number" value="10"></label><button id="calcScanResolution" type="button">Calculate</button></div></div>
-      <div id="resolutionPlaneWarning" class="orientation-plane-warning hidden" aria-live="polite"></div>
-    </section>
-    <section id="result" class="hidden"><h2>Resolution</h2><div id="summary" class="summary"></div><div id="scanNav" class="scan-nav hidden"><button id="prev">◀ Prev</button><input id="scanSlider" type="range" min="1" max="1" value="1"><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
-      </div>
-    </div>
-  </div>
-  <div id="toolboxPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabToolbox">
-    <nav class="toolbox-subtabs" role="tablist" aria-label="Toolbox calculators">
-      <button id="toolboxTabUnit" type="button" class="toolbox-subtab active" role="tab" aria-controls="toolboxUnitPane" aria-selected="true" data-toolbox-target="toolboxUnitPane">Unit Conversion</button>
-      <button id="toolboxTabS2" type="button" class="toolbox-subtab" role="tab" aria-controls="toolboxS2Pane" aria-selected="false" data-toolbox-target="toolboxS2Pane">S2 Conversion</button>
-      <button id="toolboxTabAttenuation" type="button" class="toolbox-subtab" role="tab" aria-controls="toolboxAttenuationPane" aria-selected="false" data-toolbox-target="toolboxAttenuationPane">Neutron Attenuation</button>
-      <button id="toolboxTabFormFactor" type="button" class="toolbox-subtab" role="tab" aria-controls="toolboxFormFactorPane" aria-selected="false" data-toolbox-target="toolboxFormFactorPane">Magnetic Form Factor</button>
-    </nav>
-    <section id="toolboxUnitPane" class="calc-card toolbox-card toolbox-subpanel" role="tabpanel" aria-labelledby="toolboxTabUnit">
-
-      <div class="toolbox-grid">
-        <label>Wavelength (Å)<input id="toolLambda" type="number" value="2.359" step="0.001" min="0"></label>
-        <label>Energy (meV)<input id="toolEnergy" type="number" step="0.001" min="0"></label>
-        <label>Wavevector k (Å⁻¹)<input id="toolK" type="number" step="0.001" min="0"></label>
-        <label>Frequency (THz)<input id="toolTHz" type="number" step="0.001" min="0"></label>
-        <label>Temperature (K)<input id="toolTemp" type="number" step="0.001" min="0"></label>
-        <label>Wavenumber (cm⁻¹)<input id="toolCm" type="number" step="0.001" min="0"></label>
-        <label>Velocity (m/s)<input id="toolVelocity" type="number" step="0.1" min="0"></label>
-      </div>
-      <div class="harmonic-wrap"><div class="harmonic-table">
-        <div></div><div>Wavelength (Å)</div><div>Energy (meV)</div><div>Wavevector k (Å⁻¹)</div><div>Frequency (THz)</div><div>Temperature (K)</div><div>Wavenumber (cm⁻¹)</div><div>Velocity (m/s)</div>
-        <strong>1/3 λ</strong><output id="harmThirdLambda"></output><output id="harmThirdEnergy"></output><output id="harmThirdK"></output><output id="harmThirdTHz"></output><output id="harmThirdTemp"></output><output id="harmThirdCm"></output><output id="harmThirdVelocity"></output>
-        <strong>1/2 λ</strong><output id="harmHalfLambda"></output><output id="harmHalfEnergy"></output><output id="harmHalfK"></output><output id="harmHalfTHz"></output><output id="harmHalfTemp"></output><output id="harmHalfCm"></output><output id="harmHalfVelocity"></output>
-        <strong>2 λ</strong><output id="harmDoubleLambda"></output><output id="harmDoubleEnergy"></output><output id="harmDoubleK"></output><output id="harmDoubleTHz"></output><output id="harmDoubleTemp"></output><output id="harmDoubleCm"></output><output id="harmDoubleVelocity"></output>
-        <strong>3 λ</strong><output id="harmTripleLambda"></output><output id="harmTripleEnergy"></output><output id="harmTripleK"></output><output id="harmTripleTHz"></output><output id="harmTripleTemp"></output><output id="harmTripleCm"></output><output id="harmTripleVelocity"></output>
-      </div></div>
-      
-    </section>
-    <section id="toolboxS2Pane" class="calc-card s2-conversion-card toolbox-subpanel hidden" role="tabpanel" aria-labelledby="toolboxTabS2">
-
-      <div class="s2-conversion-grid">
-        <label>X-ray source
+</aside>
+<div class="resolution-main-column">
+<section class="calc-card" id="resolutionCalculation">
+<h2>Calculation point</h2>
+<div class="toolbar"><label>Approximation<select id="method"><option>Cooper-Nathans</option><option>Popovici</option></select></label><label>Mode<select id="calcMode"><option>single</option><option>scan</option></select></label><label>Unit<select id="unit"><option value="rlu">r.l.u.</option><option value="ainv">Å⁻¹</option></select></label></div>
+<div class="grid4" id="singleInputs"><label>H<input id="h" step="0.001" type="number" value="1"/></label><label>K<input id="k" step="0.001" type="number" value="0"/></label><label>L<input id="l" step="0.001" type="number" value="0"/></label><label>ℏω (meV)<input id="hw" step="0.001" type="number" value="0"/></label></div>
+<div class="scan hidden" id="scanInputs"><div class="grid5"><label>H initial<input id="h0" type="number" value="1"/></label><label>K initial<input id="k0" type="number" value="0"/></label><label>L initial<input id="l0" type="number" value="0"/></label><label>ℏω initial<input id="hw0" type="number" value="0"/></label><label>Points<input id="npts" min="2" type="number" value="11"/></label></div><div class="grid5"><label>H final<input id="h1" type="number" value="1"/></label><label>K final<input id="k1" type="number" value="0"/></label><label>L final<input id="l1" type="number" value="0"/></label><label>ℏω final<input id="hw1" type="number" value="10"/></label><button id="calcScanResolution" type="button">Calculate</button></div></div>
+<div aria-live="polite" class="orientation-plane-warning hidden" id="resolutionPlaneWarning"></div>
+</section>
+<section class="hidden" id="result"><h2>Resolution</h2><div class="summary" id="summary"></div><div class="scan-nav hidden" id="scanNav"><button id="prev">◀ Prev</button><input id="scanSlider" max="1" min="1" type="range" value="1"/><output id="scanIndex"></output><button id="next">Next ▶</button></div><div class="plots"><div id="plotUE"></div><div id="plotVE"></div><div id="plotUV"></div><div id="plotWE"></div></div><details><summary>Resolution Matrix</summary><div>Matrix order: (Q∥, Q⊥, E, Qout)</div><pre id="matrix"></pre></details></section>
+</div>
+</div>
+</div>
+<div aria-labelledby="tabToolbox" class="tab-panel hidden" id="toolboxPanel" role="tabpanel">
+<nav aria-label="Toolbox calculators" class="toolbox-subtabs" role="tablist">
+<button aria-controls="toolboxUnitPane" aria-selected="true" class="toolbox-subtab active" data-toolbox-target="toolboxUnitPane" id="toolboxTabUnit" role="tab" type="button">Unit Conversion</button>
+<button aria-controls="toolboxS2Pane" aria-selected="false" class="toolbox-subtab" data-toolbox-target="toolboxS2Pane" id="toolboxTabS2" role="tab" type="button">S2 Conversion</button>
+<button aria-controls="toolboxAttenuationPane" aria-selected="false" class="toolbox-subtab" data-toolbox-target="toolboxAttenuationPane" id="toolboxTabAttenuation" role="tab" type="button">Neutron Attenuation</button>
+<button aria-controls="toolboxFormFactorPane" aria-selected="false" class="toolbox-subtab" data-toolbox-target="toolboxFormFactorPane" id="toolboxTabFormFactor" role="tab" type="button">Magnetic Form Factor</button>
+</nav>
+<section aria-labelledby="toolboxTabUnit" class="calc-card toolbox-card toolbox-subpanel" id="toolboxUnitPane" role="tabpanel">
+<div class="toolbox-grid">
+<label>Wavelength (Å)<input id="toolLambda" min="0" step="0.001" type="number" value="2.359"/></label>
+<label>Energy (meV)<input id="toolEnergy" min="0" step="0.001" type="number"/></label>
+<label>Wavevector k (Å⁻¹)<input id="toolK" min="0" step="0.001" type="number"/></label>
+<label>Frequency (THz)<input id="toolTHz" min="0" step="0.001" type="number"/></label>
+<label>Temperature (K)<input id="toolTemp" min="0" step="0.001" type="number"/></label>
+<label>Wavenumber (cm⁻¹)<input id="toolCm" min="0" step="0.001" type="number"/></label>
+<label>Velocity (m/s)<input id="toolVelocity" min="0" step="0.1" type="number"/></label>
+</div>
+<div class="harmonic-wrap"><div class="harmonic-table">
+<div></div><div>Wavelength (Å)</div><div>Energy (meV)</div><div>Wavevector k (Å⁻¹)</div><div>Frequency (THz)</div><div>Temperature (K)</div><div>Wavenumber (cm⁻¹)</div><div>Velocity (m/s)</div>
+<strong>1/3 λ</strong><output id="harmThirdLambda"></output><output id="harmThirdEnergy"></output><output id="harmThirdK"></output><output id="harmThirdTHz"></output><output id="harmThirdTemp"></output><output id="harmThirdCm"></output><output id="harmThirdVelocity"></output>
+<strong>1/2 λ</strong><output id="harmHalfLambda"></output><output id="harmHalfEnergy"></output><output id="harmHalfK"></output><output id="harmHalfTHz"></output><output id="harmHalfTemp"></output><output id="harmHalfCm"></output><output id="harmHalfVelocity"></output>
+<strong>2 λ</strong><output id="harmDoubleLambda"></output><output id="harmDoubleEnergy"></output><output id="harmDoubleK"></output><output id="harmDoubleTHz"></output><output id="harmDoubleTemp"></output><output id="harmDoubleCm"></output><output id="harmDoubleVelocity"></output>
+<strong>3 λ</strong><output id="harmTripleLambda"></output><output id="harmTripleEnergy"></output><output id="harmTripleK"></output><output id="harmTripleTHz"></output><output id="harmTripleTemp"></output><output id="harmTripleCm"></output><output id="harmTripleVelocity"></output>
+</div></div>
+</section>
+<section aria-labelledby="toolboxTabS2" class="calc-card s2-conversion-card toolbox-subpanel hidden" id="toolboxS2Pane" role="tabpanel">
+<div class="s2-conversion-grid">
+<label>X-ray source
           <select id="s2ConvSource">
-            <option value="1.540593" selected>Cu Kα1</option>
-            <option value="0.709317">Mo Kα1</option>
-            <option value="1.788965">Co Kα1</option>
-            <option value="1.936042">Fe Kα1</option>
-            <option value="2.289700">Cr Kα1</option>
-            <option value="0.559407">Ag Kα1</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <label>X-ray wavelength (Å)<input id="s2ConvXrayLambda" type="number" value="1.540593" min="0" step="0.000001"></label>
-        <label>Observed X-ray S2 (deg)<input id="s2ConvXrayS2" type="text" value="60" inputmode="decimal" placeholder="e.g. 20 35.5 60"></label>
-        <label>Neutron wavelength (Å)<input id="s2ConvNeutronLambda" type="text" readonly></label>
-        <label>Neutron S2 (deg)<input id="s2ConvNeutronS2" type="text" readonly></label>
-        <label>d (Å)<input id="s2ConvD" type="text" readonly></label>
-      </div>
-      <div id="s2ConvInfo" class="s2-conversion-info" aria-live="polite"></div>
-    </section>
-    <section id="toolboxAttenuationPane" class="calc-card absorption-card toolbox-subpanel hidden" role="tabpanel" aria-labelledby="toolboxTabAttenuation">
-
-      <div class="absorption-workspace">
-        <div class="absorption-left">
-          <div class="absorption-source-row">
-            <div class="absorption-input-mode-row">
-              <label>Input mode
+<option selected="" value="1.540593">Cu Kα1</option>
+<option value="0.709317">Mo Kα1</option>
+<option value="1.788965">Co Kα1</option>
+<option value="1.936042">Fe Kα1</option>
+<option value="2.289700">Cr Kα1</option>
+<option value="0.559407">Ag Kα1</option>
+<option value="custom">Custom</option>
+</select>
+</label>
+<label>X-ray wavelength (Å)<input id="s2ConvXrayLambda" min="0" step="0.000001" type="number" value="1.540593"/></label>
+<label>Observed X-ray S2 (deg)<input id="s2ConvXrayS2" inputmode="decimal" placeholder="e.g. 20 35.5 60" type="text" value="60"/></label>
+<label>Neutron wavelength (Å)<input id="s2ConvNeutronLambda" readonly="" type="text"/></label>
+<label>Neutron S2 (deg)<input id="s2ConvNeutronS2" readonly="" type="text"/></label>
+<label>d (Å)<input id="s2ConvD" readonly="" type="text"/></label>
+</div>
+<div aria-live="polite" class="s2-conversion-info" id="s2ConvInfo"></div>
+</section>
+<section aria-labelledby="toolboxTabAttenuation" class="calc-card absorption-card toolbox-subpanel hidden" id="toolboxAttenuationPane" role="tabpanel">
+<div class="absorption-workspace">
+<div class="absorption-left">
+<div class="absorption-source-row">
+<div class="absorption-input-mode-row">
+<label>Input mode
                 <select id="absorptionInputMode">
-                  <option value="manual">Manual</option>
-                  <option value="cif" selected>CIF/mCIF</option>
-                </select>
-              </label>
-            </div>
-            <div id="absorptionManualInputs" class="absorption-manual-row hidden">
-              <label>Chemical formula<input id="absorptionFormula" type="text" value="" placeholder="e.g. CuSe2O5" spellcheck="false"></label>
-              <label>Density (g/cm³)<input id="absorptionDensity" type="number" min="0" step="0.001" value=""></label>
-            </div>
-            <div id="absorptionCifInputs" class="absorption-cif-row">
-              <label>Selected CIF/mCIF<input id="absorptionCifStatus" type="text" value="No CIF/mCIF selected" readonly></label>
-              <button id="absorptionCifSelectButton" type="button">Select CIF/mCIF</button>
-              <input id="absorptionCifFileInput" type="file" accept=".cif,.mcif,text/plain,chemical/x-cif" hidden>
-            </div>
-          </div>
-          <div class="absorption-beam-row">
-            <div class="absorption-beam-controls">
-              <label>Energy (meV)<input id="absorptionEnergy" type="number" min="0" step="0.001"></label>
-              <label>Wavelength (Å)<input id="absorptionLambda" type="number" min="0" step="0.001"></label>
-              <label>Wave vector (Å⁻¹)<input id="absorptionK" type="number" min="0" step="0.001"></label>
-            </div>
-            <button id="absorptionSetDefault" class="absorption-set-default" type="button" title="Copy fixed Instrument energy">Set default</button>
-          </div>
-          <div class="absorption-thickness-control">
-            <label>SE transmission (%)<input id="absorptionSETransmission" type="number" min="0" max="100" step="0.1" value="100"></label>
-            <label>Sample thickness (mm)<input id="absorptionThickness" type="number" value="1.00" min="0" step="0.01"></label>
-            <label>Overall transmission (%)<input id="absorptionTransmission" type="number" value="" min="0.000001" max="100" step="0.1"></label>
-          </div>
-          <div id="absorptionResults" class="absorption-results"></div>
-        </div>
-        <div class="absorption-right">
-          <div id="absorptionPlot" class="absorption-plot"></div>
-          <input id="absorptionThicknessSlider" class="absorption-plot-slider" type="range" min="0" max="20" step="0.01" value="1.00" aria-label="Sample thickness slider">
-          <div class="absorption-plot-actions"><button id="absorptionDownload" type="button" disabled>Download CSV</button></div>
-        </div>
-      </div>
-    </section>
-    <section id="toolboxFormFactorPane" class="calc-card magnetic-form-factor-card toolbox-subpanel hidden" role="tabpanel" aria-labelledby="toolboxTabFormFactor">
-      <div class="magff-main-row">
-        <label>Magnetic ion<select id="magffIon" aria-label="Magnetic ion"></select></label>
-        <label>j2 contribution<select id="magffWeightMode">
-          <option value="auto" selected>Auto</option>
-          <option value="zero">Spin-only (c = 0)</option>
-          <option value="free">Free-ion Landé</option>
-          <option value="custom">Custom c</option>
-        </select></label>
-        <label>Q (Å⁻¹)<input id="magffQPoint" type="number" value="2" min="0" max="10" step="any" inputmode="decimal"></label>
-        <label>|f(Q)|²<input id="magffIntensity" type="number" value="" min="0" step="any" inputmode="decimal" aria-label="Squared magnetic form factor"></label>
-      </div>
-      <div class="magff-extra-row">
-        <label id="magffConfigLabel" class="hidden">Electron configuration<select id="magffConfig"></select></label>
-        <label id="magffWeightLabel" class="hidden">Custom c<input id="magffWeight" type="number" value="0" step="0.05"></label>
-      </div>
-      <div id="magffInfo" class="magff-info" role="status" aria-live="polite"></div>
-      <div id="magffPlot" class="magff-plot" role="img" aria-label="Squared magnetic form factor versus momentum transfer"></div>
-      <input id="magffQSlider" class="magff-plot-slider" type="range" value="2" min="0" max="10" step="0.01" aria-label="Q slider">
-      <div class="magff-footer"><button id="magffDownload" type="button">Download CSV</button></div>
-    </section>
-  </div>
+<option value="manual">Manual</option>
+<option selected="" value="cif">CIF/mCIF</option>
+</select>
+</label>
+</div>
+<div class="absorption-manual-row hidden" id="absorptionManualInputs">
+<label>Chemical formula<input id="absorptionFormula" placeholder="e.g. CuSe2O5" spellcheck="false" type="text" value=""/></label>
+<label>Density (g/cm³)<input id="absorptionDensity" min="0" step="0.001" type="number" value=""/></label>
+</div>
+<div class="absorption-cif-row" id="absorptionCifInputs">
+<label>Selected CIF/mCIF<input id="absorptionCifStatus" readonly="" type="text" value="No CIF/mCIF selected"/></label>
+<button id="absorptionCifSelectButton" type="button">Select CIF/mCIF</button>
+<input accept=".cif,.mcif,text/plain,chemical/x-cif" hidden="" id="absorptionCifFileInput" type="file"/>
+</div>
+</div>
+<div class="absorption-beam-row">
+<div class="absorption-beam-controls">
+<label>Energy (meV)<input id="absorptionEnergy" min="0" step="0.001" type="number"/></label>
+<label>Wavelength (Å)<input id="absorptionLambda" min="0" step="0.001" type="number"/></label>
+<label>Wave vector (Å⁻¹)<input id="absorptionK" min="0" step="0.001" type="number"/></label>
+</div>
+<button class="absorption-set-default" id="absorptionSetDefault" title="Copy fixed Instrument energy" type="button">Set default</button>
+</div>
+<div class="absorption-thickness-control">
+<label>SE transmission (%)<input id="absorptionSETransmission" max="100" min="0" step="0.1" type="number" value="100"/></label>
+<label>Sample thickness (mm)<input id="absorptionThickness" min="0" step="0.01" type="number" value="1.00"/></label>
+<label>Overall transmission (%)<input id="absorptionTransmission" max="100" min="0.000001" step="0.1" type="number" value=""/></label>
+</div>
+<div class="absorption-results" id="absorptionResults"></div>
+</div>
+<div class="absorption-right">
+<div class="absorption-plot" id="absorptionPlot"></div>
+<input aria-label="Sample thickness slider" class="absorption-plot-slider" id="absorptionThicknessSlider" max="20" min="0" step="0.01" type="range" value="1.00"/>
+<div class="absorption-plot-actions"><button disabled="" id="absorptionDownload" type="button">Download CSV</button></div>
+</div>
+</div>
+</section>
+<section aria-labelledby="toolboxTabFormFactor" class="calc-card magnetic-form-factor-card toolbox-subpanel hidden" id="toolboxFormFactorPane" role="tabpanel">
+<div class="magff-main-row">
+<label>Magnetic ion<select aria-label="Magnetic ion" id="magffIon"></select></label>
+<label>j2 contribution<select id="magffWeightMode">
+<option selected="" value="auto">Auto</option>
+<option value="zero">Spin-only (c = 0)</option>
+<option value="free">Free-ion Landé</option>
+<option value="custom">Custom c</option>
+</select></label>
+<label>Q (Å⁻¹)<input id="magffQPoint" inputmode="decimal" max="10" min="0" step="any" type="number" value="2"/></label>
+<label>|f(Q)|²<input aria-label="Squared magnetic form factor" id="magffIntensity" inputmode="decimal" min="0" step="any" type="number" value=""/></label>
+</div>
+<div class="magff-extra-row">
+<label class="hidden" id="magffConfigLabel">Electron configuration<select id="magffConfig"></select></label>
+<label class="hidden" id="magffWeightLabel">Custom c<input id="magffWeight" step="0.05" type="number" value="0"/></label>
+</div>
+<div aria-live="polite" class="magff-info" id="magffInfo" role="status"></div>
+<div aria-label="Squared magnetic form factor versus momentum transfer" class="magff-plot" id="magffPlot" role="img"></div>
+<input aria-label="Q slider" class="magff-plot-slider" id="magffQSlider" max="10" min="0" step="0.01" type="range" value="2"/>
+<div class="magff-footer"><button id="magffDownload" type="button">Download CSV</button></div>
+</section>
+</div>
+<div aria-labelledby="tabCifGenerator" class="tab-panel hidden" id="structurePanel" role="tabpanel"><section class="calc-card generator-unified-card"><div class="generator-unified-grid" id="cifGeneratorPanel"><div class="generator-unified-left"><section class="generator-shared-file"><div class="cif-pane-heading">
+<h3>CIF/mCIF file</h3>
+<div class="cif-heading-actions"><button id="cifShowCurrent" type="button">Show current file</button></div>
+</div><div class="cif-generator-source-row">
+<button id="cifLoadExisting" type="button">Select CIF/mCIF</button>
+<input aria-label="Selected CIF or mCIF for CIF Generator" class="cif-file-name" id="cifGeneratorSourceName" readonly="" type="text" value="No file selected"/>
+<button disabled="" id="cifGeneratorSourceClear" type="button">Clear</button>
+<input accept=".cif,.mcif,text/plain,chemical/x-cif" class="hidden" id="cifLoadFile" type="file"/>
+</div></section><div class="generator-mode-pane generator-unified-editor" id="generatorNuclearPane"><div class="cif-generator-input-pane">
+<section class="cif-generator-section cif-generator-source-section"><h3 class="generator-output-heading">Output file</h3>
+<label class="cif-generator-file-name">File name
+              <span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"/><span class="cif-filename-suffix">.cif / .mcif</span></span>
+</label>
+<div class="cif-source-button-row">
+<button class="primary-action" id="cifGenerate" type="button">Generate CIF</button>
+<button disabled="" id="cifDownload" type="button">Download CIF</button>
+<button disabled="" id="cifSet" type="button">Set CIF</button>
+</div>
+<div aria-live="polite" class="cif-generator-message hidden" id="cifGeneratorMessage"></div>
+<div class="generator-legacy-file-controls" hidden=""><div class="cif-pane-heading"><h3>CIF/mCIF file</h3><div class="cif-heading-actions"><button id="structureMcifShowCurrent" type="button">Show current file</button></div></div><div class="structure-cif-row">
+<button id="structureCifSelect" type="button">Select CIF/mCIF</button>
+<input aria-label="Selected CIF/mCIF file" class="cif-file-name" id="structureCifName" readonly="" type="text" value="No file selected"/>
+<button id="structureCifClear" type="button">Clear</button>
+</div></div><div class="mcif-export-group">
+<div class="cif-source-button-row">
+<button class="primary-action" disabled="" id="structureMcifGenerate" title="mCIF export is temporarily disabled" type="button">Generate mCIF</button>
+<button disabled="" id="structureMcifDownload" title="mCIF export is temporarily disabled" type="button">Download mCIF</button>
+<button disabled="" id="structureMcifSet" title="mCIF export is temporarily disabled" type="button">Set mCIF</button>
+</div>
+<div aria-live="polite" class="cif-generator-message" id="structureMcifMessage"></div>
+</div></section>
 
-  <div id="cifGeneratorPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabCifGenerator">
-    <section class="calc-card cif-generator-card">
-      <div class="cif-generator-workspace">
-        <div class="cif-generator-input-pane">
-          <section class="cif-generator-section cif-generator-source-section">
-            <div class="cif-pane-heading">
-              <h3>CIF/mCIF file</h3>
-              <div class="cif-heading-actions"><button id="cifShowCurrent" type="button">Show current file</button></div>
-            </div>
-            <div class="cif-generator-source-row">
-              <button id="cifLoadExisting" type="button">Select CIF/mCIF</button>
-              <input id="cifGeneratorSourceName" class="cif-file-name" type="text" value="No file selected" readonly aria-label="Selected CIF or mCIF for CIF Generator">
-              <button id="cifGeneratorSourceClear" type="button" disabled>Clear</button>
-              <input id="cifLoadFile" type="file" accept=".cif,.mcif,text/plain,chemical/x-cif" class="hidden">
-            </div>
-            <label class="cif-generator-file-name">File name
-              <span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"><span class="cif-filename-suffix">.cif</span></span>
-            </label>
-            <div class="cif-source-button-row">
-              <button id="cifGenerate" type="button" class="primary-action">Generate</button>
-              <button id="cifDownload" type="button" disabled>Download CIF</button>
-              <button id="cifSet" type="button" disabled>Set CIF</button>
-            </div>
-          </section>
-
-          <section class="cif-generator-section cif-lattice-information-section">
-            <div class="cif-pane-heading cif-lattice-information-heading">
-              <h3 class="cif-section-title">Lattice information</h3>
-              <div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button></div>
-            </div>
-            <div class="cif-generator-setup">
-              <div class="cif-space-group-picker">
-                <label class="cif-space-group-number-label">No.
-                  <input id="cifSpaceGroupNumber" type="number" min="1" max="230" step="1" value="1" inputmode="numeric" aria-label="Space group number">
-                </label>
-                <label>Space group
+</div><div class="structure-control-section structure-config-section">
+<h3 class="structure-section-title">Structure editor</h3>
+<div aria-label="Structure display controls" class="structure-config-tabs" role="tablist"><button aria-selected="true" class="active" data-structure-config-tab="cell" role="tab" type="button">Cell</button><button aria-selected="false" data-structure-config-tab="positions" role="tab" type="button">Positions</button>
+<button aria-selected="false" class="" data-structure-config-tab="appearance" role="tab" type="button">Atoms</button>
+<button aria-selected="false" data-structure-config-tab="spins" role="tab" type="button">Spins</button>
+<button aria-selected="false" data-structure-config-tab="bonds" role="tab" type="button">Bonds</button>
+</div><div class="structure-config-panel active" data-structure-config-panel="cell"><section class="cif-generator-section cif-lattice-information-section">
+<div class="cif-pane-heading cif-lattice-information-heading">
+<h3 class="cif-section-title">Unit cell &amp; symmetry</h3>
+<div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button></div>
+</div>
+<div class="cif-generator-setup">
+<div class="cif-space-group-picker">
+<label class="cif-space-group-number-label">No.
+                  <input aria-label="Space group number" id="cifSpaceGroupNumber" inputmode="numeric" max="230" min="1" step="1" type="number" value="1"/>
+</label>
+<label>Space group
                   <select id="cifSpaceGroup"><option value="">Loading space groups...</option></select>
-                </label>
-              </div>
-              <div id="cifSpaceGroupInfo" class="cif-space-group-info"></div>
-            </div>
+</label>
+</div>
+<div class="cif-space-group-info" id="cifSpaceGroupInfo"></div>
+</div>
+<div class="cif-lattice-grid">
+<label>a (Å)<input id="cifA" min="0" step="0.001" type="number" value="5"/></label>
+<label>b (Å)<input id="cifB" min="0" step="0.001" type="number" value="5"/></label>
+<label>c (Å)<input id="cifC" min="0" step="0.001" type="number" value="5"/></label>
+<label>α (deg)<input id="cifAlpha" step="0.01" type="number" value="90"/></label>
+<label>β (deg)<input id="cifBeta" step="0.01" type="number" value="90"/></label>
+<label>γ (deg)<input id="cifGamma" step="0.01" type="number" value="90"/></label>
+</div>
 
-            <div class="cif-lattice-grid">
-              <label>a (Å)<input id="cifA" type="number" value="5" step="0.001" min="0"></label>
-              <label>b (Å)<input id="cifB" type="number" value="5" step="0.001" min="0"></label>
-              <label>c (Å)<input id="cifC" type="number" value="5" step="0.001" min="0"></label>
-              <label>α (deg)<input id="cifAlpha" type="number" value="90" step="0.01"></label>
-              <label>β (deg)<input id="cifBeta" type="number" value="90" step="0.01"></label>
-              <label>γ (deg)<input id="cifGamma" type="number" value="90" step="0.01"></label>
-            </div>
 
-            <div class="cif-atom-heading">
-              <div><h3>Atomic positions</h3></div>
-            </div>
-            <div class="cif-atom-table-wrap">
-              <div class="cif-atom-table" id="cifAtomTable">
-                <div class="cif-atom-header">Index</div><div class="cif-atom-header">Atom</div><div class="cif-atom-header">x</div><div class="cif-atom-header">y</div><div class="cif-atom-header">z</div><div class="cif-atom-header">Occupancy</div><div class="cif-atom-header"></div>
-                <div id="cifAtomRows" class="cif-atom-rows"></div>
-              </div>
-            </div>
-            <div class="cif-atom-actions">
-              <button id="cifCopyAtom" type="button">+ Copy atom</button>
-              <button id="cifAddAtom" type="button">+ Add atom</button>
-            </div>
-          </section>
 
-          <section class="cif-generator-section cif-reflection-parameters-section">
-            <div class="cif-pane-heading">
-              <h3>Reflection parameters</h3>
-              <div class="cif-heading-actions"><button id="cifDownloadTable" type="button" disabled>Download table</button></div>
-            </div>
-            <div class="cif-generator-beam-grid">
-              <label>Energy (meV)<input id="cifReflectionEnergy" type="number" min="0" step="0.001"></label>
-              <label>Wavelength (Å)<input id="cifReflectionWavelength" type="number" min="0" step="0.0001"></label>
-              <label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" type="number" min="0" step="0.0001"></label>
-              <button id="cifReflectionSetDefault" type="button" title="Copy Ef from Instrument">Set default</button>
-            </div>
-          </section>
 
-          <div id="cifGeneratorMessage" class="cif-generator-message" aria-live="polite"></div>
-        </div>
-
-        <div class="cif-generator-output-pane">
-          <div class="cif-output-tabs" role="tablist" aria-label="CIF generator output">
-            <button id="cifOutputTabReflections" class="cif-output-tab" type="button" role="tab" aria-selected="false" aria-controls="cifReflectionsPanel" data-cif-output-tab="reflections">Reflection table</button>
-            <button id="cifOutputTabPreview" class="cif-output-tab active" type="button" role="tab" aria-selected="true" aria-controls="cifPreviewPanel" data-cif-output-tab="preview">CIF preview</button>
-          </div>
-
-          <div id="cifPreviewPanel" class="cif-output-panel" role="tabpanel" aria-labelledby="cifOutputTabPreview">
-            <pre id="cifPreview" class="cif-preview-note" tabindex="0">Press Generate to preview the CIF.</pre>
-          </div>
-
-          <div id="cifReflectionsPanel" class="cif-output-panel hidden" role="tabpanel" aria-labelledby="cifOutputTabReflections">
-            <div class="cif-reflection-toolbar">
-              <label class="cif-reflection-plane-toggle"><input id="cifReflectionAlongU" type="checkbox" checked> along U</label>
-              <label class="cif-reflection-plane-toggle"><input id="cifReflectionAlongV" type="checkbox" checked> along V</label>
-              <label class="cif-reflection-plane-toggle"><input id="cifReflectionWithinS2Max" type="checkbox" checked> within instrument 2θ max</label>
-              <label class="cif-reflection-plane-toggle"><input id="cifReflectionLambdaHalf" type="checkbox"> λ/2</label>
-            </div>
-            <div class="cif-reflection-table-wrap">
-              <table class="cif-reflection-table">
-                <thead><tr>
-                  <th>Index (h k l)</th>
-                  <th class="cif-sortable-th" data-sort-key="intensity" data-sort-label="|F|² (barn)" tabindex="0" role="button" aria-sort="descending">|F|² (barn) <span class="cif-sort-indicator">▼</span></th>
-                  <th>Multiplicity</th>
-                  <th class="cif-sortable-th" data-sort-key="totalIntensity" data-sort-label="Total |F|² (barn)" tabindex="0" role="button" aria-sort="none">Total |F|² (barn) <span class="cif-sort-indicator"></span></th>
-                  <th class="cif-sortable-th" data-sort-key="twoTheta" data-sort-label="2θ (deg)" tabindex="0" role="button" aria-sort="none">2θ (deg) <span class="cif-sort-indicator"></span></th>
-                  <th class="cif-sortable-th" data-sort-key="q" data-sort-label="Q (Å⁻¹)" tabindex="0" role="button" aria-sort="none">Q (Å⁻¹) <span class="cif-sort-indicator"></span></th>
-                  <th class="cif-sortable-th" data-sort-key="d" data-sort-label="d (Å)" tabindex="0" role="button" aria-sort="none">d (Å) <span class="cif-sort-indicator"></span></th>
-                </tr></thead>
-                <tbody id="cifReflectionRows"><tr><td colspan="7" class="cif-reflection-empty">No generated reflections yet.</td></tr></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <div id="structurePanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabStructure">
-    <section class="calc-card structure-viewer-card">
-      <div class="structure-viewer-layout">
-        <div class="structure-viewer-controls">
-          <div class="structure-control-section structure-cif-section">
-            <div class="cif-pane-heading"><h3>CIF/mCIF file</h3><div class="cif-heading-actions"><button id="structureMcifShowCurrent" type="button">Show current file</button></div></div>
-            <div class="structure-cif-row">
-              <button id="structureCifSelect" type="button">Select CIF/mCIF</button>
-              <input id="structureCifName" class="cif-file-name" type="text" value="No file selected" readonly aria-label="Selected CIF/mCIF file">
-              <button id="structureCifClear" type="button">Clear</button>
-            </div>
-            <label class="cif-generator-file-name">File name
-              <span class="cif-filename-entry"><input id="structureMcifGeneratedName" type="text" value="generated_structure"><span class="cif-filename-suffix">.mcif</span></span>
-            </label>
-            <div class="cif-source-button-row">
-              <button id="structureMcifGenerate" type="button" class="primary-action">Generate</button>
-              <button id="structureMcifDownload" type="button" disabled>Download mCIF</button>
-              <button id="structureMcifSet" type="button" disabled>Set mCIF</button>
-            </div>
-            <div id="structureMcifMessage" class="cif-generator-message" aria-live="polite"></div>
-          </div>
-          <div class="structure-control-section">
-            <h3>View</h3>
-            <div class="cif-structure-view-buttons structure-view-buttons-six">
-              <button type="button" data-cif-structure-view="a">a</button>
-              <button type="button" data-cif-structure-view="b">b</button>
-              <button type="button" data-cif-structure-view="c">c</button>
-              <button type="button" data-cif-structure-view="astar">a*</button>
-              <button type="button" data-cif-structure-view="bstar">b*</button>
-              <button type="button" data-cif-structure-view="cstar">c*</button>
-            </div>
-            <div class="structure-range-grid structure-range-six">
-              <label class="structure-entry-field"><span class="structure-entry-label">x min</span><input id="cifRangeXMin" type="number" step="0.1" value="0"></label>
-              <label class="structure-entry-field"><span class="structure-entry-label">x max</span><input id="cifRangeXMax" type="number" step="0.1" value="1"></label>
-              <label class="structure-entry-field"><span class="structure-entry-label">y min</span><input id="cifRangeYMin" type="number" step="0.1" value="0"></label>
-              <label class="structure-entry-field"><span class="structure-entry-label">y max</span><input id="cifRangeYMax" type="number" step="0.1" value="1"></label>
-              <label class="structure-entry-field"><span class="structure-entry-label">z min</span><input id="cifRangeZMin" type="number" step="0.1" value="0"></label>
-              <label class="structure-entry-field"><span class="structure-entry-label">z max</span><input id="cifRangeZMax" type="number" step="0.1" value="1"></label>
-              <input id="cifRangeX" type="hidden" value="0 1">
-              <input id="cifRangeY" type="hidden" value="0 1">
-              <input id="cifRangeZ" type="hidden" value="0 1">
-            </div>
-          </div>
-          <div class="structure-control-section structure-config-section">
-            <h3 class="structure-section-title">Structure settings</h3>
-            <div class="structure-config-tabs" role="tablist" aria-label="Structure display controls">
-              <button type="button" class="active" data-structure-config-tab="atoms" role="tab" aria-selected="true">Atoms</button>
-              <button type="button" data-structure-config-tab="spins" role="tab" aria-selected="false">Spins</button>
-              <button type="button" data-structure-config-tab="bonds" role="tab" aria-selected="false">Bonds</button>
-            </div>
-            <div class="structure-config-panel active" data-structure-config-panel="atoms">
-              <div id="cifAtomColorRows" class="structure-rows-list"></div>
-            </div>
-            <div class="structure-config-panel" data-structure-config-panel="spins" hidden>
-              <div class="structure-moment-axis-row structure-spin-mode-row">
-                <label class="structure-entry-field"><span class="structure-entry-label">Propagation vector</span><select id="cifMomentPropagationVector"></select></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Structure type</span><select id="cifMomentStructureType">
-                  <option value="collinear" selected>Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option><option value="mcif" hidden>mCIF</option>
-                </select></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
-                  <option value="a">a</option><option value="b">b</option><option value="c" selected>c</option>
-                </select></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Chirality</span><select id="cifMomentChirality" title="CW/CCW as viewed from the negative side toward the positive side of the selected rotation axis">
-                  <option value="CCW" selected>CCW</option><option value="CW">CW</option>
-                </select></label>
-              </div>
-              <div class="structure-spin-display-row">
-                <label class="structure-entry-field"><span class="structure-entry-label">Direction</span><select id="cifMomentDirectionMode"><option value="cartesian" selected>Cartesian</option><option value="polar">Polar</option></select></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Arrow length</span><input id="cifMomentGlobalLength" type="number" min="0" step="0.05" value="1" placeholder="1"></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Arrow width</span><input id="cifMomentGlobalWidth" type="number" min="1" step="1" value="10" placeholder="10"></label>
-                <label class="structure-entry-field"><span class="structure-entry-label">Arrow head</span><input id="cifMomentGlobalHead" type="number" min="0.01" step="0.01" value="0.51" placeholder="0.51"></label>
-              </div>
-              <div class="structure-spin-editor-toolbar">
-                <label class="structure-entry-field structure-individual-selector"><span class="structure-entry-label">Mode</span><select id="cifSpinEditingMode"><option value="sites">Symmetry operations</option><option value="individual">Manual</option></select></label>
-                <label class="structure-entry-field structure-spin-table-element-field"><span class="structure-entry-label">Element</span><select id="cifSpinTableElement" title="Filter spin rows by chemical element"></select></label>
-              </div>
-              <div id="cifSpinIndividualInfo" class="structure-help-text" hidden></div>
-              <div id="cifSpinElementToggles" class="structure-spin-element-toggles" aria-label="Spin element controls"></div>
-              <div id="cifMagMomentRows" class="structure-rows-list"></div>
-            </div>
-            <div class="structure-config-panel" data-structure-config-panel="bonds" hidden>
-              <div id="cifBondRows" class="structure-rows-list"></div>
-              <button id="cifAddBondRule" class="structure-add-bond-button" type="button">+ Add bond</button>
-              <div class="structure-help-text">Examples: Ni–Ni 0–5 Å, Ni–O 0–3 Å.</div>
-            </div>
-          </div>
-        </div>
-        <div class="structure-viewer-main">
-          <div class="cif-output-tabs" role="tablist" aria-label="mCIF Generator output">
-            <button id="mcifTabStructure" class="cif-output-tab active" type="button" role="tab" aria-selected="true" aria-controls="mcifStructurePane">Structure</button>
-            <button id="mcifTabPreview" class="cif-output-tab" type="button" role="tab" aria-selected="false" aria-controls="mcifPreviewPane">mCIF preview</button>
-          </div>
-          <div id="mcifStructurePane" role="tabpanel" aria-labelledby="mcifTabStructure">
-          <div id="cifStructureStatus" class="cif-structure-status" aria-live="polite">Open the mCIF Generator tab to visualize the generated or selected CIF.</div>
-          <div class="structure-plot-wrap">
-            <div class="structure-plot-overlay-left">
-              <div class="structure-plot-toolbar" aria-label="Structure plot display options">
-                <label><span>Unit cell</span><select id="cifUnitCellMode"><option value="all">All cells</option><option value="one" selected>One cell</option><option value="none">None</option></select></label>
-                <label><span>XYZ axes</span><select id="cifShowXYZ"><option value="show" selected>Show</option><option value="hide">Hide</option></select></label>
-                <button id="cifSaveFigure" type="button" title="Save current 3D view with legend and coordinate axes as PNG">Save figure</button>
-              </div>
-              <div id="cifAtomLegend" class="structure-atom-legend" aria-label="Atom legend"></div>
-            </div>
-            <div id="cifStructurePlot" class="cif-structure-plot"></div>
-            <svg id="cifDirectTriad" class="structure-triad structure-triad-left" viewBox="0 0 160 160" aria-hidden="true"></svg>
-            <svg id="cifReciprocalTriad" class="structure-triad structure-triad-right" viewBox="0 0 160 160" aria-hidden="true"></svg>
-          </div>
-          </div>
-          <div id="mcifPreviewPane" class="cif-output-panel hidden" role="tabpanel" aria-labelledby="mcifTabPreview">
-            <pre id="mcifPreviewText" class="cif-preview-note" tabindex="0">Load an mCIF to preview its contents.</pre>
-          </div>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <div id="scriptPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabScript">
-    <section class="calc-card script-card">
-      <div class="script-workspace">
-        <div class="script-aset-pane">
-          <div class="script-pane-heading script-aset-heading"><span>ASET</span><div class="script-aset-heading-actions"><button id="scriptAsetInfoToggle" class="info-toggle-button" type="button" aria-expanded="false" aria-controls="scriptAsetHelp" title="Show ASET information">ⓘ Info</button><button id="scriptAsetAdd" type="button">+ Add ASET</button></div></div>
-          <div id="scriptAsetHelp" class="time-info-panel script-aset-help hidden">Each ASET is a SPICE command template. Use <code>&lt;value&gt;</code> for one-value Details and <code>&lt;range&gt;</code> for initial/final/step Details. Repeat placeholders to create multiple Detail boxes. For ASET lines beginning with <code>scan</code> or <code>scanrel</code>, <code>preset mcu</code> is added automatically from that command row's MCU value. Separate commands with commas or line breaks.</div>
-          <div class="script-aset-table-header"><span>Index</span><span>Target</span><span>SPICE template</span><span></span></div>
-          <div id="scriptAsetList" class="script-aset-list"></div>
-        </div>
-        <div class="script-command-pane">
-          <div class="script-pane-heading script-command-heading"><span>Time estimate commands</span><div class="script-command-actions"><button id="scriptAsetToggle" type="button" title="Hide or show the ASET editor">◀ Hide ASET</button><button id="scriptToSpice" type="button" title="Convert Time estimate commands to SPICE">→ SPICE</button></div></div>
-          <div id="scriptTimeMount" class="script-time-mount"></div>
-        </div>
-        <div class="script-spice-pane">
-          <div class="script-pane-heading script-spice-heading">
-            <span>SPICE macro</span>
-            <div class="script-actions">
-              <button id="scriptToCommands" type="button" title="Convert SPICE to Time estimate commands">← Commands</button>
-              <button id="scriptCopySpice" type="button">Copy</button>
-            </div>
-          </div>
-          <div class="script-spice-editor">
-            <pre id="scriptSpiceLineNumbers" class="script-spice-line-numbers" aria-hidden="true"></pre>
-            <pre id="scriptSpiceBackdrop" class="script-spice-backdrop" aria-hidden="true"></pre>
-            <textarea id="scriptSpiceText" class="script-spice-text" spellcheck="false" aria-label="SPICE macro"></textarea>
-          </div>
-          <div id="scriptMessage" class="script-message" aria-live="polite"></div>
-        </div>
-      </div>
-    </section>
-  </div>
-
+</section></div><div class="structure-config-panel" data-structure-config-panel="positions" hidden=""><div class="cif-atom-heading">
+<div><h3>Atomic positions</h3></div>
+</div><div class="cif-atom-table-wrap">
+<div class="cif-atom-table" id="cifAtomTable">
+<div class="cif-atom-header">Index</div><div class="cif-atom-header">Atom</div><div class="cif-atom-header">x</div><div class="cif-atom-header">y</div><div class="cif-atom-header">z</div><div class="cif-atom-header">Occupancy</div><div class="cif-atom-header">Biso (Å²)</div>
+<div class="cif-atom-rows" id="cifAtomRows"></div>
+</div>
+</div><div class="cif-atom-actions">
+<button id="cifCopyAtom" type="button">Copy</button>
+<button id="cifAddAtom" type="button">Add</button>
+<button id="cifRemoveAtom" type="button">Remove</button>
+</div><details class="cif-atom-detailed" id="cifAtomDetailed">
+<summary>Anisotropic Uij</summary>
+<div class="cif-thermal-table-wrap">
+<div class="cif-thermal-table">
+<div class="cif-thermal-header">Atom</div><div class="cif-thermal-header">U11 (Å²)</div><div class="cif-thermal-header">U22 (Å²)</div><div class="cif-thermal-header">U33 (Å²)</div><div class="cif-thermal-header">U12 (Å²)</div><div class="cif-thermal-header">U13 (Å²)</div><div class="cif-thermal-header">U23 (Å²)</div>
+<div class="cif-thermal-list" id="cifAtomDetailedRows"></div>
+</div>
+</div>
+</details></div>
+<div class="structure-config-panel" data-structure-config-panel="appearance" hidden="">
+<div class="structure-rows-list" id="cifAtomColorRows"></div>
+</div>
+<div class="structure-config-panel" data-structure-config-panel="spins" hidden="">
+<div class="structure-moment-axis-row structure-spin-mode-row">
+<label class="structure-entry-field"><span class="structure-entry-label">Propagation vector</span><select id="cifMomentPropagationVector"></select></label>
+<label class="structure-entry-field"><span class="structure-entry-label">Structure type</span><select id="cifMomentStructureType">
+<option value="mcif">mCIF</option><option selected="" value="collinear">Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option>
+</select></label>
+<label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
+<option value="a">a</option><option value="b">b</option><option selected="" value="c">c</option>
+</select></label>
+<label class="structure-entry-field"><span class="structure-entry-label">Chirality</span><select id="cifMomentChirality" title="CW/CCW as viewed from the negative side toward the positive side of the selected rotation axis">
+<option selected="" value="CCW">CCW</option><option value="CW">CW</option>
+</select></label>
+</div>
+<div class="structure-spin-display-row">
+<label class="structure-entry-field"><span class="structure-entry-label">Direction</span><select id="cifMomentDirectionMode"><option selected="" value="cartesian">Cartesian</option><option value="polar">Polar</option></select></label>
+<label class="structure-entry-field"><span class="structure-entry-label">Arrow length</span><input id="cifMomentGlobalLength" min="0" placeholder="1" step="0.05" type="number" value="1"/></label>
+<label class="structure-entry-field"><span class="structure-entry-label">Arrow width</span><input id="cifMomentGlobalWidth" min="1" placeholder="10" step="1" type="number" value="10"/></label>
+<label class="structure-entry-field"><span class="structure-entry-label">Arrow head</span><input id="cifMomentGlobalHead" min="0.01" placeholder="0.51" step="0.01" type="number" value="0.51"/></label>
+</div>
+<div class="structure-spin-editor-toolbar">
+<label class="structure-entry-field structure-individual-selector"><span class="structure-entry-label">Mode</span><select id="cifSpinEditingMode"><option value="sites">Symmetry operations</option><option value="individual">Manual</option></select></label>
+<label class="structure-entry-field structure-spin-table-element-field"><span class="structure-entry-label">Element</span><select id="cifSpinTableElement" title="Filter spin rows by chemical element"></select></label><label class="structure-entry-field structure-modify-lock-field"><span class="structure-entry-label">Source</span><select id="cifSpinEditSource" aria-label="Magnetic structure source"><option value="mcif" selected>mCIF</option><option value="modify">Modify</option></select></label>
+</div>
+<div class="structure-help-text" hidden="" id="cifSpinIndividualInfo"></div>
+<div aria-label="Spin element controls" class="structure-spin-element-toggles" id="cifSpinElementToggles"></div>
+<div class="structure-rows-list" id="cifMagMomentRows"></div>
+</div>
+<div class="structure-config-panel" data-structure-config-panel="bonds" hidden="">
+<div class="structure-rows-list" id="cifBondRows"></div>
+<button class="structure-add-bond-button" id="cifAddBondRule" type="button">+ Add bond</button>
+<div class="structure-help-text">Examples: Ni–Ni 0–5 Å, Ni–O 0–3 Å.</div>
+</div>
+</div></div></div><div class="generator-unified-right structure-viewer-main"><div aria-label="CIF/mCIF generator output" class="cif-output-tabs generator-unified-output-tabs" role="tablist"><button aria-controls="mcifStructurePane" aria-selected="true" class="cif-output-tab active" data-generator-output-tab="structure" id="mcifTabStructure" role="tab" type="button">Structure</button><button aria-controls="generatorReflectionsPane" aria-selected="false" class="cif-output-tab" data-cif-output-tab="reflections" data-generator-output-tab="reflections" id="cifOutputTabReflections" role="tab" type="button">Reflections</button><button aria-controls="cifPreviewPanel" aria-selected="false" class="cif-output-tab" data-cif-output-tab="preview" data-generator-output-tab="cif-preview" id="cifOutputTabPreview" role="tab" type="button">CIF Preview</button><button aria-controls="mcifPreviewPane" aria-selected="false" class="cif-output-tab" data-generator-output-tab="mcif-preview" id="mcifTabPreview" role="tab" type="button">mCIF Preview</button></div><div aria-labelledby="mcifTabStructure" class="generator-output-pane" id="mcifStructurePane" role="tabpanel">
+<div aria-label="Structure view direction and range" class="generator-structure-view-controls">
+<div class="cif-structure-view-buttons structure-view-buttons-six">
+<button data-cif-structure-view="a" type="button">a</button>
+<button data-cif-structure-view="b" type="button">b</button>
+<button data-cif-structure-view="c" type="button">c</button>
+<button data-cif-structure-view="astar" type="button">a*</button>
+<button data-cif-structure-view="bstar" type="button">b*</button>
+<button data-cif-structure-view="cstar" type="button">c*</button>
+</div>
+<div class="structure-range-grid structure-range-six">
+<label class="structure-entry-field"><span class="structure-entry-label" data-short-label="x−">x min</span><input id="cifRangeXMin" step="0.1" type="number" value="0"/></label>
+<label class="structure-entry-field"><span class="structure-entry-label" data-short-label="x+">x max</span><input id="cifRangeXMax" step="0.1" type="number" value="1"/></label>
+<label class="structure-entry-field"><span class="structure-entry-label" data-short-label="y−">y min</span><input id="cifRangeYMin" step="0.1" type="number" value="0"/></label>
+<label class="structure-entry-field"><span class="structure-entry-label" data-short-label="y+">y max</span><input id="cifRangeYMax" step="0.1" type="number" value="1"/></label>
+<label class="structure-entry-field"><span class="structure-entry-label" data-short-label="z−">z min</span><input id="cifRangeZMin" step="0.1" type="number" value="0"/></label>
+<label class="structure-entry-field"><span class="structure-entry-label" data-short-label="z+">z max</span><input id="cifRangeZMax" step="0.1" type="number" value="1"/></label>
+<input id="cifRangeX" type="hidden" value="0 1"/>
+<input id="cifRangeY" type="hidden" value="0 1"/>
+<input id="cifRangeZ" type="hidden" value="0 1"/>
+</div>
+</div>
+<div aria-live="polite" class="cif-structure-status" id="cifStructureStatus">Open the CIF/mCIF Generator to visualize the generated or selected structure.</div>
+<div class="structure-plot-wrap">
+<div class="structure-plot-overlay-left">
+<div aria-label="Structure plot display options" class="structure-plot-toolbar">
+<label><span>Unit cell</span><select id="cifUnitCellMode"><option value="all">All cells</option><option selected="" value="one">One cell</option><option value="none">None</option></select></label>
+<label><span>XYZ axes</span><select id="cifShowXYZ"><option selected="" value="show">Show</option><option value="hide">Hide</option></select></label>
+<button id="cifSaveFigure" title="Save current 3D view with legend and coordinate axes as PNG" type="button">Save figure</button>
+</div>
+<div aria-label="Atom legend" class="structure-atom-legend" id="cifAtomLegend"></div>
+</div>
+<div class="cif-structure-plot" id="cifStructurePlot"></div>
+<svg aria-hidden="true" class="structure-triad structure-triad-left" id="cifDirectTriad" viewbox="0 0 160 160"></svg>
+<svg aria-hidden="true" class="structure-triad structure-triad-right" id="cifReciprocalTriad" viewbox="0 0 160 160"></svg>
+</div>
+</div><div aria-labelledby="cifOutputTabReflections" class="generator-output-pane hidden" id="generatorReflectionsPane" role="tabpanel"><section class="cif-generator-section cif-reflection-parameters-section generator-reflection-settings">
+<div class="cif-generator-beam-grid">
+<label>Energy (meV)<input id="cifReflectionEnergy" min="0" step="0.001" type="number"/></label>
+<label>Wavelength (Å)<input id="cifReflectionWavelength" min="0" step="0.0001" type="number"/></label>
+<label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" min="0" step="0.0001" type="number"/></label>
+<button id="cifReflectionSetDefault" title="Copy Ef from Instrument" type="button">Set default</button>
+</div>
+</section><div aria-label="Reflection type" class="generator-reflection-tabs" role="tablist"><button aria-controls="generatorNuclearReflectionsPane" aria-selected="true" class="generator-reflection-tab active" id="generatorReflectionsNuclear" role="tab" type="button">Nuclear</button><button aria-controls="generatorMagneticReflectionsPane" aria-selected="false" class="generator-reflection-tab" id="generatorReflectionsMagnetic" role="tab" type="button">Magnetic</button></div><div aria-labelledby="generatorReflectionsNuclear" class="generator-reflection-pane" id="generatorNuclearReflectionsPane" role="tabpanel"><div aria-labelledby="cifOutputTabReflections" class="cif-output-panel" id="cifReflectionsPanel" role="tabpanel">
+<div class="cif-reflection-toolbar">
+<label class="cif-reflection-plane-toggle"><input checked="" id="cifReflectionAlongU" type="checkbox"/> along U</label>
+<label class="cif-reflection-plane-toggle"><input checked="" id="cifReflectionAlongV" type="checkbox"/> along V</label>
+<label class="cif-reflection-plane-toggle"><input checked="" id="cifReflectionWithinS2Max" type="checkbox"/> within instrument 2θ max</label>
+<label class="cif-reflection-plane-toggle"><input id="cifReflectionLambdaHalf" type="checkbox"/> λ/2</label>
+<button disabled="" id="cifDownloadTable" type="button">Download table</button>
+</div>
+<div class="cif-reflection-table-wrap">
+<table class="cif-reflection-table">
+<thead><tr>
+<th>Index (h k l)</th>
+<th aria-sort="descending" class="cif-sortable-th" data-sort-key="intensity" data-sort-label="|F|² (barn)" role="button" tabindex="0">|F|² (barn) <span class="cif-sort-indicator">▼</span></th>
+<th>Multiplicity</th>
+<th aria-sort="none" class="cif-sortable-th" data-sort-key="totalIntensity" data-sort-label="Total |F|² (barn)" role="button" tabindex="0">Total |F|² (barn) <span class="cif-sort-indicator"></span></th>
+<th aria-sort="none" class="cif-sortable-th" data-sort-key="twoTheta" data-sort-label="2θ (deg)" role="button" tabindex="0">2θ (deg) <span class="cif-sort-indicator"></span></th>
+<th aria-sort="none" class="cif-sortable-th" data-sort-key="q" data-sort-label="Q (Å⁻¹)" role="button" tabindex="0">Q (Å⁻¹) <span class="cif-sort-indicator"></span></th>
+<th aria-sort="none" class="cif-sortable-th" data-sort-key="d" data-sort-label="d (Å)" role="button" tabindex="0">d (Å) <span class="cif-sort-indicator"></span></th>
+</tr></thead>
+<tbody id="cifReflectionRows"><tr><td class="cif-reflection-empty" colspan="7">No generated reflections yet.</td></tr></tbody>
+</table>
+</div>
+</div></div><div aria-labelledby="generatorReflectionsMagnetic" class="generator-reflection-pane hidden" id="generatorMagneticReflectionsPane" role="tabpanel"><p class="generator-reflections-notice">Magnetic reflection calculation is not available yet.</p></div></div><div aria-labelledby="cifOutputTabPreview" class="cif-output-panel generator-output-pane hidden" id="cifPreviewPanel" role="tabpanel">
+<pre class="cif-preview-note" id="cifPreview" tabindex="0">Press Generate to preview the CIF.</pre>
+</div><div aria-labelledby="mcifTabPreview" class="cif-output-panel generator-output-pane hidden" id="mcifPreviewPane" role="tabpanel">
+<pre class="cif-preview-note" id="mcifPreviewText" tabindex="0">Load an mCIF to preview its contents.</pre>
+</div></div></div></section></div>
+<div aria-labelledby="tabScript" class="tab-panel hidden" id="scriptPanel" role="tabpanel">
+<section class="calc-card script-card">
+<div class="script-workspace">
+<div class="script-aset-pane">
+<div class="script-pane-heading script-aset-heading"><span>ASET</span><div class="script-aset-heading-actions"><button aria-controls="scriptAsetHelp" aria-expanded="false" class="info-toggle-button" id="scriptAsetInfoToggle" title="Show ASET information" type="button">ⓘ Info</button><button id="scriptAsetAdd" type="button">+ Add ASET</button></div></div>
+<div class="time-info-panel script-aset-help hidden" id="scriptAsetHelp">Each ASET is a SPICE command template. Use <code>&lt;value&gt;</code> for one-value Details and <code>&lt;range&gt;</code> for initial/final/step Details. Repeat placeholders to create multiple Detail boxes. For ASET lines beginning with <code>scan</code> or <code>scanrel</code>, <code>preset mcu</code> is added automatically from that command row's MCU value. Separate commands with commas or line breaks.</div>
+<div class="script-aset-table-header"><span>Index</span><span>Target</span><span>SPICE template</span><span></span></div>
+<div class="script-aset-list" id="scriptAsetList"></div>
+</div>
+<div class="script-command-pane">
+<div class="script-pane-heading script-command-heading"><span>Time estimate commands</span><div class="script-command-actions"><button id="scriptAsetToggle" title="Hide or show the ASET editor" type="button">◀ Hide ASET</button><button id="scriptToSpice" title="Convert Time estimate commands to SPICE" type="button">→ SPICE</button></div></div>
+<div class="script-time-mount" id="scriptTimeMount"></div>
+</div>
+<div class="script-spice-pane">
+<div class="script-pane-heading script-spice-heading">
+<span>SPICE macro</span>
+<div class="script-actions">
+<button id="scriptToCommands" title="Convert SPICE to Time estimate commands" type="button">← Commands</button>
+<button id="scriptCopySpice" type="button">Copy</button>
+</div>
+</div>
+<div class="script-spice-editor">
+<pre aria-hidden="true" class="script-spice-line-numbers" id="scriptSpiceLineNumbers"></pre>
+<pre aria-hidden="true" class="script-spice-backdrop" id="scriptSpiceBackdrop"></pre>
+<textarea aria-label="SPICE macro" class="script-spice-text" id="scriptSpiceText" spellcheck="false"></textarea>
+</div>
+<div aria-live="polite" class="script-message" id="scriptMessage"></div>
+</div>
+</div>
+</section>
+</div>
 </main>
 </div>
-<script type="module" src="app.js"></script>
+<script src="app.js" type="module"></script>
 </body></html>

@@ -118,6 +118,29 @@ function catalogOps(sites,parentOps,N){
   if(!candidates.some(o=>o.parity===1&&o.R.every((r,i)=>r.every((x,j)=>near(x,i===j?1:0)))&&o.t.every(t=>nearFrac(t,0)))) candidates.unshift({R:[[1,0,0],[0,1,0],[0,0,1]],t:[0,0,0],parity:1});
   return candidates;
 }
+// Keep the parent crystallographic symmetry separate from magnetic symmetry.
+// The child cell can be a non-standard supercell, so do NOT assign the
+// parent's IT number to the magnetic child group.
+function parentSpaceGroupMetadata(source){
+  const {scalar}=parseCifDocument(source);
+  const first=(...keys)=>keys.map(k=>scalar[k.toLowerCase()]).find(v=>v!=null && String(v).trim() && !['?','.'].includes(String(v).trim()));
+  const n=first('_space_group_IT_number','_space_group.it_number','_symmetry_Int_Tables_number');
+  const hm=first('_space_group_name_H-M_alt','_space_group.name_H-M_alt','_symmetry_space_group_name_H-M');
+  const lines=[];
+  if(n!=null && Number.isInteger(Number(n)) && Number(n)>=1 && Number(n)<=230) lines.push(`_parent_space_group.IT_number ${Number(n)}`);
+  if(hm!=null) lines.push(`_parent_space_group.name_H-M_alt '${String(hm).replace(/'/g,"''")}'`);
+  return lines;
+}
+function nuclearOperationsFromMagnetic(ops){
+  // Spatial projection of magnetic group (time reversal omitted). It describes
+  // the nuclear arrangement in the enlarged child-cell coordinates.
+  const unique=new Map();
+  for(const op of ops){
+    const key=op.R.flat().join(',')+';'+op.t.map(v=>Math.round(wrap(v)*1e8)).join(',');
+    if(!unique.has(key)) unique.set(key,opText({...op,parity:1}).split(',').slice(0,3).join(','));
+  }
+  return [...unique.values()];
+}
 export function exportCommensurateMcif({source,structure,settings,individualSettings=null,q=[0,0,0],mode='collinear',axis=[0,0,1],chirality='CCW',fallbackOperations=[]}){
   if(structure?.magnetic)throw new Error('For an imported mCIF use the existing moment-update export.');
   if(!Array.isArray(structure?.atoms)||!structure.atoms.length)throw new Error('CIF atomic sites are missing.');
@@ -168,15 +191,33 @@ export function exportCommensurateMcif({source,structure,settings,individualSett
     const site=dedup[i];reps.push(site);
     for(const op of ops){const pos=matVec(op.R,site.pos).map((v,j)=>wrap(v+op.t[j]));const k=findSite(dedup,pos,site.element,site.occupancy);if(k>=0)seen.add(k);}
   }
+  const parentGroup=parentSpaceGroupMetadata(source);
+  const nuclearOperations=nuclearOperationsFromMagnetic(ops);
   const lines=[`data_generated_magnetic_structure`, '# Commensurate magnetic supercell generated from user-entered moments.', '# Magnetic symmetry operators were checked against every decorated atomic site.',`# Original k: ${q.join(' ')}`,
     `_cell_length_a ${fmt(lattice.a)}` ,`_cell_length_b ${fmt(lattice.b)}` ,`_cell_length_c ${fmt(lattice.c)}`,
     `_cell_angle_alpha ${fmt(lattice.alpha)}`,`_cell_angle_beta ${fmt(lattice.beta)}`,`_cell_angle_gamma ${fmt(lattice.gamma)}`,
-    "_space_group_magn.name_BNS '?'",'', 'loop_', '_parent_propagation_vector.id', '_parent_propagation_vector.kxkykz', `k1 '[${q.map(fmt).join(' ')}]'`, '',
+    ...parentGroup,
+    "_space_group_magn.name_BNS '?'",'',
+    // Explicit ordinary-space-group operations let non-magnetic CIF readers
+    // retain the nuclear symmetry instead of silently falling back to P1.
+    'loop_', '_space_group_symop_id', '_space_group_symop_operation_xyz',
+    ...nuclearOperations.map((op,i)=>`${i+1} '${op}'`), '',
+    'loop_', '_parent_propagation_vector.id', '_parent_propagation_vector.kxkykz', `k1 '[${q.map(fmt).join(' ')}]'`, '',
     'loop_','_space_group_symop_magn_operation.id','_space_group_symop_magn_operation.xyz',...ops.map((o,i)=>`${i+1} '${opText(o)}'`),'',
     'loop_','_atom_site_label','_atom_site_type_symbol','_atom_site_fract_x','_atom_site_fract_y','_atom_site_fract_z','_atom_site_occupancy'];
-  reps.forEach((s,i)=>lines.push(`A${i+1} ${s.element} ${s.pos.map(fmt).join(' ')} ${fmt(s.occupancy)}`));
+  // Labels must identify the element, and the moment loop must reference
+  // exactly the same labels.  Symmetry splitting may turn one parent O1
+  // orbit into several inequivalent O sites in the magnetic cell.
+  const labelCounts=new Map();
+  const repLabels=reps.map(s=>{
+    const element=String(s.element||'X');
+    const next=(labelCounts.get(element)||0)+1;
+    labelCounts.set(element,next);
+    return `${element}${next}`;
+  });
+  reps.forEach((s,i)=>lines.push(`${repLabels[i]} ${s.element} ${s.pos.map(fmt).join(' ')} ${fmt(s.occupancy)}`));
   lines.push('','loop_','_atom_site_moment.label','_atom_site_moment.crystalaxis_x','_atom_site_moment.crystalaxis_y','_atom_site_moment.crystalaxis_z');
-  reps.forEach((s,i)=>{if(s.moment.some(x=>Math.abs(x)>1e-8))lines.push(`A${i+1} ${s.moment.map(fmt).join(' ')}`);});
+  reps.forEach((s,i)=>{if(s.moment.some(x=>Math.abs(x)>1e-8))lines.push(`${repLabels[i]} ${s.moment.map(fmt).join(' ')}`);});
   const text=lines.join('\n')+'\n';
   const check=parseCifStructure(text);
   if(check.atoms.length!==dedup.length)throw new Error(`Export round-trip failed: expected ${dedup.length} atoms, parsed ${check.atoms.length}.`);
