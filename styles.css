@@ -5487,3 +5487,28 @@ main > .main-tabs{grid-template-columns:repeat(5,minmax(0,1fr));}
 #structurePanel .cif-unified-output-line .cif-filename-entry input { flex: 1 1 0; }
 #structurePanel .cif-unified-output-buttons { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
 #structurePanel .cif-unified-output-buttons > button { min-width: 0; }
+
+/* Three unified output tabs: Structure / Reflections / CIF-mCIF Preview.
+   Override older 4-column desktop and 2-column mobile/container rules. */
+#structurePanel .generator-unified-output-tabs {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  width: 100%;
+}
+#structurePanel .generator-unified-output-tabs > .cif-output-tab {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 4px;
+}
+@container generator-unified (max-width: 880px) {
+  #structurePanel .generator-unified-output-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 760px) {
+  #structurePanel .generator-unified-output-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
