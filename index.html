@@ -344,7 +344,6 @@
 <label>Wavelength (Å)<input id="absorptionLambda" min="0" step="0.001" type="number"/></label>
 <label>Wave vector (Å⁻¹)<input id="absorptionK" min="0" step="0.001" type="number"/></label>
 </div>
-<button class="absorption-set-default" id="absorptionSetDefault" title="Copy fixed Instrument energy" type="button">Set default</button>
 </div>
 <div class="absorption-thickness-control">
 <label>SE transmission (%)<input id="absorptionSETransmission" max="100" min="0" step="0.1" type="number" value="100"/></label>
@@ -383,7 +382,7 @@
 </section>
 </div>
 <div aria-labelledby="tabCifGenerator" class="tab-panel hidden" id="structurePanel" role="tabpanel"><section class="calc-card generator-unified-card"><div class="generator-unified-grid" id="cifGeneratorPanel"><div class="generator-unified-left"><section class="generator-shared-file"><div class="cif-pane-heading">
-<h3>CIF/mCIF file</h3>
+<h3>Input file</h3>
 <div class="cif-heading-actions"><button id="cifShowCurrent" type="button">Show load file</button></div>
 </div><div class="cif-generator-source-row">
 <button id="cifLoadExisting" type="button">Select CIF/mCIF</button>
@@ -398,6 +397,7 @@
 <label class="cif-generator-file-name">File name
 <span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"/><span class="cif-filename-suffix" id="cifUnifiedFileSuffix">.cif</span></span>
 </label></div>
+<p class="cif-release-note" role="note">Note: Generated mCIF files use P1 magnetic symmetry.</p>
 <div class="cif-source-button-row cif-unified-output-buttons">
 <button class="primary-action" id="cifOutputGenerate" type="button">Generate CIF</button>
 <button disabled id="cifOutputDownload" type="button">Download CIF</button>
@@ -554,7 +554,7 @@
 <label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" min="0" step="0.0001" type="number"/></label>
 
 </div>
-</section><div aria-label="Reflection type" class="generator-reflection-tabs" role="tablist"><button aria-controls="generatorNuclearReflectionsPane" aria-selected="true" class="generator-reflection-tab active" id="generatorReflectionsNuclear" role="tab" type="button">Nuclear</button><button aria-controls="generatorMagneticReflectionsPane" aria-selected="false" class="generator-reflection-tab" id="generatorReflectionsMagnetic" disabled aria-disabled="true" title="Magnetic reflection calculations are temporarily unavailable" role="tab" type="button">Magnetic</button></div><div aria-labelledby="generatorReflectionsNuclear" class="generator-reflection-pane" id="generatorNuclearReflectionsPane" role="tabpanel"><div aria-labelledby="cifOutputTabReflections" class="cif-output-panel" id="cifReflectionsPanel" role="tabpanel">
+</section><div aria-label="Reflection type" class="generator-reflection-tabs" role="tablist"><button aria-controls="generatorNuclearReflectionsPane" aria-selected="true" class="generator-reflection-tab active" id="generatorReflectionsNuclear" role="tab" type="button">Nuclear</button><button aria-controls="generatorMagneticReflectionsPane" aria-selected="false" class="generator-reflection-tab" id="generatorReflectionsMagnetic" role="tab" type="button" disabled>Magnetic</button></div><div aria-labelledby="generatorReflectionsNuclear" class="generator-reflection-pane" id="generatorNuclearReflectionsPane" role="tabpanel"><div aria-labelledby="cifOutputTabReflections" class="cif-output-panel" id="cifReflectionsPanel" role="tabpanel">
 <div class="cif-reflection-toolbar">
 <label class="cif-reflection-plane-toggle"><input checked="" id="cifReflectionAlongU" type="checkbox"/> along U</label>
 <label class="cif-reflection-plane-toggle"><input checked="" id="cifReflectionAlongV" type="checkbox"/> along V</label>
@@ -576,7 +576,7 @@
 <tbody id="cifReflectionRows"><tr><td class="cif-reflection-empty" colspan="7">No generated reflections yet.</td></tr></tbody>
 </table>
 </div>
-</div></div><div aria-labelledby="generatorReflectionsMagnetic" class="generator-reflection-pane hidden" id="generatorMagneticReflectionsPane" role="tabpanel"><div class="cif-reflection-toolbar"><button id="magneticCalculateTable" type="button">Calculate magnetic peaks</button><button id="magneticDownloadTable" type="button" disabled>Download CSV</button><button id="magneticExportBnsInput" type="button" disabled>Export BNS model (JSON)</button></div><p id="magneticReflectionMessage" class="generator-reflections-notice">Press Calculate magnetic peaks. Commensurate structures only; f(Q)=1 approximation. BNS is not identified automatically in this browser.</p><div class="cif-reflection-table-wrap"><table class="cif-reflection-table"><thead><tr><th>Parent-cell (h k l)</th><th>Magnetic-cell (h k l)</th><th>|F<sub>M</sub>|² (barn)</th><th>2θ (deg)</th><th>Q (Å⁻¹)</th><th>d (Å)</th></tr></thead><tbody id="magneticReflectionRows"></tbody></table></div></div></div><div aria-labelledby="cifOutputTabPreview" class="cif-output-panel generator-output-pane hidden" id="cifPreviewPanel" role="tabpanel"><div class="cif-unified-preview-label" id="cifPreviewContext">No file selected</div>
+</div></div><div aria-labelledby="generatorReflectionsMagnetic" class="generator-reflection-pane hidden" id="generatorMagneticReflectionsPane" role="tabpanel"><p class="cif-release-note" role="note">Note: Magnetic reflection calculations are under validation. Do not use the results.</p><div class="cif-reflection-toolbar"><button id="magneticCalculateTable" type="button">Calculate</button><button id="magneticDownloadTable" type="button" disabled>Download CSV</button><button id="magneticExportBnsInput" type="button" disabled>Export BNS</button></div><p id="magneticReflectionMessage" class="generator-reflections-notice" hidden></p><div class="cif-reflection-table-wrap"><table class="cif-reflection-table"><thead><tr><th>Index (h k l)</th><th class="magnetic-sortable-th cif-sortable-th" data-sort-key="formFactor" aria-sort="none" role="button" tabindex="0">Form factor <span class="cif-sort-indicator"></span></th><th class="magnetic-sortable-th cif-sortable-th" data-sort-key="intensity" aria-sort="descending" role="button" tabindex="0">|F<sub>M</sub>|² (barn) <span class="cif-sort-indicator">▼</span></th><th class="magnetic-sortable-th cif-sortable-th" data-sort-key="twoTheta" aria-sort="none" role="button" tabindex="0">2θ (deg) <span class="cif-sort-indicator"></span></th><th class="magnetic-sortable-th cif-sortable-th" data-sort-key="q" aria-sort="none" role="button" tabindex="0">Q (Å⁻¹) <span class="cif-sort-indicator"></span></th><th class="magnetic-sortable-th cif-sortable-th" data-sort-key="d" aria-sort="none" role="button" tabindex="0">d (Å) <span class="cif-sort-indicator"></span></th></tr></thead><tbody id="magneticReflectionRows"></tbody></table></div></div></div><div aria-labelledby="cifOutputTabPreview" class="cif-output-panel generator-output-pane hidden" id="cifPreviewPanel" role="tabpanel"><div class="cif-unified-preview-label" id="cifPreviewContext">No file selected</div>
 <pre class="cif-preview-note" id="cifPreview" tabindex="0">Press Generate to preview the CIF.</pre>
 </div><div aria-hidden="true" class="cif-output-panel generator-output-pane hidden" id="mcifPreviewPane" role="tabpanel" hidden>
 <pre class="cif-preview-note" id="mcifPreviewText" tabindex="0">Load an mCIF to preview its contents.</pre>

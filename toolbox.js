@@ -27,13 +27,6 @@ export function createToolbox({
     if(toolboxTabsBound) return;
     toolboxTabsBound=true;
     const renderFormFactor=initializeMagneticFormFactorUI();
-    // Match the CIF Generator's Set default action: read the current fixed
-    // Instrument energy (Ei or Ef as selected there), update all three fields,
-    // then recalculate the attenuation curve.
-    $('absorptionSetDefault')?.addEventListener('click',()=>{
-      syncAbsorptionBeamFromInstrument();
-      updateAbsorptionCalculator();
-    });
     // Keep the attenuation wavevector in sync with E and wavelength.
     $('absorptionK')?.addEventListener('input',()=>{
       syncAbsorptionBeamFrom('wavevector');
@@ -599,6 +592,17 @@ export function createToolbox({
       if(kind!=='lambda')lambdaField.value=formatAbsorptionNumber(lambda,6);
       if(kField && kind!=='wavevector')kField.value=formatAbsorptionNumber(2*Math.PI/lambda,6);
     }finally{absorptionBeamUpdating=false;}
+    // Attenuation and Reflections are two editors of the Instrument's fixed
+    // Ei/Ef energy. Propagate only a valid completed numerical value; never
+    // dispatch while writing the calculated wavelength/wavevector fields.
+    const energy=NEUTRON_E_LAMBDA/(lambda*lambda);
+    const fixedField=$('energy');
+    if(fixedField && Number.isFinite(energy) && energy>0 &&
+       Math.abs(Number(fixedField.value)-energy)>1e-9*Math.max(1,energy)){
+      fixedField.value=String(Number(energy.toPrecision(12)));
+      fixedField.dispatchEvent(new Event('input',{bubbles:true}));
+      fixedField.dispatchEvent(new Event('change',{bubbles:true}));
+    }
   }
 
   function attenuationWavelengthA(){

@@ -1,4 +1,4 @@
-import {buildMagneticMotif, magneticBraggPeaks, parentIndexingFromMcif, hklInParentCell} from './magnetic-reflections.js';
+import {buildMagneticMotif, magneticBraggPeaks, parentIndexingFromMcif, hklInParentCell, explicitMagneticIonFactors} from './magnetic-reflections.js';
 import {exportCommensurateMcif,rationalApprox} from './mcif-export.js';
 // Extracted from app.js without changing calculation/display behavior.
 // Dependencies are injected by app.js to keep module boundaries explicit.
@@ -721,6 +721,7 @@ function resetStructureViewerStateToDefaults(){
     structureAtomSizeOverrides.clear();
     structureAtomSizeCleared.clear();
     structureAtomVisibility.clear();
+    atomSiteColors.clear(); atomSiteSizes.clear(); atomSiteVisibility.clear();
     structureMomentSettings.clear();
     structureMomentStructureType="collinear";
     structureMomentRotationAxis="c";
@@ -760,6 +761,9 @@ function saveStructureViewerState(){
       atomSizes:Object.fromEntries(structureAtomSizeOverrides),
       atomSizeCleared:[...structureAtomSizeCleared],
       atomVisible:Object.fromEntries(structureAtomVisibility),
+      atomSiteColors:Object.fromEntries(atomSiteColors),
+      atomSiteSizes:Object.fromEntries(atomSiteSizes),
+      atomSiteVisible:Object.fromEntries(atomSiteVisibility),
       moments:Object.fromEntries(structureMomentSettings),
       momentStructureType:structureMomentStructureType,
       momentRotationAxis:structureMomentRotationAxis,
@@ -822,6 +826,10 @@ function restoreStructureViewerState(){
     for(const element of (Array.isArray(saved.atomSizeCleared)?saved.atomSizeCleared:[])) structureAtomSizeCleared.add(String(element));
     structureAtomVisibility.clear();
     for(const [element,visible] of Object.entries(saved.atomVisible||{})) structureAtomVisibility.set(element,visible!==false);
+    atomSiteColors.clear();atomSiteSizes.clear();atomSiteVisibility.clear();
+    for(const [key,value] of Object.entries(saved.atomSiteColors||{})) if(/^#[0-9a-f]{6}$/i.test(value)) atomSiteColors.set(key,value);
+    for(const [key,value] of Object.entries(saved.atomSiteSizes||{})) if(Number.isFinite(Number(value))) atomSiteSizes.set(key,Math.max(2,Math.min(30,Number(value))));
+    for(const [key,value] of Object.entries(saved.atomSiteVisible||{})) atomSiteVisibility.set(key,value!==false);
     structureMomentSettings.clear();
     for(const [key,value] of Object.entries(saved.moments||{})) if(value && typeof value==="object") structureMomentSettings.set(key,{...value});
     // Old saved UI state can contain implicit +z, 1 μB defaults. Discard those
@@ -943,6 +951,26 @@ function defaultElementColor(element){
 }
 function elementColor(element){
   return structureAtomColorOverrides.get(String(element||"")) || defaultElementColor(element);
+}
+// Site-level presentation overrides are separate from crystallographic data.
+// Using sourceSiteIndex keeps symmetry-generated mates together with their site.
+const atomSiteColors=new Map(), atomSiteSizes=new Map(), atomSiteVisibility=new Map();
+const expandedAtomElements=new Set();
+function atomSiteKey(atom){
+  const index=Number(atom?.sourceSiteIndex);
+  return Number.isInteger(index)&&index>=0 ? `site:${index}` : null;
+}
+function atomDisplayColor(atom){
+  const key=atomSiteKey(atom);
+  return (key&&atomSiteColors.get(key)) || elementColor(atom.element);
+}
+function atomDisplaySize(atom){
+  const key=atomSiteKey(atom);
+  return key&&atomSiteSizes.has(key) ? atomSiteSizes.get(key) : elementRadius(atom.element);
+}
+function atomIsVisible(atom){
+  const key=atomSiteKey(atom);
+  return structureAtomVisibility.get(String(atom.element))!==false && !(key&&atomSiteVisibility.get(key)===false);
 }
 function defaultElementRadius(_element){
   return 10;
@@ -1424,63 +1452,114 @@ function updateStructureAtomColorRows(elements,structure=null){
   const host=$("cifAtomColorRows");
   if(!host) return;
   host.replaceChildren();
-  if(!elements.length){
-    const div=document.createElement("div"); div.className="structure-rows-empty"; div.textContent="No atoms available."; host.appendChild(div); return;
-  }
-  for(const element of elements){
-    const row=document.createElement("div"); row.className="structure-color-row";
-    const visible=document.createElement("input");
-    visible.type="checkbox";
-    visible.checked=structureAtomVisibility.get(element)!==false;
-    visible.title="Show this atom element";
-    const name=document.createElement("span");
-    const displayLabels=structureSiteDisplayLabels(structure);
-    const siteLabels=[...new Set((structure?.asymmetricSites||[]).filter(site=>String(site.element||"")===element).map(site=>String(displayLabels?.get(String(site.label))||site.label||"").trim()).filter(Boolean))];
-    name.textContent=siteLabels.length ? compressStructureSiteLabels(siteLabels,element) : element;
-    name.title=siteLabels.length ? `${element}: ${siteLabels.join(", ")}` : element;
-    const size=document.createElement("input");
-    size.type="number"; size.min="2"; size.max="30"; size.step="1";
-    const savedSize=Number(structureAtomSizeOverrides.get(element));
-    const defaultSize=defaultElementRadius(element);
-    size.value=structureAtomSizeCleared.has(element) ? "" : (Number.isFinite(savedSize) ? String(savedSize) : String(defaultSize));
-    size.placeholder=String(defaultSize);
-    size.title="Atom display size (leave blank for default)";
-    const sizeField=document.createElement("label"); sizeField.className="structure-entry-field";
-    const sizeCaption=document.createElement("span"); sizeCaption.className="structure-entry-label"; sizeCaption.textContent="Size";
-    sizeField.append(sizeCaption,size);
-    const custom=document.createElement("input");
-    custom.type="color"; custom.className="structure-color-swatch"; custom.value=elementColor(element); custom.title="Custom atom color";
-    const applyColor=color=>{
-      structureAtomColorOverrides.set(element,color);
-      saveStructureViewerState();
-      custom.value=color;
-      row.querySelectorAll('.structure-color-chip').forEach(b=>b.classList.toggle('selected',b.title.toLowerCase()===color.toLowerCase()));
-      syncDefaultMomentColorsForElement(element,color);
-      renderCifStructureIfVisible();
-    };
-    custom.addEventListener("input",()=>applyColor(custom.value));
-    visible.addEventListener("change",()=>{
-      structureAtomVisibility.set(element,visible.checked);
-      if(!visible.checked) setSpinEnabledForElement(element,false);
-      saveStructureViewerState();
-      renderCifStructureIfVisible();
+  const sites=structure?.asymmetricSites||[];
+  const displayLabels=structureSiteDisplayLabels(structure);
+  const header=document.createElement("div");
+  header.className="atoms-table-head";
+  for(const text of ["Element / Site","Visible","Color","Size"]){const cell=document.createElement("span");cell.textContent=text;header.appendChild(cell);}
+  host.appendChild(header);
+  if(!elements.length){const empty=document.createElement("div");empty.className="structure-rows-empty";empty.textContent="No atoms available.";host.appendChild(empty);return;}
+  function makeRow(label,key,element,isSite){
+    const row=document.createElement("div");row.className="atoms-table-row"+(isSite?" atoms-site-row":" atoms-element-row");
+    const name=document.createElement(isSite?"span":"button");name.className="atoms-row-name";
+    if(!isSite){name.type="button";name.setAttribute("aria-expanded",String(expandedAtomElements.has(element)));}
+    name.textContent=(isSite?"↳ ":expandedAtomElements.has(element)?"▾ ":"▸ ")+label;
+    const visible=document.createElement("input");visible.type="checkbox";visible.className="atoms-visible";
+    visible.checked=isSite?atomSiteVisibility.get(key)!==false:structureAtomVisibility.get(element)!==false;
+    visible.title=`Show ${label}`;
+    const color=document.createElement("input");color.type="color";color.className="atoms-color";
+    color.value=(isSite?atomSiteColors.get(key):null)||elementColor(element);
+    color.title=`${label} color`;
+    const size=document.createElement("input");size.type="number";size.className="atoms-size";size.min="2";size.max="30";size.step="1";
+    size.value=String((isSite?atomSiteSizes.get(key):null)??elementRadius(element));
+    size.title=`${label} display size`;
+    const commit=()=>{saveStructureViewerState();renderCifStructureIfVisible();};
+    color.addEventListener("input",()=>{
+      if(isSite) atomSiteColors.set(key,color.value);
+      else {
+        structureAtomColorOverrides.set(element,color.value);
+        for(const [index,site] of sites.entries()) if(String(site.element)===element) atomSiteColors.delete(`site:${index}`);
+        syncDefaultMomentColorsForElement(element,color.value);
+        for(const child of [...host.querySelectorAll('.atoms-site-row')].filter(row=>row.dataset.element===element).map(row=>row.querySelector('.atoms-color')).filter(Boolean)) child.value=color.value;
+      }
+      commit();
     });
     size.addEventListener("input",()=>{
-      const raw=String(size.value||"").trim();
-      const n=Number(raw);
-      if(!raw || !Number.isFinite(n)){
-        structureAtomSizeOverrides.delete(element);
-        structureAtomSizeCleared.add(element);
-      }else{
-        structureAtomSizeOverrides.set(element,Math.max(2,Math.min(30,n)));
-        structureAtomSizeCleared.delete(element);
+      if(size.value===""||!Number.isFinite(Number(size.value)))return;
+      const v=Math.max(2,Math.min(30,Number(size.value)));
+      if(isSite)atomSiteSizes.set(key,v);
+      else {
+        structureAtomSizeOverrides.set(element,v); structureAtomSizeCleared.delete(element);
+        for(const [index,site] of sites.entries()) if(String(site.element)===element) atomSiteSizes.delete(`site:${index}`);
+        for(const child of [...host.querySelectorAll('.atoms-site-row')].filter(row=>row.dataset.element===element).map(row=>row.querySelector('.atoms-size')).filter(Boolean))child.value=String(v);
       }
-      saveStructureViewerState(); renderCifStructureIfVisible();
+      commit();
     });
-    row.append(visible,name,sizeField,makePaletteButtons(elementColor(element),applyColor),custom);
-    host.appendChild(row);
+    visible.addEventListener("change",()=>{
+      if(isSite)atomSiteVisibility.set(key,visible.checked);
+      else {
+        structureAtomVisibility.set(element,visible.checked);
+        for(const [index,site] of sites.entries()) if(String(site.element)===element) atomSiteVisibility.delete(`site:${index}`);
+        for(const child of [...host.querySelectorAll('.atoms-site-row')].filter(row=>row.dataset.element===element).map(row=>row.querySelector('.atoms-visible')).filter(Boolean))child.checked=visible.checked;
+      }
+      commit();
+    });
+    // Twelve directly accessible presets (6 by 2) plus a native RGB picker, per row.
+    // All changes use the existing input handler (persistence, site overrides,
+    // element-wide propagation, spin default colors, 3D display).
+    const colorCell=document.createElement("div");
+    colorCell.className="atoms-color-cell";
+    const presetColors=STRUCTURE_PALETTE.slice(0,12);
+    const presetGrid=document.createElement("div");
+    presetGrid.className="atoms-preset-grid";
+    const presetButtons=presetColors.map(hex=>{
+      const button=document.createElement("button");
+      button.type="button";
+      button.className="atoms-preset-color";
+      button.style.backgroundColor=hex;
+      button.title=`Set ${label} color to ${hex}`;
+      button.setAttribute("aria-label",`Set ${label} color to ${hex}`);
+      button.dataset.color=hex;
+      button.addEventListener("click",()=>{
+        color.value=hex;
+        color.dispatchEvent(new Event("input",{bubbles:true}));
+      });
+      presetGrid.appendChild(button);
+      return button;
+    });
+    const syncPresetSelection=()=>{
+      for(const button of presetButtons){
+        const selected=button.dataset.color===color.value.toLowerCase();
+        button.classList.toggle("selected",selected);
+        button.setAttribute("aria-pressed",String(selected));
+      }
+    };
+    colorCell.appendChild(presetGrid);
+    color.addEventListener("input",syncPresetSelection);
+    color.classList.add("atoms-rgb-picker");
+    color.title=`${label}: custom RGB color`;
+    color.setAttribute("aria-label",`${label}: custom RGB color`);
+    colorCell.appendChild(color);
+    syncPresetSelection();
+    if(!isSite)name.addEventListener("click",()=>{
+      if(expandedAtomElements.has(element))expandedAtomElements.delete(element);else expandedAtomElements.add(element);
+      updateStructureAtomColorRows(elements,structure);
+    });
+    row.dataset.element=element;
+    row.append(name,visible,colorCell,size);
+    return row;
+  }
+  for(const element of elements){
+    const itemSites=sites.map((site,index)=>({...site,index})).filter(site=>String(site.element)===element);
+    host.appendChild(makeRow(`${element} (${itemSites.length})`,null,element,false));
+    if(expandedAtomElements.has(element)) for(const site of itemSites){
+      const key=`site:${site.index}`;
+      const label=String(displayLabels?.get(String(site.label))||site.label||`${element}${site.index+1}`);
+      host.appendChild(makeRow(label,key,element,true));
+    }
   }
 }
+
 function magneticCandidateSites(structure){
   const sites=Array.isArray(structure?.asymmetricSites) ? structure.asymmetricSites : [];
   const elementOrder=new Map(structureElements(structure).map((element,index)=>[String(element),index]));
@@ -2550,28 +2629,28 @@ function renderCifStructureView(){
   const atoms=replicatedAtoms(source.structure,range);
   if(!atoms.length){ status.textContent="The current CIF contains no atoms to display."; Plotly.purge(plot); return; }
   const grouped=new Map();
-  for(const atom of atoms){
-    const key=String(atom.element||"X");
-    if(structureAtomVisibility.get(key)===false) continue;
-    if(!grouped.has(key)) grouped.set(key,[]);
-    grouped.get(key).push(atom);
+  const displayedAtoms=atoms.filter(atomIsVisible);
+  for(const atom of displayedAtoms){
+    const key=JSON.stringify([atom.element,atomDisplayColor(atom),atomDisplaySize(atom)]);
+    if(!grouped.has(key))grouped.set(key,{element:String(atom.element),color:atomDisplayColor(atom),size:atomDisplaySize(atom),atoms:[]});
+    grouped.get(key).atoms.push(atom);
   }
-  const displayedAtoms=atoms.filter(atom=>structureAtomVisibility.get(String(atom.element||"X"))!==false);
   const bondRules=readStructureBondRules();
   const traces=[...unitCellTraces(basis,range),...bondTraces(displayedAtoms,basis,bondRules)];
   const orderedElements=structureElements(source.structure);
-  for(const element of orderedElements){
-    const list=grouped.get(element);
-    if(!list?.length) continue;
+  const shownElements=new Set();
+  for(const group of grouped.values()){
+    const {element,color,size,atoms:list}=group;
     const xs=[],ys=[],zs=[],texts=[];
     for(const atom of list){
       const cart=fractionalToCartesian(basis,[atom.x,atom.y,atom.z]);
       xs.push(cart[0]);ys.push(cart[1]);zs.push(cart[2]);
-      texts.push(`${element}<br>frac=(${atom.x.toFixed(3)}, ${atom.y.toFixed(3)}, ${atom.z.toFixed(3)})`);
+      texts.push(`${atom.sourceLabel||element}<br>frac=(${atom.x.toFixed(3)}, ${atom.y.toFixed(3)}, ${atom.z.toFixed(3)})`);
     }
-    traces.push({type:"scatter3d",mode:"markers",name:element,x:xs,y:ys,z:zs,text:texts,hovertemplate:"%{text}<extra></extra>",marker:{size:elementRadius(element),color:elementColor(element),line:{color:"#333",width:0.8},opacity:0.92}});
+    traces.push({type:"scatter3d",mode:"markers",name:element,showlegend:!shownElements.has(element),x:xs,y:ys,z:zs,text:texts,hovertemplate:"%{text}<extra></extra>",marker:{size,color,line:{color:"#333",width:0.8},opacity:0.92}});
+    shownElements.add(element);
   }
-  updateStructureAtomLegend(orderedElements.filter(element=>grouped.has(element)));
+  updateStructureAtomLegend(orderedElements.filter(element=>shownElements.has(element)));
   const magneticOverlays=magneticStructureTraces(displayedAtoms,basis,source.structure); traces.push(...magneticOverlays);
   const magneticSummary=enabledPropagationVectorsForStructure();
   const effectiveK=effectivePropagationVectorForStructure();
@@ -3455,7 +3534,7 @@ function sortedCifReflections(rows,sortState=cifReflectionSort){
 }
 
 function updateCifReflectionSortHeaders(){
-  for(const th of document.querySelectorAll(".cif-sortable-th")){
+  for(const th of document.querySelectorAll(".cif-sortable-th:not(.magnetic-sortable-th)")){
     const active=th.dataset.sortKey===cifReflectionSort.key;
     const direction=active ? cifReflectionSort.direction : null;
     const indicator=th.querySelector(".cif-sort-indicator");
@@ -3699,6 +3778,44 @@ function updateLiveEditorNuclearSource(){
 let lastMagneticMotif=null;
 let lastMagneticRows=[];
 let lastMagneticParentIndexing=null;
+let magneticReflectionSort={key:'intensity',direction:'desc'};
+function sortedMagneticReflections(rows){
+  const {key,direction}=magneticReflectionSort;
+  const factor=direction==='asc'?1:-1;
+  return [...rows].sort((a,b)=>{
+    const av=Number(key==='formFactor'?a.formFactorSort:a[key]);
+    const bv=Number(key==='formFactor'?b.formFactorSort:b[key]);
+    return (av-bv)*factor || compareHkl(a.hkl,b.hkl);
+  });
+}
+function updateMagneticSortHeaders(){
+  for(const th of document.querySelectorAll('.magnetic-sortable-th')){
+    const active=th.dataset.sortKey===magneticReflectionSort.key;
+    const indicator=th.querySelector('.cif-sort-indicator');
+    if(indicator)indicator.textContent=active?(magneticReflectionSort.direction==='asc'?'▲':'▼'):'';
+    th.setAttribute('aria-sort',active?(magneticReflectionSort.direction==='asc'?'ascending':'descending'):'none');
+  }
+}
+function setMagneticReflectionSort(key){
+  if(magneticReflectionSort.key===key)magneticReflectionSort.direction=magneticReflectionSort.direction==='asc'?'desc':'asc';
+  else magneticReflectionSort={key,direction:(key==='intensity'||key==='q')?'desc':'asc'};
+  updateMagneticSortHeaders();
+  renderMagneticReflectionRows();
+}
+function renderMagneticReflectionRows(){
+  const body=$('magneticReflectionRows');if(!body)return;
+  body.replaceChildren();
+  const replication=lastMagneticParentIndexing?.replication || lastMagneticMotif?.replication || [1,1,1];
+  const known=!!lastMagneticParentIndexing || lastMagneticMotif?.source!=='mCIF';
+  for(const row of sortedMagneticReflections(lastMagneticRows).slice(0,3000)){
+    const parentHkl=known?hklInParentCell(row.hkl,replication):null;
+    const tr=document.createElement('tr');
+    const values=[parentHkl?`(${parentHkl.map(v=>Number(v.toFixed(8))).join(' ')})`:'Unknown',row.formFactor??'1',Number(row.intensity).toFixed(7),Number(row.twoTheta).toFixed(4),Number(row.q).toFixed(5),Number(row.d).toFixed(5)];
+    for(const value of values){const td=document.createElement('td');td.textContent=value;tr.appendChild(td);}
+    body.appendChild(tr);
+  }
+}
+
 const GENERATOR_REFLECTION_MODE_KEY='tas-simulator-generator-reflection-mode-v1';
 function magneticModelFromEditor(){
   // The generated CIF draft contains *nuclear* atom sites only and may take
@@ -3737,13 +3854,14 @@ function calculateMagneticReflectionTable(){
       const inst=currentInstrument();
       twoThetaMax=Math.min(180,effectiveS2MaxAtEi(inst,beam.effectiveEnergy,beam.lambdaHalf));
     }
-    const rows=magneticBraggPeaks(motif,beam.wavelength,{twoThetaMax});
+    const ionByElement=explicitMagneticIonFactors(getSelectedCifText());
+    const rows=magneticBraggPeaks(motif,beam.wavelength,{twoThetaMax,ionByElement});
     const spinCount=motif.sites.filter(site=>Math.hypot(...(site.moment||[0,0,0]))>1e-10).length;
     let diagnostic='';
     if(!rows.length){
       if(!spinCount) diagnostic=' No nonzero magnetic moments were found. Check Spins → Use and Source (mCIF / Modify).';
       else {
-        const unrestricted=twoThetaMax<179.999 ? magneticBraggPeaks(motif,beam.wavelength,{twoThetaMax:180}) : [];
+        const unrestricted=twoThetaMax<179.999 ? magneticBraggPeaks(motif,beam.wavelength,{twoThetaMax:180,ionByElement}) : [];
         if(unrestricted.length) diagnostic=` ${unrestricted.length} reflections exist without the instrument 2θ limit (current limit ${Number(twoThetaMax).toFixed(2)}°). Disable Within S2 Max or adjust the beam/instrument range.`;
         else diagnostic=' Nonzero moments exist, but no magnetic peaks pass the wavelength range/intensity threshold. Try shorter wavelength and verify the magnetic motif.';
       }
@@ -3758,35 +3876,30 @@ function calculateMagneticReflectionTable(){
     lastMagneticParentIndexing=parentInfo;
     const displayRep=parentInfo?.replication || motif.replication;
     const parentKnown=!!parentInfo || motif.source!=='mCIF';
-    const formatter=(v,n=5)=>Number(v).toFixed(n);
-    for(const row of rows.slice(0,3000)){
-      const tr=document.createElement('tr');
-      const parentHkl=parentKnown?hklInParentCell(row.hkl,displayRep):null;
-      for(const value of [parentHkl?`(${parentHkl.map(v=>Number(v.toFixed(8))).join(' ')})`:'Unknown',`(${row.hkl.join(' ')})`,formatter(row.intensity,7),formatter(row.twoTheta,4),formatter(row.q),formatter(row.d)]){
-        const td=document.createElement('td');td.textContent=value;tr.appendChild(td);
-      }
-      body.appendChild(tr);
-    }
+    renderMagneticReflectionRows();
     const cellDescription=parentInfo
       ? `Magnetic supercell ${displayRep.join('×')} relative to the parent cell (parent c=${Number(parentInfo.lattice.c).toFixed(4)} Å; magnetic c=${Number(motif.lattice.c).toFixed(4)} Å).`
       : motif.source==='mCIF'
         ? 'Magnetic cell is taken directly from the imported mCIF; parent-cell indexing is unknown.'
         : `Magnetic supercell ${displayRep.join('×')} relative to the input CIF cell.`;
-    message.textContent=`${rows.length} magnetic reflections in the selected range; ${cellDescription} Parent-cell and magnetic-cell indices are shown separately. Values are |F_M|² in barn, with f(Q)=1 (no ion-specific form factor). No Lorentz/absorption/instrument corrections. No symmetry-family grouping. ${spinCount} nonzero spin(s) in the motif.${diagnostic}`;
+    // Keep the validation note in the UI; only show this message for empty results or errors.
+    message.textContent=rows.length ? '' : (diagnostic.trim() || 'No magnetic reflections were found in the selected range.');
+    message.hidden=!message.textContent;
     $('magneticDownloadTable').disabled=!rows.length;
     $('magneticExportBnsInput').disabled=false;
   }catch(err){
     message.textContent=err?.message||String(err);
+    message.hidden=false;
   }
 }
 function downloadMagneticCsv(){
   if(!lastMagneticRows.length)return;
   const replication=lastMagneticParentIndexing?.replication || lastMagneticMotif?.replication || [1,1,1];
   const known=!!lastMagneticParentIndexing || lastMagneticMotif?.source!=='mCIF';
-  const lines=['parent_h,parent_k,parent_l,magnetic_h,magnetic_k,magnetic_l,FM2_barn,two_theta_deg,Q_inv_A,d_A',
-    ...lastMagneticRows.map(r=>[
+  const lines=['parent_h,parent_k,parent_l,form_factor,FM2_barn,two_theta_deg,Q_inv_A,d_A',
+    ...sortedMagneticReflections(lastMagneticRows).map(r=>[
       ...(known?hklInParentCell(r.hkl,replication):['','','']),
-      ...r.hkl,r.intensity,r.twoTheta,r.q,r.d].join(','))];
+      `"${String(r.formFactor??'1').replace(/"/g,'""')}"`,r.intensity,r.twoTheta,r.q,r.d].join(','))];
   downloadGeneratedCif(lines.join('\n'),'magnetic_reflections.csv');
 }
 function downloadBnsModel(){
@@ -3801,6 +3914,12 @@ function initializeMagneticReflections(){
   button.addEventListener('click',calculateMagneticReflectionTable);
   $('magneticDownloadTable')?.addEventListener('click',downloadMagneticCsv);
   $('magneticExportBnsInput')?.addEventListener('click',downloadBnsModel);
+  for(const th of document.querySelectorAll('.magnetic-sortable-th')){
+    const activate=()=>setMagneticReflectionSort(th.dataset.sortKey);
+    th.addEventListener('click',activate);
+    th.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate();}});
+  }
+  updateMagneticSortHeaders();
 }
 
 function recalculateGeneratedReflections(){
@@ -3871,10 +3990,7 @@ function setGeneratorMode(name){
   try{localStorage.setItem('tas-simulator-generator-mode-v1',name);}catch(_e){}
 }
 function setGeneratorReflectionMode(name){
-  // Release safety: magnetic reflection calculation is not yet validated.
-  name='nuclear';
-  const magneticTab=$("generatorReflectionsMagnetic");
-  if(magneticTab){ magneticTab.disabled=true; magneticTab.setAttribute('aria-disabled','true'); }
+  if(name!=='magnetic') name='nuclear';
   for(const [mode,tabId,paneId] of [['nuclear','generatorReflectionsNuclear','generatorNuclearReflectionsPane'],['magnetic','generatorReflectionsMagnetic','generatorMagneticReflectionsPane']]){
     const on=mode===name;
     $(tabId)?.classList.toggle('active',on);
@@ -4115,35 +4231,35 @@ function initializeUnifiedOutputActions(){
     download=$("cifOutputDownload"), set=$("cifOutputSet");
   if(!format||!generate||!download||!set||format.dataset.outputBound) return;
   format.dataset.outputBound="1";
+  format.value="cif";
   const ids={cif:["cifGenerate","cifDownload","cifSet"],
     mcif:["structureMcifGenerate","structureMcifDownload","structureMcifSet"]};
   const update=()=>{
-    if(format.value!=="cif") format.value="cif";
-    const mcif=false, word="CIF";
+    const mcif=format.value==="mcif", word=mcif?"mCIF":"CIF";
     const [g,d,s]=ids[mcif?"mcif":"cif"].map(id=>$(id));
     generate.textContent=`Generate ${word}`;
     download.textContent=`Download ${word}`;
     set.textContent=`Set ${word}`;
-    generate.disabled=mcif||!g||g.disabled;
-    download.disabled=mcif||!d||d.disabled;
-    set.disabled=mcif||!s||s.disabled;
+    generate.disabled=!g||g.disabled;
+    download.disabled=!d||d.disabled;
+    set.disabled=!s||s.disabled;
     const suffix=$("cifUnifiedFileSuffix");
     if(suffix) suffix.textContent=mcif?".mcif":".cif";
   };
   format.addEventListener("change",()=>{
-    if(format.value!=="cif") format.value="cif";
-    try{localStorage.setItem("tas-cif-output-format-v1","cif");}catch(_e){}
+    try{localStorage.setItem("tas-cif-output-format-v1",format.value);}catch(_e){}
     update();
   });
-  // Do not restore the old mCIF selection from browser storage.
-  format.value="cif";
+  // Restore the last output format, but do not overwrite any currently chosen value.
+  try{
+    const saved=localStorage.getItem("tas-cif-output-format-v1");
+    if(saved==="cif"||saved==="mcif") format.value=saved;
+  }catch(_e){}
   const mcifOption=format.querySelector('option[value="mcif"]');
-  if(mcifOption) mcifOption.disabled=true;
-  try{localStorage.setItem("tas-cif-output-format-v1","cif");}catch(_e){}
+  if(mcifOption) mcifOption.disabled=false;
   for(const [index,el] of [generate,download,set].entries()){
     el.addEventListener("click",()=>{
-      if(format.value==="mcif") return; // Release safety: do not dispatch mCIF actions.
-      const id=ids.cif[index];
+      const id=ids[format.value==="mcif"?"mcif":"cif"][index];
       const original=$(id);
       if(original&&!original.disabled)original.click();
       queueMicrotask(update);
@@ -4156,8 +4272,8 @@ function initializeUnifiedOutputActions(){
   update();
 }
 function initMcifGeneratorActions(){
-  // Release safety: leave legacy mCIF controls disabled too.
-  for(const id of ["structureMcifGenerate","structureMcifDownload","structureMcifSet"]) if($(id)) $(id).disabled=true;
+  // mCIF Generate is available; Download/Set remain disabled until generation.
+  if($("structureMcifGenerate")) $("structureMcifGenerate").disabled=false;
   invalidateGeneratedMcif();
   $("structureMcifShowCurrent")?.addEventListener("click",()=>{
     if(!getSelectedCifText()){mcifMessage("No current CIF/mCIF selected.",true);return;}
@@ -4361,6 +4477,9 @@ async function initializeCifGenerator(){
     for(const [id,mode] of [['generatorReflectionsNuclear','nuclear'],['generatorReflectionsMagnetic','magnetic']]){
       $(id)?.addEventListener('click',()=>setGeneratorReflectionMode(mode));
     }
+    // Attach the actual Calculate / CSV / BNS buttons. The magnetic pane can
+    // be visible without these listeners if only the tab switch is wired.
+    initializeMagneticReflections();
     let savedReflectionMode='nuclear';
     try{savedReflectionMode=localStorage.getItem(GENERATOR_REFLECTION_MODE_KEY)||'nuclear';}catch(_e){}
     setGeneratorReflectionMode(savedReflectionMode);
@@ -4417,7 +4536,7 @@ async function initializeCifGenerator(){
     });
     $("propagationVectors")?.addEventListener("click",()=>requestAnimationFrame(propagationStructureRefresh));
     $("addPropagationVector")?.addEventListener("click",()=>requestAnimationFrame(propagationStructureRefresh));
-    for(const th of document.querySelectorAll(".cif-sortable-th")){
+    for(const th of document.querySelectorAll(".cif-sortable-th:not(.magnetic-sortable-th)")){
       const activate=()=>setCifReflectionSort(th.dataset.sortKey);
       th.addEventListener("click",activate);
       th.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();activate();}});

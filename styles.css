@@ -5581,3 +5581,181 @@ main > .main-tabs{grid-template-columns:repeat(5,minmax(0,1fr));}
 #structurePanel #cifMagMomentRows .structure-moment-row .structure-entry-label {
   font-size: 10px; white-space: nowrap;
 }
+
+/* Release notices: distinguish unsupported BNS assignment and unvalidated intensity. */
+#structurePanel .cif-release-note {
+  color: #c62828;
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 700;
+  margin: 5px 0 10px;
+}
+/* Keep the file headings and their Show buttons on the same row on phones.
+   Scope only these two headings; other editor headings retain their layout. */
+#structurePanel .generator-shared-file > .cif-pane-heading,
+#structurePanel .cif-generator-source-section > .cif-pane-heading {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  min-width: 0;
+}
+#structurePanel .generator-shared-file > .cif-pane-heading h3,
+#structurePanel .cif-generator-source-section > .cif-pane-heading h3 {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 !important;
+  white-space: nowrap;
+}
+#structurePanel .generator-shared-file > .cif-pane-heading .cif-heading-actions,
+#structurePanel .cif-generator-source-section > .cif-pane-heading .cif-heading-actions {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap !important;
+  justify-content: flex-end !important;
+}
+#structurePanel .generator-shared-file > .cif-pane-heading .cif-heading-actions button,
+#structurePanel .cif-generator-source-section > .cif-pane-heading .cif-heading-actions button {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  min-width: 0;
+  white-space: nowrap;
+}
+@media (max-width: 450px) {
+  #structurePanel .generator-shared-file > .cif-pane-heading .cif-heading-actions button,
+  #structurePanel .cif-generator-source-section > .cif-pane-heading .cif-heading-actions button {
+    font-size: 11px !important;
+    padding-inline: 5px !important;
+  }
+}
+
+/* Collapsible element/site table in Structure editor > Atoms. */
+#structurePanel #cifAtomColorRows{max-height:330px;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;padding-right:4px;}
+#structurePanel .atoms-table-head,#structurePanel .atoms-table-row{
+ display:grid;grid-template-columns:minmax(76px,1fr) 47px 46px 62px;gap:6px;align-items:center;min-width:0;
+}
+#structurePanel .atoms-table-head{position:sticky;top:0;z-index:2;background:var(--panel-bg,#fff);font-size:11px;font-weight:700;padding:5px 2px;border-bottom:1px solid #d7dce3;}
+#structurePanel .atoms-table-head span:not(:first-child){text-align:center;}
+#structurePanel .atoms-table-row{padding:5px 2px;border-bottom:1px solid #e8ebef;min-height:36px;}
+#structurePanel .atoms-site-row{background:rgba(120,140,160,.055);}
+#structurePanel .atoms-row-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font:inherit;}
+#structurePanel button.atoms-row-name{background:none;border:0;padding:3px;cursor:pointer;font-weight:650;color:inherit;}
+#structurePanel .atoms-visible{justify-self:center;margin:0;}
+#structurePanel .atoms-color{width:33px;height:27px;min-width:0;padding:1px;justify-self:center;cursor:pointer;}
+#structurePanel .atoms-size{width:100%;min-width:0;box-sizing:border-box;font-size:12px;padding:4px;}
+@media(max-width:420px){#structurePanel .atoms-table-head,#structurePanel .atoms-table-row{grid-template-columns:minmax(56px,1fr) 43px 42px 53px;gap:3px;}}
+
+/* Atoms: twelve always-visible preset colors (6 x 2), plus independent RGB picker. */
+#structurePanel .atoms-table-head,#structurePanel .atoms-table-row{
+  grid-template-columns:minmax(90px,1fr) 50px minmax(210px,235px) 62px;
+  gap:6px;
+}
+#structurePanel .atoms-color-cell{
+  display:flex;align-items:center;justify-content:flex-start;gap:0;min-width:0;
+}
+#structurePanel .atoms-preset-grid{
+  display:grid;grid-template-columns:repeat(6,22px);grid-template-rows:repeat(2,22px);
+  gap:5px 4px;flex:0 0 auto;
+}
+#structurePanel .atoms-preset-color{
+  box-sizing:border-box;width:22px;height:22px;
+  border:1px solid rgba(0,0,0,.22);border-radius:4px;padding:0;cursor:pointer;
+}
+#structurePanel .atoms-preset-color.selected{
+  outline:2px solid var(--text-color,#252f40);outline-offset:1px;
+}
+#structurePanel .atoms-color-cell .atoms-rgb-picker{
+  box-sizing:border-box;flex:0 0 32px;width:32px;height:27px;
+  min-width:0;padding:1px;cursor:pointer;margin-left:18px;
+}
+@media(max-width:480px){
+  #structurePanel .atoms-table-head,#structurePanel .atoms-table-row{
+    grid-template-columns:minmax(42px,1fr) 32px minmax(146px,1.5fr) 42px;
+    gap:3px;
+  }
+  #structurePanel .atoms-preset-grid{
+    grid-template-columns:repeat(6,16px);grid-template-rows:repeat(2,19px);
+    gap:4px 2px;
+  }
+  #structurePanel .atoms-preset-color{width:16px;height:19px;border-radius:3px;}
+  #structurePanel .atoms-color-cell .atoms-rgb-picker{
+    flex-basis:24px;width:24px;height:24px;margin-left:12px;
+  }
+}
+
+/* Atoms editor: proportional, responsive columns (Site : Visible : Color : Size = 1:1:3:1).
+   Grid-based positioning replaces fixed right-edge columns and translateX offsets. */
+#structurePanel .atoms-table-head,
+#structurePanel .atoms-table-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 3fr) minmax(0, 1fr);
+  gap: 6px;
+}
+#structurePanel .atoms-table-head span:nth-child(2),
+#structurePanel .atoms-table-row .atoms-visible,
+#structurePanel .atoms-table-head span:nth-child(3) {
+  transform: none;
+}
+#structurePanel .atoms-color-cell {
+  min-width: 0;
+}
+#structurePanel .atoms-table-head span:nth-child(3) {
+  text-align: left;
+}
+@media (max-width: 480px) {
+  #structurePanel .atoms-table-head,
+  #structurePanel .atoms-table-row {
+    gap: 3px;
+  }
+  /* Narrow-screen chips still require a usable color area. */
+  #structurePanel .atoms-color-cell .atoms-rgb-picker {
+    margin-left: 12px;
+  }
+}
+
+/* Center the Color header and the complete (12 preset colors + RGB) control
+   within the proportional Color column at every viewport width. */
+#structurePanel .atoms-table-head span:nth-child(3) {
+  text-align: center;
+}
+#structurePanel .atoms-table-row .atoms-color-cell {
+  justify-content: center;
+}
+
+/* Nuclear and Magnetic: a common approximately-ten-data-row scroll viewport.
+   Auto-height prevents blank space when the table contains fewer rows. */
+#structurePanel #generatorReflectionsPane .generator-reflection-pane .cif-reflection-table-wrap{
+  box-sizing:border-box;
+  flex:none;
+  height:auto!important;
+  min-height:0!important;
+  max-height:calc(11 * 38px);
+  overflow:auto;
+  overscroll-behavior:contain;
+  max-width:100%;
+}
+#structurePanel #generatorReflectionsPane .cif-reflection-table th{
+  position:sticky;
+  top:0;
+  z-index:2;
+}
+/* Magnetic action buttons share all available width equally at every viewport. */
+#structurePanel #generatorMagneticReflectionsPane > .cif-reflection-toolbar{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  width:100%;
+  min-width:0;
+}
+#structurePanel #generatorMagneticReflectionsPane > .cif-reflection-toolbar > button{
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  margin:0;
+  padding:8px 4px;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+#structurePanel #magneticReflectionMessage[hidden]{display:none!important;}

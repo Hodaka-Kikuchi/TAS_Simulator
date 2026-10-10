@@ -1,3 +1,4 @@
+import {computeMagneticFormFactor, magneticIonConfigurations} from './magnetic-form-factor.js';
 // Bragg intensities from a fully specified COMMENSURATE magnetic motif.
 // Intensity is the unpolarized magnetic structure factor in barn per magnetic
 // cell, excluding scale, Lorentz, absorption, extinction and form-factor terms.
@@ -90,7 +91,52 @@ export function magneticStructureFactorSquared(motif,hkl,{formFactor=()=>1}={}){
   }
   return MAGNETIC_BRAGG_CONSTANT_BARN*(dot(re,re)+dot(im,im));
 }
-export function magneticBraggPeaks(motif,wavelength,{twoThetaMax=180,maxCandidates=350000}={}){
+// Only use magnetic-ion factors when oxidation states are explicitly known.
+// Site labels such as Cu1 are crystallographic labels, NOT Cu+.
+export function explicitMagneticIonFactors(cifText){
+  const lines=String(cifText||'').split(/\r?\n/);
+  const result={};
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].trim().toLowerCase()!=='loop_')continue;
+    const fields=[];let j=i+1;
+    while(j<lines.length && lines[j].trim().startsWith('_')){fields.push(lines[j].trim().split(/\s+/)[0].toLowerCase());j++;}
+    const symbolColumn=fields.indexOf('_atom_type_symbol');
+    const oxColumn=fields.indexOf('_atom_type_oxidation_number');
+    if(symbolColumn<0||oxColumn<0)continue;
+    for(;j<lines.length;j++){
+      const line=lines[j].trim();
+      if(!line||line.startsWith('#'))continue;
+      if(line==='loop_'||line.startsWith('_')||line.startsWith('data_')||line.startsWith('save_'))break;
+      const tokens=line.match(/(?:'[^']*'|"[^"]*"|\S+)/g)||[];
+      if(tokens.length<fields.length)continue;
+      const element=tokens[symbolColumn].replace(/^['"]|['"]$/g,'').match(/^[A-Z][a-z]?/)?.[0];
+      const ox=Number(tokens[oxColumn]);
+      if(!element||!Number.isInteger(ox)||ox<0)continue;
+      const ion=element+ox;
+      if(magneticIonConfigurations(ion).length){
+        if(Object.hasOwn(result,element)&&result[element]!==ion)result[element]=null;
+        else if(!Object.hasOwn(result,element))result[element]=ion;
+      }
+    }
+  }
+  return result;
+}
+export function magneticIonFormFactor(element,Q,ionByElement={}){
+  const symbol=String(element||'').match(/^[A-Z][a-z]?/)?.[0]||'';
+  const ion=ionByElement[symbol];
+  if(!ion)return 1;
+  const configs=magneticIonConfigurations(ion);
+  if(!configs.length)return 1;
+  return computeMagneticFormFactor(ion,Q,{config:configs[0],j2Weight:0}).f;
+}
+function magneticFormFactorDisplay(motif,Q,ionByElement){
+  const elements=[...new Set(motif.sites.filter(s=>s.moment&&norm(s.moment)>1e-12).map(s=>s.element))].sort();
+  if(!elements.length)return {display:'1',sortValue:1};
+  const factors=elements.map(element=>({element,ion:ionByElement[element],value:magneticIonFormFactor(element,Q,ionByElement)}));
+  if(factors.length===1)return {display:Number(factors[0].value.toFixed(5)).toString(),sortValue:factors[0].value};
+  return {display:factors.map(f=>`${f.ion||f.element}: ${Number(f.value.toFixed(4))}`).join('; '),sortValue:factors.reduce((sum,f)=>sum+f.value,0)/factors.length};
+}
+export function magneticBraggPeaks(motif,wavelength,{twoThetaMax=180,maxCandidates=350000,ionByElement={}}={}){
   const lambda=Number(wavelength);if(!(lambda>0))throw Error('Wavelength must be positive.');
   const qMax=4*Math.PI/lambda, l=motif.lattice;
   const bound=[l.a,l.b,l.c].map(x=>Math.ceil(qMax*Number(x)/(twopi))+2);
@@ -103,8 +149,12 @@ export function magneticBraggPeaks(motif,wavelength,{twoThetaMax=180,maxCandidat
     if(!(q>1e-9)||q>qMax+1e-8)continue;
     const theta2=2*Math.asin(Math.min(1,q*lambda/(4*Math.PI)))*180/Math.PI;
     if(theta2>twoThetaMax+1e-8)continue;
-    const intensity=magneticStructureFactorSquared(motif,hkl);
-    if(intensity>1e-12)result.push({hkl,q,d:twopi/q,twoTheta:theta2,intensity});
+    const formFactor=(element,Q)=>magneticIonFormFactor(element,Q,ionByElement);
+    const intensity=magneticStructureFactorSquared(motif,hkl,{formFactor});
+    if(intensity>1e-12){
+      const ff=magneticFormFactorDisplay(motif,q,ionByElement);
+      result.push({hkl,q,d:twopi/q,twoTheta:theta2,intensity,formFactor:ff.display,formFactorSort:ff.sortValue});
+    }
   }
   const max=Math.max(0,...result.map(r=>r.intensity));
   return result.filter(r=>r.intensity>Math.max(1e-12,max*1e-10)).sort((a,b)=>b.intensity-a.intensity);
@@ -115,6 +165,18 @@ export function magneticBraggPeaks(motif,wavelength,{twoThetaMax=180,maxCandidat
 // their parent basis from k alone.
 export function parentIndexingFromMcif(text, magneticLattice, q){
   const src=String(text||'');
+  // Bilbao/standard mCIF with a known parent-cell setting. For identity
+  // transforms, the parent and magnetic conventional-cell hkl are identical,
+  // even when the magnetic centering includes time reversal (e.g. k=[1,0,0]).
+  // Do not mistake the BNS standard-setting transform for this mapping.
+  const tag=(name)=>src.split(/\r?\n/).map(line=>line.trim()).find(line=>line.toLowerCase().startsWith(name.toLowerCase()+' '))?.slice(name.length).trim().replace(/^[\"']|[\"']$/g,'');
+  const parent=tag('_parent_space_group.transform_Pp_abc');
+  const child=tag('_parent_space_group.child_transform_Pp_abc');
+  if(/_parent_space_group\.(?:IT_number|name_H-M_alt)/i.test(src) && parent && child &&
+     /^a\s*,\s*b\s*,\s*c\s*;\s*0\s*,\s*0\s*,\s*0$/i.test(parent) &&
+     /^a\s*,\s*b\s*,\s*c\s*;\s*0\s*,\s*0\s*,\s*0$/i.test(child)){
+    return {replication:[1,1,1],lattice:{...magneticLattice},reference:'parent mCIF identity basis'};
+  }
   if(!/^# Commensurate magnetic supercell generated from user-entered moments\.\s*$/m.test(src))return null;
   if(!/_parent_space_group\.(?:IT_number|name_H-M_alt)/i.test(src))return null;
   if(!/_parent_propagation_vector\.kxkykz/i.test(src))return null;
