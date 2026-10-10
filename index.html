@@ -384,28 +384,36 @@
 </div>
 <div aria-labelledby="tabCifGenerator" class="tab-panel hidden" id="structurePanel" role="tabpanel"><section class="calc-card generator-unified-card"><div class="generator-unified-grid" id="cifGeneratorPanel"><div class="generator-unified-left"><section class="generator-shared-file"><div class="cif-pane-heading">
 <h3>CIF/mCIF file</h3>
-<div class="cif-heading-actions"><button id="cifShowCurrent" type="button">Show current file</button></div>
+<div class="cif-heading-actions"><button id="cifShowCurrent" type="button">Show load file</button></div>
 </div><div class="cif-generator-source-row">
 <button id="cifLoadExisting" type="button">Select CIF/mCIF</button>
 <input aria-label="Selected CIF or mCIF for CIF Generator" class="cif-file-name" id="cifGeneratorSourceName" readonly="" type="text" value="No file selected"/>
 <button disabled="" id="cifGeneratorSourceClear" type="button">Clear</button>
 <input accept=".cif,.mcif,text/plain,chemical/x-cif" class="hidden" id="cifLoadFile" type="file"/>
 </div></section><div class="generator-mode-pane generator-unified-editor" id="generatorNuclearPane"><div class="cif-generator-input-pane">
-<section class="cif-generator-section cif-generator-source-section"><h3 class="generator-output-heading">Output file</h3>
+<section class="cif-generator-section cif-generator-source-section"><div class="cif-pane-heading"><h3 class="generator-output-heading">Output file</h3><div class="cif-heading-actions"><button type="button" id="cifShowGenerated">Show generate file</button></div></div>
+<div class="cif-unified-output-line">
+<label class="cif-output-format-label">Format
+<select id="cifOutputFormat" aria-label="Output file format"><option value="cif">CIF</option></select></label>
 <label class="cif-generator-file-name">File name
-              <span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"/><span class="cif-filename-suffix">.cif / .mcif</span></span>
-</label>
-<div class="cif-source-button-row">
-<button class="primary-action" id="cifGenerate" type="button">Generate CIF</button>
-<button disabled="" id="cifDownload" type="button">Download CIF</button>
-<button disabled="" id="cifSet" type="button">Set CIF</button>
+<span class="cif-filename-entry"><input id="cifGeneratedName" type="text" value="generated_structure"/><span class="cif-filename-suffix" id="cifUnifiedFileSuffix">.cif</span></span>
+</label></div>
+<div class="cif-source-button-row cif-unified-output-buttons">
+<button class="primary-action" id="cifOutputGenerate" type="button">Generate CIF</button>
+<button disabled id="cifOutputDownload" type="button">Download CIF</button>
+<button disabled id="cifOutputSet" type="button">Set CIF</button>
 </div>
+<div class="cif-legacy-output-actions" aria-hidden="true"><div class="cif-source-button-row">
+<button class="primary-action" id="cifGenerate" type="button">Generate CIF</button>
+<button disabled id="cifDownload" type="button">Download CIF</button>
+<button disabled id="cifSet" type="button">Set CIF</button>
+</div></div>
 <div aria-live="polite" class="cif-generator-message hidden" id="cifGeneratorMessage"></div>
 <div class="generator-legacy-file-controls" hidden=""><div class="cif-pane-heading"><h3>CIF/mCIF file</h3><div class="cif-heading-actions"><button id="structureMcifShowCurrent" type="button">Show current file</button></div></div><div class="structure-cif-row">
 <button id="structureCifSelect" type="button">Select CIF/mCIF</button>
 <input aria-label="Selected CIF/mCIF file" class="cif-file-name" id="structureCifName" readonly="" type="text" value="No file selected"/>
 <button id="structureCifClear" type="button">Clear</button>
-</div></div><div class="mcif-export-group">
+</div></div><div class="mcif-export-group cif-legacy-output-actions">
 <div class="cif-source-button-row">
 <button class="primary-action" disabled="" id="structureMcifGenerate" title="mCIF export is temporarily disabled" type="button">Generate mCIF</button>
 <button disabled="" id="structureMcifDownload" title="mCIF export is temporarily disabled" type="button">Download mCIF</button>
@@ -423,7 +431,7 @@
 </div><div class="structure-config-panel active" data-structure-config-panel="cell"><section class="cif-generator-section cif-lattice-information-section">
 <div class="cif-pane-heading cif-lattice-information-heading">
 <h3 class="cif-section-title">Unit cell &amp; symmetry</h3>
-<div class="cif-heading-actions"><button id="cifCopyLattice" type="button">Copy current lattice</button></div>
+
 </div>
 <div class="cif-generator-setup">
 <div class="cif-space-group-picker">
@@ -475,7 +483,7 @@
 <div class="structure-moment-axis-row structure-spin-mode-row">
 <label class="structure-entry-field"><span class="structure-entry-label">Propagation vector</span><select id="cifMomentPropagationVector"></select></label>
 <label class="structure-entry-field"><span class="structure-entry-label">Structure type</span><select id="cifMomentStructureType">
-<option value="mcif">mCIF</option><option selected="" value="collinear">Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option>
+<option selected="" value="collinear">Collinear</option><option value="helical">Helical</option><option value="sinusoidal">Sinusoidal</option>
 </select></label>
 <label class="structure-entry-field"><span class="structure-entry-label">Rotation axis</span><select id="cifMomentRotationAxis">
 <option value="a">a</option><option value="b">b</option><option selected="" value="c">c</option>
@@ -492,10 +500,10 @@
 </div>
 <div class="structure-spin-editor-toolbar">
 <label class="structure-entry-field structure-individual-selector"><span class="structure-entry-label">Mode</span><select id="cifSpinEditingMode"><option value="sites">Symmetry operations</option><option value="individual">Manual</option></select></label>
-<label class="structure-entry-field structure-spin-table-element-field"><span class="structure-entry-label">Element</span><select id="cifSpinTableElement" title="Filter spin rows by chemical element"></select></label><label class="structure-entry-field structure-modify-lock-field"><span class="structure-entry-label">Source</span><select id="cifSpinEditSource" aria-label="Magnetic structure source"><option value="mcif" selected>mCIF</option><option value="modify">Modify</option></select></label>
+<label class="structure-entry-field structure-spin-table-element-field"><span class="structure-entry-label">Element</span><select id="cifSpinTableElement" title="Filter spin rows by chemical element"></select></label>
 </div>
 <div class="structure-help-text" hidden="" id="cifSpinIndividualInfo"></div>
-<div aria-label="Spin element controls" class="structure-spin-element-toggles" id="cifSpinElementToggles"></div>
+<div class="structure-spin-elements-source-row"><div aria-label="Spin element controls" class="structure-spin-element-toggles" id="cifSpinElementToggles"></div></div>
 <div class="structure-rows-list" id="cifMagMomentRows"></div>
 </div>
 <div class="structure-config-panel" data-structure-config-panel="bonds" hidden="">
@@ -503,7 +511,7 @@
 <button class="structure-add-bond-button" id="cifAddBondRule" type="button">+ Add bond</button>
 <div class="structure-help-text">Examples: Ni–Ni 0–5 Å, Ni–O 0–3 Å.</div>
 </div>
-</div></div></div><div class="generator-unified-right structure-viewer-main"><div aria-label="CIF/mCIF generator output" class="cif-output-tabs generator-unified-output-tabs" role="tablist"><button aria-controls="mcifStructurePane" aria-selected="true" class="cif-output-tab active" data-generator-output-tab="structure" id="mcifTabStructure" role="tab" type="button">Structure</button><button aria-controls="generatorReflectionsPane" aria-selected="false" class="cif-output-tab" data-cif-output-tab="reflections" data-generator-output-tab="reflections" id="cifOutputTabReflections" role="tab" type="button">Reflections</button><button aria-controls="cifPreviewPanel" aria-selected="false" class="cif-output-tab" data-cif-output-tab="preview" data-generator-output-tab="cif-preview" id="cifOutputTabPreview" role="tab" type="button">CIF Preview</button><button aria-controls="mcifPreviewPane" aria-selected="false" class="cif-output-tab" data-generator-output-tab="mcif-preview" id="mcifTabPreview" role="tab" type="button">mCIF Preview</button></div><div aria-labelledby="mcifTabStructure" class="generator-output-pane" id="mcifStructurePane" role="tabpanel">
+</div></div></div><div class="generator-unified-right structure-viewer-main"><div aria-label="CIF/mCIF generator output" class="cif-output-tabs generator-unified-output-tabs" role="tablist"><button aria-controls="mcifStructurePane" aria-selected="true" class="cif-output-tab active" data-generator-output-tab="structure" id="mcifTabStructure" role="tab" type="button">Structure</button><button aria-controls="generatorReflectionsPane" aria-selected="false" class="cif-output-tab" data-cif-output-tab="reflections" data-generator-output-tab="reflections" id="cifOutputTabReflections" role="tab" type="button">Reflections</button><button aria-controls="cifPreviewPanel" aria-selected="false" class="cif-output-tab" data-cif-output-tab="preview" data-generator-output-tab="preview" id="cifOutputTabPreview" role="tab" type="button">CIF/mCIF Preview</button></div><div aria-labelledby="mcifTabStructure" class="generator-output-pane" id="mcifStructurePane" role="tabpanel">
 <div aria-label="Structure view direction and range" class="generator-structure-view-controls">
 <div class="cif-structure-view-buttons structure-view-buttons-six">
 <button data-cif-structure-view="a" type="button">a</button>
@@ -544,9 +552,8 @@
 <label>Energy (meV)<input id="cifReflectionEnergy" min="0" step="0.001" type="number"/></label>
 <label>Wavelength (Å)<input id="cifReflectionWavelength" min="0" step="0.0001" type="number"/></label>
 <label>Wavevector k (Å⁻¹)<input id="cifReflectionWavevector" min="0" step="0.0001" type="number"/></label>
-<button id="cifReflectionSetDefault" title="Copy Ef from Instrument" type="button">Set default</button>
 </div>
-</section><div aria-label="Reflection type" class="generator-reflection-tabs" role="tablist"><button aria-controls="generatorNuclearReflectionsPane" aria-selected="true" class="generator-reflection-tab active" id="generatorReflectionsNuclear" role="tab" type="button">Nuclear</button><button aria-controls="generatorMagneticReflectionsPane" aria-selected="false" class="generator-reflection-tab" id="generatorReflectionsMagnetic" role="tab" type="button">Magnetic</button></div><div aria-labelledby="generatorReflectionsNuclear" class="generator-reflection-pane" id="generatorNuclearReflectionsPane" role="tabpanel"><div aria-labelledby="cifOutputTabReflections" class="cif-output-panel" id="cifReflectionsPanel" role="tabpanel">
+</section><div aria-label="Reflection type" class="generator-reflection-tabs" role="tablist"><button aria-controls="generatorNuclearReflectionsPane" aria-selected="true" class="generator-reflection-tab active" id="generatorReflectionsNuclear" role="tab" type="button">Nuclear</button><button aria-controls="generatorMagneticReflectionsPane" aria-selected="false" class="generator-reflection-tab" id="generatorReflectionsMagnetic" disabled aria-disabled="true" title="Magnetic reflection calculations are temporarily unavailable" role="tab" type="button">Magnetic</button></div><div aria-labelledby="generatorReflectionsNuclear" class="generator-reflection-pane" id="generatorNuclearReflectionsPane" role="tabpanel"><div aria-labelledby="cifOutputTabReflections" class="cif-output-panel" id="cifReflectionsPanel" role="tabpanel">
 <div class="cif-reflection-toolbar">
 <label class="cif-reflection-plane-toggle"><input checked="" id="cifReflectionAlongU" type="checkbox"/> along U</label>
 <label class="cif-reflection-plane-toggle"><input checked="" id="cifReflectionAlongV" type="checkbox"/> along V</label>
@@ -568,9 +575,9 @@
 <tbody id="cifReflectionRows"><tr><td class="cif-reflection-empty" colspan="7">No generated reflections yet.</td></tr></tbody>
 </table>
 </div>
-</div></div><div aria-labelledby="generatorReflectionsMagnetic" class="generator-reflection-pane hidden" id="generatorMagneticReflectionsPane" role="tabpanel"><p class="generator-reflections-notice">Magnetic reflection calculation is not available yet.</p></div></div><div aria-labelledby="cifOutputTabPreview" class="cif-output-panel generator-output-pane hidden" id="cifPreviewPanel" role="tabpanel">
+</div></div><div aria-labelledby="generatorReflectionsMagnetic" class="generator-reflection-pane hidden" id="generatorMagneticReflectionsPane" role="tabpanel"><div class="cif-reflection-toolbar"><button id="magneticCalculateTable" type="button">Calculate magnetic peaks</button><button id="magneticDownloadTable" type="button" disabled>Download CSV</button><button id="magneticExportBnsInput" type="button" disabled>Export BNS model (JSON)</button></div><p id="magneticReflectionMessage" class="generator-reflections-notice">Press Calculate magnetic peaks. Commensurate structures only; f(Q)=1 approximation. BNS is not identified automatically in this browser.</p><div class="cif-reflection-table-wrap"><table class="cif-reflection-table"><thead><tr><th>Parent-cell (h k l)</th><th>Magnetic-cell (h k l)</th><th>|F<sub>M</sub>|² (barn)</th><th>2θ (deg)</th><th>Q (Å⁻¹)</th><th>d (Å)</th></tr></thead><tbody id="magneticReflectionRows"></tbody></table></div></div></div><div aria-labelledby="cifOutputTabPreview" class="cif-output-panel generator-output-pane hidden" id="cifPreviewPanel" role="tabpanel"><div class="cif-unified-preview-label" id="cifPreviewContext">No file selected</div>
 <pre class="cif-preview-note" id="cifPreview" tabindex="0">Press Generate to preview the CIF.</pre>
-</div><div aria-labelledby="mcifTabPreview" class="cif-output-panel generator-output-pane hidden" id="mcifPreviewPane" role="tabpanel">
+</div><div aria-hidden="true" class="cif-output-panel generator-output-pane hidden" id="mcifPreviewPane" role="tabpanel" hidden>
 <pre class="cif-preview-note" id="mcifPreviewText" tabindex="0">Load an mCIF to preview its contents.</pre>
 </div></div></div></section></div>
 <div aria-labelledby="tabScript" class="tab-panel hidden" id="scriptPanel" role="tabpanel">

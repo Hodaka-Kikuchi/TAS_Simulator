@@ -5463,56 +5463,6 @@ main > .main-tabs{grid-template-columns:repeat(5,minmax(0,1fr));}
   margin-top:12px;
 }
 
-
-/* Spins: keep Use, site, three direction/moment inputs and arrow color
-   together in a single row even on narrow/mobile Structure editor layouts.
-   Overrides the legacy <=520px container rule which moved the inputs below. */
-#structurePanel #cifMagMomentRows .structure-moment-row{
-  display:grid!important;
-  grid-template-columns:22px minmax(38px,auto) minmax(0,1fr) 34px!important;
-  grid-template-rows:auto!important;
-  column-gap:5px!important;
-  align-items:end!important;
-  min-width:0!important;
-}
-#structurePanel #cifMagMomentRows .structure-moment-row > input[type=checkbox]{
-  grid-column:1!important;grid-row:1!important;
-  align-self:center!important;margin:0!important;
-}
-#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-site{
-  grid-column:2!important;grid-row:1!important;
-  max-width:74px!important;min-width:0!important;
-  overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
-  align-self:center!important;
-}
-#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-vector{
-  grid-column:3!important;grid-row:1!important;
-  display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  gap:3px!important;width:100%!important;min-width:0!important;
-}
-#structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-color-swatch{
-  grid-column:4!important;grid-row:1!important;
-  width:32px!important;min-width:0!important;justify-self:end!important;
-}
-#structurePanel #cifMagMomentRows .structure-moment-row .structure-entry-field,
-#structurePanel #cifMagMomentRows .structure-moment-row input[type=number]{
-  min-width:0!important;width:100%!important;box-sizing:border-box!important;
-}
-@container structure-viewer (max-width:520px){
-  #structurePanel #cifMagMomentRows .structure-moment-row{
-    grid-template-columns:20px minmax(34px,50px) minmax(0,1fr) 30px!important;
-    grid-template-rows:auto!important;
-    column-gap:4px!important;
-    padding:4px 0!important;
-  }
-  #structurePanel #cifMagMomentRows .structure-moment-row > .structure-moment-color-swatch{
-    width:28px!important;
-  }
-  #structurePanel #cifMagMomentRows .structure-moment-row .structure-entry-label{
-    font-size:10px!important;white-space:nowrap!important;
-  }
-  #structurePanel #cifMagMomentRows .structure-moment-row input[type=number]{
-    padding-left:2px!important;padding-right:2px!important;
-    font-size:12px!important;
-  }
-}
+/* Set default was removed: use three equal-width fields. */
+#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+@media(max-width:620px){#structurePanel #generatorReflectionsPane .generator-reflection-settings .cif-generator-beam-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}

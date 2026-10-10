@@ -1,3 +1,4 @@
+import {buildMagneticMotif, magneticBraggPeaks, parentIndexingFromMcif, hklInParentCell} from './magnetic-reflections.js';
 import {exportCommensurateMcif,rationalApprox} from './mcif-export.js';
 // Extracted from app.js without changing calculation/display behavior.
 // Dependencies are injected by app.js to keep module boundaries explicit.
@@ -152,7 +153,37 @@ function propagationVectorsFromMcif(text,parsed){
   return result;
 }
 
+// An app-generated commensurate mCIF stores its atomic motif in the magnetic
+// supercell. The Sample and nuclear reflections must instead use the parent
+// crystallographic cell. Generic external mCIF settings are not inferred.
+function parentNuclearStructureFromMcif(parsed,text){
+  if(!parsed?.magnetic || !Array.isArray(parsed.atoms) || !parsed.atoms.length) return null;
+  const q=propagationVectorsFromMcif(text,parsed);
+  if(q.length!==1) return null;
+  const parent=parentIndexingFromMcif(text,parsed.lattice,[q[0].h,q[0].k,q[0].l]);
+  if(!parent) return null;
+  const rep=parent.replication;
+  const wrap=v=>{const w=((v%1)+1)%1;return Math.abs(w-1)<1e-8 || w<1e-8?0:w;};
+  const dedup=new Map();
+  for(const atom of parsed.atoms){
+    const position=['x','y','z'].map((key,i)=>wrap(Number(atom[key])*rep[i]));
+    if(position.some(v=>!Number.isFinite(v))) return null;
+    const key=[atom.element,...position.map(v=>Math.round(v*1e7)),Math.round(Number(atom.occupancy??1)*1e7)].join('|');
+    if(!dedup.has(key)){
+      // Magnetism does not alter nuclear scattering lengths, occupancies or Biso.
+      // Never attach magnetic moments to a nuclear reflection model.
+      const {magneticMoment,magneticFourier,...nuclearAtom}=atom;
+      dedup.set(key,{...nuclearAtom,x:position[0],y:position[1],z:position[2]});
+    }
+  }
+  return {...parsed,lattice:parent.lattice,atoms:[...dedup.values()],magnetic:false,
+    parentCellReference:parent.reference};
+}
+
 function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
+  liveEditorNuclearSource=null;
+  liveEditorNuclearInvalid=false;
+  magneticTableHasBeenCalculated=false;
   const parsed=parseCifStructure(text);
   const cifText=String(text??"");
   const importedQ=propagationVectorsFromMcif(cifText,parsed);
@@ -173,7 +204,7 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   // File changes must not navigate Structure editor away from the open tab.
   structureConfigActiveTab=rememberedStructureEditorTab();
   if(parsed.magnetic){
-    structureModifyLocked=true;
+    structureModifyLocked=false;
     restoreMagneticDraftFromStorage();
     // Imported mCIF vectors are authoritative. Restore visual preferences,
     // but never allow an old local XYZ value to override the file's moments.
@@ -208,8 +239,10 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   // existing U/V orientation indices, but synchronize the six lattice fields.
   const sg=findGeneratorSpaceGroup(parsed);
   if(sg) setSampleSpaceGroup(sg.number,{recalc:false});
-  const lattice=parsed?.lattice || {};
-  // Use the exact reported mCIF cell parameters, not symmetry-normalized values.
+  const parentNuclear=parentNuclearStructureFromMcif(parsed,cifText);
+  const lattice=parentNuclear?.lattice || parsed?.lattice || {};
+  // Sample coordinates follow the parent nuclear cell when a generated
+  // commensurate mCIF can be unambiguously mapped back to that cell.
   for(const id of ["a","b","c","alpha","beta","gamma"]){
     const value=Number(lattice[id]);
     if(Number.isFinite(value) && $(id)) $(id).value=String(value);
@@ -219,6 +252,9 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   // Only editable generator fields are populated; file inputs are never set
   // programmatically.
   if(cifSpaceGroups.length) loadParsedCifIntoGenerator(parsed,fileName,{message:false});
+  // Loading a file is the one place where both editors acquire common values.
+  // For generated magnetic supercells Sample already refers to the parent cell.
+  if(findGeneratorSpaceGroup(parsed)) syncCrystallographicCell("sample",{refresh:false});
   // The selected CIF/mCIF, not just a newly generated CIF, is a valid source
   // for the nuclear reflection table.  Drop any previous Generate snapshot and
   // recalculate from the newly selected structure (even when the editable CIF
@@ -239,6 +275,9 @@ async function selectCifFile(file){
 }
 
 function clearSelectedCif(){
+  liveEditorNuclearSource=null;
+  liveEditorNuclearInvalid=false;
+  magneticTableHasBeenCalculated=false;
   saveStructureViewerState();
   setSelectedCifState(null,"","");
   // Clear the separate Generator-only viewer cache as well: a later tab
@@ -397,7 +436,7 @@ function populateSampleSpaceGroupControls(){
     });
     // For tetragonal / trigonal / hexagonal / cubic cells, b (and cubic c)
     // follows the independent a field immediately while the user edits it.
-    $("a")?.addEventListener("input",applySampleLatticeConstraints);
+    // Cell synchronization applies constraints on change, not each keystroke.
     select.dataset.bound="1";
   }
 }
@@ -566,26 +605,21 @@ function importedKDescription(){
   return `(${[q.h,q.k,q.l].map(v=>Number.isFinite(Number(v))?Number(v):0).join(", ")})`;
 }
 function syncSpinModifyLock(){
-  const selector=$("cifSpinEditSource");
-  if(selector) { selector.value=sourceIsMagneticCif() && structureModifyLocked?"mcif":"modify"; selector.disabled=!sourceIsMagneticCif(); }
-  const protect=structureModifyLocked && sourceIsMagneticCif();
-  for(const id of ["cifMomentPropagationVector","cifMomentStructureType","cifMomentRotationAxis",
-                    "cifMomentChirality","cifSpinEditingMode","cifMomentDirectionMode"]){
-    const el=$(id); if(el) el.disabled=protect || (id==="cifMomentRotationAxis"||id==="cifMomentChirality" ? structureMomentStructureType!=="helical":false);
+  // Spins are always editable. mCIF is an initial-display state, not a lock.
+  for(const id of ["cifMomentPropagationVector","cifMomentStructureType",
+                   "cifMomentRotationAxis","cifMomentChirality",
+                   "cifSpinEditingMode","cifMomentDirectionMode"]){
+    const field=$(id); if(field) field.disabled=false;
   }
-  const propagationHost=$("propagationVectors");
-  if(propagationHost) for(const field of propagationHost.querySelectorAll("input,select,button")) field.disabled=protect;
-  const addQ=$("addPropagationVector"); if(addQ) addQ.disabled=protect;
-  const rows=$("cifMagMomentRows");
-  if(rows) for(const field of rows.querySelectorAll("input,select,button")){
-    const isColor=field.matches('input[type="color"], [data-moment-field="color"]');
-    field.disabled=protect && !isColor;
+  const host=$("propagationVectors");
+  if(host) for(const field of host.querySelectorAll("input,select,button")) field.disabled=false;
+  const addQ=$("addPropagationVector"); if(addQ) addQ.disabled=false;
+  for(const id of ["cifMagMomentRows","cifSpinElementToggles"]){
+    const host=$(id);
+    if(host) for(const field of host.querySelectorAll("input,select,button")) field.disabled=false;
   }
-  const toggles=$("cifSpinElementToggles");
-  if(toggles) for(const field of toggles.querySelectorAll("input,select,button")) field.disabled=protect;
 }
 
-// Imported mCIF is displayed faithfully until the user edits its k or model.
 let importedMagneticEditMode=false;
 let importedMagneticQSignature="";
 function propagationSignature(){
@@ -599,6 +633,7 @@ function activateImportedMagneticEditing(){
   rememberModifiedMagneticDraft();
   invalidateGeneratedMcif();
   syncImportedMomentStructureType();
+  refreshMomentPropagationVectorSelect();
 }
 
 let structureMomentRotationAxis="c";
@@ -2008,12 +2043,17 @@ function refreshMomentPropagationVectorSelect(){
   for(const q of qs){
     const option=document.createElement("option");
     option.value=String(q.index);
-    option.textContent=sourceIsMagneticCif() && structureModifyLocked ? `k${q.index} ${`(${[q.h,q.k,q.l].join(", ")})`}` : `k${q.index}`;
+    option.textContent=`k${q.index}`;
     select.appendChild(option);
   }
   const chosen=qs.some(q=>q.index===previous)?previous:qs[0].index;
   structureMomentPropagationIndex=chosen;
-  select.value=String(chosen);
+  if(sourceIsMagneticCif() && !importedMagneticEditMode){
+    const imported=document.createElement("option");
+    imported.value="mcif"; imported.textContent="mCIF";
+    select.prepend(imported);
+    select.value="mcif";
+  }else select.value=String(chosen);
 }
 function magneticStructureTraces(atoms,basis,structure){
   const q=effectivePropagationVectorForStructure();
@@ -2237,21 +2277,27 @@ function ensureSectionDefaultButton(hostId,buttonId,handler,titleWords,existingB
 // mCIF determines the magnetic arrangement itself, independent of the manual
 // Collinear/Helical/Sinusoidal generator mode. Keep the latter preference.
 function syncImportedMomentStructureType(){
-  const select=$("cifMomentStructureType");
-  if(!select) return;
-  let option=select.querySelector('option[value="mcif"]');
-  if(sourceIsMagneticCif() && !importedMagneticEditMode){
-    if(!option){ option=document.createElement("option");option.value="mcif";option.textContent="mCIF";select.prepend(option); }
-    select.value="mcif";
-  }else{
-    option?.remove();
-    select.value=structureMomentStructureType;
+  const original=sourceIsMagneticCif() && !importedMagneticEditMode;
+  const inputs=[
+    ["cifMomentStructureType",structureMomentStructureType],
+    ["cifMomentRotationAxis",structureMomentRotationAxis],
+    ["cifMomentChirality",structureMomentChirality]
+  ];
+  for(const [id,value] of inputs){
+    const select=$(id); if(!select) continue;
+    let option=select.querySelector('option[value="mcif"]');
+    if(original){
+      if(!option){ option=document.createElement("option"); option.value="mcif"; option.textContent="mCIF";select.prepend(option); }
+      select.value="mcif";
+    }else{
+      option?.remove();
+      select.value=value;
+    }
+    select.title=original ? "Original imported mCIF arrangement. Choose a setting to edit it." : "Editable magnetic structure setting.";
   }
-  select.title=sourceIsMagneticCif() && !importedMagneticEditMode
-    ? "Original mCIF moments; uncheck Modify to edit the model."
-    : "Choose Collinear, Helical or Sinusoidal.";
   syncSpinModifyLock();
 }
+
 function prepareStructureViewerControls(){
   ensureStructureViewerStyle();
   const viewButtons=[...document.querySelectorAll("[data-cif-structure-view]")];
@@ -2288,20 +2334,13 @@ function prepareStructureViewerControls(){
       }
     });
   }
-  const modifyLock=$("cifSpinEditSource");
-  if(modifyLock && !modifyLock.dataset.structureBound){
-    modifyLock.dataset.structureBound="1";
-    modifyLock.addEventListener("change",()=>{
-      setImportedMagneticMode(modifyLock.value);
-    });
-  }
-
   refreshMomentPropagationVectorSelect();
   syncSpinModifyLock();
   const propagationSelect=$("cifMomentPropagationVector");
   if(propagationSelect && !propagationSelect.dataset.structureBound){
     propagationSelect.dataset.structureBound="1";
     propagationSelect.addEventListener("change",()=>{
+      if(propagationSelect.value==="mcif") return;
       const n=Number(propagationSelect.value);
       structureMomentPropagationIndex=Number.isInteger(n)&&n>0?n:0;
       activateImportedMagneticEditing();
@@ -2329,7 +2368,7 @@ function prepareStructureViewerControls(){
   const editingSelect=$('cifSpinEditingMode');
   if(editingSelect){
     editingSelect.value=structureSpinEditingMode;
-    editingSelect.disabled=structureModifyLocked && sourceIsMagneticCif();
+    editingSelect.disabled=false;
     if(!editingSelect.dataset.structureBound){
       editingSelect.dataset.structureBound='1';
       editingSelect.addEventListener('change',()=>{
@@ -2396,16 +2435,17 @@ function prepareStructureViewerControls(){
   bindGlobalArrowInput(headInput,"head");
   const syncMomentStructureModeControls=()=>{
     const helical=structureMomentStructureType==="helical";
-    if(axisSelect) axisSelect.disabled=!helical;
-    if(chiralitySelect) chiralitySelect.disabled=!helical;
+    if(axisSelect) axisSelect.disabled=false;
+    if(chiralitySelect) chiralitySelect.disabled=false;
   };
   if(structureTypeSelect){
     syncImportedMomentStructureType();
     if(!structureTypeSelect.dataset.structureBound){
       structureTypeSelect.dataset.structureBound="1";
       structureTypeSelect.addEventListener("change",()=>{
+        const requestedType=structureTypeSelect.value;
         activateImportedMagneticEditing();
-        structureMomentStructureType=["collinear","helical","sinusoidal"].includes(structureTypeSelect.value)?structureTypeSelect.value:"collinear";
+        structureMomentStructureType=["collinear","helical","sinusoidal"].includes(requestedType)?requestedType:"collinear";
         syncMomentStructureModeControls();
         saveStructureViewerState();
         renderCifStructureIfVisible();
@@ -2413,24 +2453,26 @@ function prepareStructureViewerControls(){
     }
   }
   if(axisSelect){
-    axisSelect.value=structureMomentRotationAxis;
+    axisSelect.value=sourceIsMagneticCif() && !importedMagneticEditMode ? "mcif" : structureMomentRotationAxis;
     if(!axisSelect.dataset.structureBound){
       axisSelect.dataset.structureBound="1";
       axisSelect.addEventListener("change",()=>{
+        const requestedAxis=axisSelect.value;
         activateImportedMagneticEditing();
-        structureMomentRotationAxis=["a","b","c"].includes(axisSelect.value)?axisSelect.value:"c";
+        structureMomentRotationAxis=["a","b","c"].includes(requestedAxis)?requestedAxis:"c";
         saveStructureViewerState();
         renderCifStructureIfVisible();
       });
     }
   }
   if(chiralitySelect){
-    chiralitySelect.value=structureMomentChirality;
+    chiralitySelect.value=sourceIsMagneticCif() && !importedMagneticEditMode ? "mcif" : structureMomentChirality;
     if(!chiralitySelect.dataset.structureBound){
       chiralitySelect.dataset.structureBound="1";
       chiralitySelect.addEventListener("change",()=>{
+        const requestedChirality=chiralitySelect.value;
         activateImportedMagneticEditing();
-        structureMomentChirality=chiralitySelect.value==="CW"?"CW":"CCW";
+        structureMomentChirality=requestedChirality==="CW"?"CW":"CCW";
         saveStructureViewerState();
         renderCifStructureIfVisible();
       });
@@ -3286,6 +3328,13 @@ function syncCifReflectionBeamFrom(source){
   if($("cifReflectionEnergy")) $("cifReflectionEnergy").value=e.toFixed(5);
   if($("cifReflectionWavelength")) $("cifReflectionWavelength").value=lambda.toFixed(5);
   if($("cifReflectionWavevector")) $("cifReflectionWavevector").value=k.toFixed(5);
+  // Reflect edits into the Instrument's active fixed Ei or Ef energy.
+  const fixedEnergy=$("energy");
+  if(fixedEnergy && Number(fixedEnergy.value)!==e){
+    fixedEnergy.value=String(Number(e.toPrecision(12)));
+    fixedEnergy.dispatchEvent(new Event("input",{bubbles:true}));
+    fixedEnergy.dispatchEvent(new Event("change",{bubbles:true}));
+  }
   recalculateGeneratedReflections();
 }
 function currentCifReflectionBeam(){
@@ -3485,12 +3534,17 @@ function renderCifReflectionTable(){
 // A freshly generated (but not yet Set) CIF takes precedence so its preview
 // and calculated reflections stay consistent with one another.
 function nuclearReflectionSource(){
+  // Live Structure editor overrides the loaded snapshot only after an edit.
+  if(liveEditorNuclearSource) return liveEditorNuclearSource;
   if(lastGeneratedCifParsed && lastGeneratedCifSpaceGroup){
     return {structure:lastGeneratedCifParsed,spaceGroup:lastGeneratedCifSpaceGroup,
       fileName:lastGeneratedCifName};
   }
-  const structure=getSelectedCifStructure();
-  if(!structure?.lattice || !structure?.atoms?.length) return null;
+  const selected=getSelectedCifStructure();
+  if(!selected?.lattice || !selected?.atoms?.length) return null;
+  // A generated mCIF uses a supercell: deduplicate translated atoms into
+  // the parent nuclear cell before calculating peaks and indexing hkl.
+  const structure=parentNuclearStructureFromMcif(selected,getSelectedCifText()) || selected;
   // Use the known nuclear space group for reflection-star multiplicities.
   // For unfamiliar groups fall back to Friedel-pair grouping instead of
   // preventing the structure-factor calculation altogether.
@@ -3498,7 +3552,262 @@ function nuclearReflectionSource(){
   return {structure,spaceGroup,fileName:getSelectedCifFileName()||"selected_structure.cif"};
 }
 
+// Sample lattice parameters are a live calculation override. The CIF/mCIF
+// source and all fractional atom coordinates remain untouched.
+function nuclearReflectionWithSampleLattice(source){
+  if(!source?.structure?.lattice) return source;
+  const lattice={...source.structure.lattice};
+  for(const id of ["a","b","c","alpha","beta","gamma"]){
+    const raw=$(id)?.value;
+    if(raw===undefined || String(raw).trim()==="") throw new Error(`Sample ${id} is required for nuclear reflections.`);
+    const value=Number(raw);
+    if(!Number.isFinite(value) || (['a','b','c'].includes(id) && value<=0)
+       || (!['a','b','c'].includes(id) && (value<=0 || value>=180))){
+      throw new Error(`Invalid Sample ${id}: ${raw}`);
+    }
+    lattice[id]=value;
+  }
+  return {...source,structure:{...source.structure,lattice}};
+}
+
+// Live calculation state: never overwrite the original CIF/mCIF on edits.
+let liveEditorNuclearSource=null;
+let liveEditorNuclearInvalid=false;
+let liveNuclearCellReference="sample";
+let magneticTableHasBeenCalculated=false;
+let liveReflectionRecalcTimer=0;
+let synchronizingLiveCell=false;
+const LIVE_REFLECTION_DELAY_MS=250;
+// Keep Sample and Structure editor crystallographic cells in step, without
+// synthesizing DOM events that could recursively trigger each other.
+const SYNCHRONIZED_CELL_IDS={a:"cifA",b:"cifB",c:"cifC",alpha:"cifAlpha",beta:"cifBeta",gamma:"cifGamma"};
+function syncCrystallographicCell(origin,{refresh=true,changedId="",commit=false}={}){
+  if(synchronizingLiveCell) return;
+  synchronizingLiveCell=true;
+  try{
+    const sampleOrigin=origin==="sample";
+    const sgId=sampleOrigin?"sampleSpaceGroup":"cifSpaceGroup";
+    const targetSgId=sampleOrigin?"cifSpaceGroup":"sampleSpaceGroup";
+    // Number fields are text while the user types: don't normalize half-written
+    // decimals (e.g. "5."), don't rewrite the focused field, and don't start
+    // a reflection calculation for an incomplete/invalid value.
+    const sourceSg=$(sgId);
+    const numberEntry=sampleOrigin?"sampleSpaceGroupNumber":"cifSpaceGroupNumber";
+    if(changedId===numberEntry){
+      const typed=String($(numberEntry)?.value??"");
+      if(!/^\d+$/.test(typed) || !sampleSpaceGroupByNumber(Number(typed))) return;
+      if(sourceSg) sourceSg.value=typed;
+    }
+    const n=Number(sourceSg?.value);
+    if(!Number.isInteger(n) || !sampleSpaceGroupByNumber(n)) return;
+    if($(targetSgId)) $(targetSgId).value=String(n);
+    for(const id of ["sampleSpaceGroupNumber","cifSpaceGroupNumber"]){
+      if(id!==changedId && $(id)) $(id).value=String(n);
+    }
+    const changedCellKey=Object.entries(SYNCHRONIZED_CELL_IDS)
+      .find(([key,editorId])=>changedId===(sampleOrigin?key:editorId))?.[0];
+    // Mirror the edited dimension immediately, without requiring every other
+    // dimension to be valid during typing.  Reflection calculation remains
+    // guarded by the full-lattice validation below.
+    if(changedCellKey){
+      const src=$(sampleOrigin?changedCellKey:SYNCHRONIZED_CELL_IDS[changedCellKey]);
+      const dst=$(sampleOrigin?SYNCHRONIZED_CELL_IDS[changedCellKey]:changedCellKey);
+      if(src && dst) dst.value=src.value;
+    }
+    const sourceValues={};
+    for(const [key,editorId] of Object.entries(SYNCHRONIZED_CELL_IDS)){
+      const input=$(sampleOrigin?key:editorId);
+      if(!input) return;
+      const raw=String(input.value).trim();
+      // Preserve unfinished input rather than losing the user's decimal.
+      if(raw==="" || raw==="-" || raw==="+" || raw.endsWith(".") ||
+         !Number.isFinite(Number(raw)) || Number(raw)<=0 ||
+         ((key==="alpha"||key==="beta"||key==="gamma") && Number(raw)>=180)){
+        // Still mirror the exact input string for an active field, but defer calculation.
+        if(changedCellKey===key){
+          const dest=$(sampleOrigin?editorId:key);
+          if(dest) dest.value=raw;
+        }
+        return;
+      }
+      sourceValues[key]=raw;
+    }
+    // Copy the edited values first; avoid invoking input/change events recursively.
+    for(const [key,editorId] of Object.entries(SYNCHRONIZED_CELL_IDS)){
+      const dest=$(sampleOrigin?editorId:key);
+      if(dest) dest.value=sourceValues[key];
+    }
+    // Normalize both sides only after a field is committed or the SG changes;
+    // otherwise the active decimal input stays untouched.
+    if(commit || changedId===sgId || changedId===numberEntry){
+      if(sampleOrigin){
+        applySampleLatticeConstraints();
+        for(const [key,editorId] of Object.entries(SYNCHRONIZED_CELL_IDS)){
+          if($(editorId) && $(key)) $(editorId).value=$(key).value;
+        }
+        applyCifLatticeConstraints();
+      }else{
+        applyCifLatticeConstraints();
+        for(const [key,editorId] of Object.entries(SYNCHRONIZED_CELL_IDS)){
+          if($(key) && $(editorId)) $(key).value=$(editorId).value;
+        }
+        applySampleLatticeConstraints();
+      }
+    }
+    // Final values must agree after applying crystal-system constraints.
+    for(const [key,editorId] of Object.entries(SYNCHRONIZED_CELL_IDS)){
+      const from=$(sampleOrigin?key:editorId);
+      const to=$(sampleOrigin?editorId:key);
+      if(from && to) to.value=from.value;
+    }
+    updateCifSpaceGroupInfo();
+    liveNuclearCellReference="editor";
+    if(refresh){
+      updateLiveEditorNuclearSource();
+      scheduleLiveReflectionRecalc({nuclear:true,magnetic:false});
+      scheduleRecalc();
+    }
+  }finally{synchronizingLiveCell=false;}
+}
+
+function scheduleLiveReflectionRecalc({nuclear=true,magnetic=false}={}){
+  // Coalesce rapid typing; never calculate a half-written numeric value.
+  clearTimeout(liveReflectionRecalcTimer);
+  liveReflectionRecalcTimer=setTimeout(()=>{
+    liveReflectionRecalcTimer=0;
+    if(nuclear) recalculateGeneratedReflections();
+    if(magnetic && magneticTableHasBeenCalculated) calculateMagneticReflectionTable();
+  },LIVE_REFLECTION_DELAY_MS);
+}
+function readLiveEditorNuclearStructure(){
+  // Only valid complete snapshots replace the previous reflection source.
+  // Build from the real Positions/Uij controls (same validation as Generate CIF).
+  const generated=buildGeneratedCif();
+  return {structure:generated.parsed,spaceGroup:generated.sg,
+    fileName:generated.filename};
+}
+function updateLiveEditorNuclearSource(){
+  try{
+    liveEditorNuclearSource=readLiveEditorNuclearStructure();
+    liveEditorNuclearInvalid=false;
+  }catch(_err){
+    // Invalid/partial input: show an actionable error instead of stale peaks.
+    liveEditorNuclearSource=null;
+    liveEditorNuclearInvalid=true;
+  }
+}
+let lastMagneticMotif=null;
+let lastMagneticRows=[];
+let lastMagneticParentIndexing=null;
+const GENERATOR_REFLECTION_MODE_KEY='tas-simulator-generator-reflection-mode-v1';
+function magneticModelFromEditor(){
+  // The generated CIF draft contains *nuclear* atom sites only and may take
+  // precedence in the 3-D viewer. Never let that draft silently replace an
+  // explicitly loaded magnetic CIF when computing magnetic intensities.
+  const importedStructure=getSelectedCifStructure();
+  const current=importedStructure?.magnetic
+    ? importedStructure : currentStructureForViewer()?.structure;
+  if(!current) throw new Error('Load a CIF/mCIF before calculating magnetic Bragg reflections.');
+  if(structureSpinEditingMode==='individual') throw new Error('Switch Spins Mode to linked Sites; per-atom manual supercell edits are not yet supported in this calculator.');
+  const fromFile=!!current.magnetic && !importedMagneticEditMode;
+  const selectedQ=effectivePropagationVectorForStructure();
+  const settings=new Map(structureMomentSettings);
+  for(const [key,value] of currentMomentSettings())settings.set(key,value);
+  // For Source=mCIF, the parsed expanded atoms carry the actual magnetic
+  // moments; the nuclear generator's zero-valued UI rows must not erase them.
+  return buildMagneticMotif({structure:current,settings,
+    q:[selectedQ.h,selectedQ.k,selectedQ.l],imported:fromFile,
+    mode:structureMomentStructureType,axis:structureMomentRotationAxis,
+    chirality:structureMomentChirality});
+}
+function calculateMagneticReflectionTable(){
+  magneticTableHasBeenCalculated=true;
+  const message=$('magneticReflectionMessage'),body=$('magneticReflectionRows');
+  if(!body)return;
+  body.replaceChildren();
+  lastMagneticRows=[];lastMagneticMotif=null;lastMagneticParentIndexing=null;
+  if($('magneticDownloadTable'))$('magneticDownloadTable').disabled=true;
+  if($('magneticExportBnsInput'))$('magneticExportBnsInput').disabled=true;
+  try{
+    const motif=magneticModelFromEditor();
+    const beam=currentCifReflectionBeam();
+    const filters=currentCifReflectionFilters();
+    let twoThetaMax=180;
+    if(filters.withinS2Max){
+      const inst=currentInstrument();
+      twoThetaMax=Math.min(180,effectiveS2MaxAtEi(inst,beam.effectiveEnergy,beam.lambdaHalf));
+    }
+    const rows=magneticBraggPeaks(motif,beam.wavelength,{twoThetaMax});
+    const spinCount=motif.sites.filter(site=>Math.hypot(...(site.moment||[0,0,0]))>1e-10).length;
+    let diagnostic='';
+    if(!rows.length){
+      if(!spinCount) diagnostic=' No nonzero magnetic moments were found. Check Spins → Use and Source (mCIF / Modify).';
+      else {
+        const unrestricted=twoThetaMax<179.999 ? magneticBraggPeaks(motif,beam.wavelength,{twoThetaMax:180}) : [];
+        if(unrestricted.length) diagnostic=` ${unrestricted.length} reflections exist without the instrument 2θ limit (current limit ${Number(twoThetaMax).toFixed(2)}°). Disable Within S2 Max or adjust the beam/instrument range.`;
+        else diagnostic=' Nonzero moments exist, but no magnetic peaks pass the wavelength range/intensity threshold. Try shorter wavelength and verify the magnetic motif.';
+      }
+    }
+    lastMagneticMotif=motif;lastMagneticRows=rows;
+    // Only recover the parent reference for mCIFs written by this generator.
+    // All structure factors remain evaluated in the actual magnetic cell.
+    const fileText=getSelectedCifText();
+    const fileQ=propagationVectorsFromMcif(fileText,getSelectedCifStructure());
+    const parentInfo=(motif.source==='mCIF' && fileQ.length===1)
+      ? parentIndexingFromMcif(fileText,motif.lattice,[fileQ[0].h,fileQ[0].k,fileQ[0].l]) : null;
+    lastMagneticParentIndexing=parentInfo;
+    const displayRep=parentInfo?.replication || motif.replication;
+    const parentKnown=!!parentInfo || motif.source!=='mCIF';
+    const formatter=(v,n=5)=>Number(v).toFixed(n);
+    for(const row of rows.slice(0,3000)){
+      const tr=document.createElement('tr');
+      const parentHkl=parentKnown?hklInParentCell(row.hkl,displayRep):null;
+      for(const value of [parentHkl?`(${parentHkl.map(v=>Number(v.toFixed(8))).join(' ')})`:'Unknown',`(${row.hkl.join(' ')})`,formatter(row.intensity,7),formatter(row.twoTheta,4),formatter(row.q),formatter(row.d)]){
+        const td=document.createElement('td');td.textContent=value;tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+    const cellDescription=parentInfo
+      ? `Magnetic supercell ${displayRep.join('×')} relative to the parent cell (parent c=${Number(parentInfo.lattice.c).toFixed(4)} Å; magnetic c=${Number(motif.lattice.c).toFixed(4)} Å).`
+      : motif.source==='mCIF'
+        ? 'Magnetic cell is taken directly from the imported mCIF; parent-cell indexing is unknown.'
+        : `Magnetic supercell ${displayRep.join('×')} relative to the input CIF cell.`;
+    message.textContent=`${rows.length} magnetic reflections in the selected range; ${cellDescription} Parent-cell and magnetic-cell indices are shown separately. Values are |F_M|² in barn, with f(Q)=1 (no ion-specific form factor). No Lorentz/absorption/instrument corrections. No symmetry-family grouping. ${spinCount} nonzero spin(s) in the motif.${diagnostic}`;
+    $('magneticDownloadTable').disabled=!rows.length;
+    $('magneticExportBnsInput').disabled=false;
+  }catch(err){
+    message.textContent=err?.message||String(err);
+  }
+}
+function downloadMagneticCsv(){
+  if(!lastMagneticRows.length)return;
+  const replication=lastMagneticParentIndexing?.replication || lastMagneticMotif?.replication || [1,1,1];
+  const known=!!lastMagneticParentIndexing || lastMagneticMotif?.source!=='mCIF';
+  const lines=['parent_h,parent_k,parent_l,magnetic_h,magnetic_k,magnetic_l,FM2_barn,two_theta_deg,Q_inv_A,d_A',
+    ...lastMagneticRows.map(r=>[
+      ...(known?hklInParentCell(r.hkl,replication):['','','']),
+      ...r.hkl,r.intensity,r.twoTheta,r.q,r.d].join(','))];
+  downloadGeneratedCif(lines.join('\n'),'magnetic_reflections.csv');
+}
+function downloadBnsModel(){
+  if(!lastMagneticMotif)return;
+  const json=JSON.stringify({version:1,...lastMagneticMotif},null,2);
+  downloadGeneratedCif(json,'magnetic_model_for_bns.json');
+}
+function initializeMagneticReflections(){
+  const button=$('magneticCalculateTable');
+  if(!button || button.dataset.bound)return;
+  button.dataset.bound='1';
+  button.addEventListener('click',calculateMagneticReflectionTable);
+  $('magneticDownloadTable')?.addEventListener('click',downloadMagneticCsv);
+  $('magneticExportBnsInput')?.addEventListener('click',downloadBnsModel);
+}
+
 function recalculateGeneratedReflections(){
+  if(liveEditorNuclearInvalid){
+    clearCifReflectionTable('Complete valid Unit Cell / Positions values to calculate nuclear reflections.');
+    return;
+  }
   const source=nuclearReflectionSource();
   if(!source){
     clearCifReflectionTable("Select a CIF/mCIF or Generate CIF to calculate nuclear reflections.");
@@ -3513,7 +3822,8 @@ function recalculateGeneratedReflections(){
       twoThetaMax=Math.min(180,effectiveS2MaxAtEi(inst,beam.effectiveEnergy,beam.lambdaHalf));
       if(!Number.isFinite(twoThetaMax)) throw new Error("Instrument 2θ maximum is unavailable.");
     }
-    lastGeneratedReflections=buildCifReflectionTable(source.structure,source.spaceGroup,beam.wavelength,filters,twoThetaMax);
+    const liveSource=liveEditorNuclearSource || nuclearReflectionWithSampleLattice(source);
+    lastGeneratedReflections=buildCifReflectionTable(liveSource.structure,liveSource.spaceGroup,beam.wavelength,filters,twoThetaMax);
     renderCifReflectionTable();
     if($("cifDownloadTable")) $("cifDownloadTable").disabled=!lastGeneratedReflections.length;
   }catch(err){
@@ -3523,13 +3833,18 @@ function recalculateGeneratedReflections(){
 
 // v59: Nuclear/magnetic editors and all four results share one output workspace.
 // Retain setCifOutputTab for legacy callers and restore logic.
+function showUnifiedCifPreview(text,label){
+  if($("cifPreview")) $("cifPreview").textContent=String(text||"");
+  if($("cifPreviewContext")) $("cifPreviewContext").textContent=String(label||"CIF/mCIF Preview");
+  setUnifiedGeneratorOutputTab('preview',{persist:true});
+}
 const GENERATOR_OUTPUT_TABS={
   structure:['mcifTabStructure','mcifStructurePane'],
   reflections:['cifOutputTabReflections','generatorReflectionsPane'],
-  'cif-preview':['cifOutputTabPreview','cifPreviewPanel'],
-  'mcif-preview':['mcifTabPreview','mcifPreviewPane']
+  preview:['cifOutputTabPreview','cifPreviewPanel']
 };
 function setUnifiedGeneratorOutputTab(name,{persist=false}={}){
+  if(name==='cif-preview'||name==='mcif-preview') name='preview';
   if(!GENERATOR_OUTPUT_TABS[name]) name='structure';
   for(const [key,[tabId,paneId]] of Object.entries(GENERATOR_OUTPUT_TABS)){
     const selected=key===name;
@@ -3542,7 +3857,7 @@ function setUnifiedGeneratorOutputTab(name,{persist=false}={}){
   if(name==='structure') requestAnimationFrame(renderCifStructureIfVisible);
 }
 function setCifOutputTab(tab){
-  setUnifiedGeneratorOutputTab(tab==='reflections'?'reflections':'cif-preview');
+  setUnifiedGeneratorOutputTab(tab==='reflections'?'reflections':'preview');
 }
 function setGeneratorMode(name){
   if(name!=='magnetic') name='nuclear';
@@ -3556,13 +3871,17 @@ function setGeneratorMode(name){
   try{localStorage.setItem('tas-simulator-generator-mode-v1',name);}catch(_e){}
 }
 function setGeneratorReflectionMode(name){
-  if(name!=='magnetic') name='nuclear';
+  // Release safety: magnetic reflection calculation is not yet validated.
+  name='nuclear';
+  const magneticTab=$("generatorReflectionsMagnetic");
+  if(magneticTab){ magneticTab.disabled=true; magneticTab.setAttribute('aria-disabled','true'); }
   for(const [mode,tabId,paneId] of [['nuclear','generatorReflectionsNuclear','generatorNuclearReflectionsPane'],['magnetic','generatorReflectionsMagnetic','generatorMagneticReflectionsPane']]){
     const on=mode===name;
     $(tabId)?.classList.toggle('active',on);
     $(tabId)?.setAttribute('aria-selected',String(on));
     $(paneId)?.classList.toggle('hidden',!on);
   }
+  try{localStorage.setItem(GENERATOR_REFLECTION_MODE_KEY,name);}catch(_e){}
 }
 
 function generateCifForReview(){
@@ -3574,6 +3893,7 @@ function generateCifForReview(){
   cifStructureSourcePreference="generated";
   saveStructureViewerState();
   if($("cifPreview")) $("cifPreview").textContent=generated.text;
+  if($("cifPreviewContext")) $("cifPreviewContext").textContent=`Generated file: ${generated.filename}`;
   setCifGeneratedReady(true);
   recalculateGeneratedReflections();
   renderCifStructureIfVisible();
@@ -3694,7 +4014,7 @@ function mcifMessage(message,error=false){
 }
 function mcifPreview(text){
   if($("mcifPreviewText")) $("mcifPreviewText").textContent=text;
-  $("mcifTabPreview")?.click();
+  showUnifiedCifPreview(text,`Generated file: ${lastGeneratedMcifName||"mCIF"}`);
 }
 function crystalComponents(lattice,cart){
   const basis=directLatticeBasis(lattice);
@@ -3789,9 +4109,55 @@ function generateMcifForReview(){
   mcifPreview(text);
   mcifMessage(`Generated ${lastGeneratedMcifName}; magnetic symmetry checked (${check.atoms.filter(a=>Array.isArray(a.magneticMoment)).length} magnetic atoms).`);
 }
+// A single output selector operates the existing format-specific actions.
+function initializeUnifiedOutputActions(){
+  const format=$("cifOutputFormat"), generate=$("cifOutputGenerate"),
+    download=$("cifOutputDownload"), set=$("cifOutputSet");
+  if(!format||!generate||!download||!set||format.dataset.outputBound) return;
+  format.dataset.outputBound="1";
+  const ids={cif:["cifGenerate","cifDownload","cifSet"],
+    mcif:["structureMcifGenerate","structureMcifDownload","structureMcifSet"]};
+  const update=()=>{
+    if(format.value!=="cif") format.value="cif";
+    const mcif=false, word="CIF";
+    const [g,d,s]=ids[mcif?"mcif":"cif"].map(id=>$(id));
+    generate.textContent=`Generate ${word}`;
+    download.textContent=`Download ${word}`;
+    set.textContent=`Set ${word}`;
+    generate.disabled=mcif||!g||g.disabled;
+    download.disabled=mcif||!d||d.disabled;
+    set.disabled=mcif||!s||s.disabled;
+    const suffix=$("cifUnifiedFileSuffix");
+    if(suffix) suffix.textContent=mcif?".mcif":".cif";
+  };
+  format.addEventListener("change",()=>{
+    if(format.value!=="cif") format.value="cif";
+    try{localStorage.setItem("tas-cif-output-format-v1","cif");}catch(_e){}
+    update();
+  });
+  // Do not restore the old mCIF selection from browser storage.
+  format.value="cif";
+  const mcifOption=format.querySelector('option[value="mcif"]');
+  if(mcifOption) mcifOption.disabled=true;
+  try{localStorage.setItem("tas-cif-output-format-v1","cif");}catch(_e){}
+  for(const [index,el] of [generate,download,set].entries()){
+    el.addEventListener("click",()=>{
+      if(format.value==="mcif") return; // Release safety: do not dispatch mCIF actions.
+      const id=ids.cif[index];
+      const original=$(id);
+      if(original&&!original.disabled)original.click();
+      queueMicrotask(update);
+    });
+  }
+  for(const id of [...ids.cif,...ids.mcif]){
+    const original=$(id);
+    if(original) new MutationObserver(update).observe(original,{attributes:true,attributeFilter:["disabled"]});
+  }
+  update();
+}
 function initMcifGeneratorActions(){
-  // Generate is always available; Download/Set require a valid generated mCIF.
-  if($("structureMcifGenerate")) $("structureMcifGenerate").disabled=false;
+  // Release safety: leave legacy mCIF controls disabled too.
+  for(const id of ["structureMcifGenerate","structureMcifDownload","structureMcifSet"]) if($(id)) $(id).disabled=true;
   invalidateGeneratedMcif();
   $("structureMcifShowCurrent")?.addEventListener("click",()=>{
     if(!getSelectedCifText()){mcifMessage("No current CIF/mCIF selected.",true);return;}
@@ -3840,7 +4206,7 @@ async function initializeCifGenerator(){
     select.value="1";
     syncCifSpaceGroupNumberFromSelect();
     if(!getSelectedCifStructure()) restoreSelectedCifLocal();
-    copyCurrentLatticeToGenerator();
+    // Keep the editor's own initial cell until a structure is loaded.
     addCifAtomRow({element:"",x:0,y:0,z:0,occupancy:1},{invalidate:false});
     updateCifSpaceGroupInfo();
     syncCifReflectionBeamFromInstrument();
@@ -3856,7 +4222,7 @@ async function initializeCifGenerator(){
     select.addEventListener("change",updateCifSpaceGroupInfo);
     $("cifSpaceGroupNumber")?.addEventListener("change",jumpToCifSpaceGroupNumber);
     $("cifSpaceGroupNumber")?.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); jumpToCifSpaceGroupNumber(); } });
-    $("cifA")?.addEventListener("input",applyCifLatticeConstraints);
+    // Cell synchronization applies constraints on change, not each keystroke.
     $("cifGeneratedName")?.addEventListener("change",()=>{
       $("cifGeneratedName").value=cleanCifBaseName($("cifGeneratedName").value);
       invalidateGeneratedMcif();
@@ -3886,42 +4252,61 @@ async function initializeCifGenerator(){
     window.addEventListener("resize",syncCifOutputPaneHeight);
     requestAnimationFrame(syncCifOutputPaneHeight);
 
+    const physicalEditorChanged=ev=>{
+      const target=ev.target;
+      if(!target) return;
+      const physical=target.closest?.('#cifAtomRows, #cifAtomDetailedRows') ||
+        ['cifSpaceGroup','cifSpaceGroupNumber','cifA','cifB','cifC','cifAlpha','cifBeta','cifGamma'].includes(target.id);
+      if(!physical) return;
+      // Crystallographic inputs have their own direct listeners below.  The
+      // delegated handler only invalidates the draft / schedules calculations.
+      liveNuclearCellReference="editor";
+      updateLiveEditorNuclearSource();
+      scheduleLiveReflectionRecalc({nuclear:true,magnetic:true});
+    };
+    // Directly bind the editable Cell fields.  Delegated change handling alone
+    // proved unreliable when the editor is switched/rebuilt or another field
+    // contains an incomplete numeric entry.
+    const onEditorCellInput=ev=>{
+      const id=ev.currentTarget?.id || ev.target?.id || "";
+      syncCrystallographicCell("editor",{refresh:true,changedId:id,commit:ev.type==="change"});
+    };
+    for(const id of ["cifA","cifB","cifC","cifAlpha","cifBeta","cifGamma"]){
+      $(id)?.addEventListener("input",onEditorCellInput);
+      $(id)?.addEventListener("change",onEditorCellInput);
+    }
+    for(const id of ["cifSpaceGroup","cifSpaceGroupNumber"]){
+      $(id)?.addEventListener("change",onEditorCellInput);
+    }
     inputPane?.addEventListener("input",ev=>{
+      physicalEditorChanged(ev);
       if(["cifLoadFile","cifReflectionEnergy","cifReflectionWavelength","cifReflectionWavevector"].includes(ev.target?.id)) return;
       if(cifStructureSourcePreference==="loaded") cifStructureSourcePreference="generated";
       invalidateGeneratedCif();
       renderCifStructureIfVisible();
     });
     inputPane?.addEventListener("change",ev=>{
+      physicalEditorChanged(ev);
       if(["cifLoadFile","cifReflectionEnergy","cifReflectionWavelength","cifReflectionWavevector"].includes(ev.target?.id)) return;
       if(cifStructureSourcePreference==="loaded") cifStructureSourcePreference="generated";
       invalidateGeneratedCif();
       renderCifStructureIfVisible();
     });
 
-    $("cifCopyLattice")?.addEventListener("click",()=>{
-      copyCurrentLatticeToGenerator();
-      invalidateGeneratedCif("Current sample space group and lattice copied — press Generate to review the updated CIF.");
-    });
     $("cifShowCurrent")?.addEventListener("click",()=>{
       const text=getSelectedCifText();
-      if(!text){
-        setCifGeneratorMessage("No current CIF/mCIF is selected.",true);
-        return;
-      }
+      if(!text){setCifGeneratorMessage("No current CIF/mCIF is selected.",true);return;}
       const fileName=getSelectedCifFileName()||"selected CIF/mCIF";
-      const isMcif=/\.mcif$/i.test(fileName);
-      cifStructureSourcePreference="selected";
-      saveStructureViewerState();
-      if(isMcif){
-        if($("mcifPreviewText")) $("mcifPreviewText").textContent=text;
-        setUnifiedGeneratorOutputTab("mcif-preview");
-      }else{
-        if($("cifPreview")) $("cifPreview").textContent=text;
-        setCifOutputTab("preview");
-      }
-      renderCifStructureIfVisible();
-      setCifGeneratorMessage(`Showing current selected ${isMcif?'mCIF':'CIF'}: ${fileName}.`);
+      showUnifiedCifPreview(text,`Loaded file: ${fileName}`);
+      setCifGeneratorMessage(`Showing loaded file: ${fileName}.`);
+    });
+    $("cifShowGenerated")?.addEventListener("click",()=>{
+      const mcif=$("cifOutputFormat")?.value==="mcif";
+      const text=mcif?lastGeneratedMcifText:lastGeneratedCifText;
+      const fileName=mcif?lastGeneratedMcifName:lastGeneratedCifName;
+      if(!text){setCifGeneratorMessage(`Generate ${mcif?"mCIF":"CIF"} first to show its output.`,true);return;}
+      showUnifiedCifPreview(text,`Generated file: ${fileName}`);
+      setCifGeneratorMessage(`Showing generated file: ${fileName}.`);
     });
     $("cifCopyAtom")?.addEventListener("click",copySelectedCifAtomRows);
     $("cifRemoveAtom")?.addEventListener("click",removeSelectedCifAtomRows);
@@ -3976,7 +4361,9 @@ async function initializeCifGenerator(){
     for(const [id,mode] of [['generatorReflectionsNuclear','nuclear'],['generatorReflectionsMagnetic','magnetic']]){
       $(id)?.addEventListener('click',()=>setGeneratorReflectionMode(mode));
     }
-    setGeneratorReflectionMode('nuclear');
+    let savedReflectionMode='nuclear';
+    try{savedReflectionMode=localStorage.getItem(GENERATOR_REFLECTION_MODE_KEY)||'nuclear';}catch(_e){}
+    setGeneratorReflectionMode(savedReflectionMode);
     $("tabCifGenerator")?.addEventListener("click",()=>requestAnimationFrame(renderCifStructureIfVisible));
     if($("cifSaveFigure")) $("cifSaveFigure").onclick=()=>saveStructureFigure().catch(err=>{alert(`Save figure failed: ${err?.message||err}`);});
     
@@ -4043,20 +4430,70 @@ async function initializeCifGenerator(){
     for(const id of reflectionFilterIds){
       $(id)?.addEventListener("change",recalculateGeneratedReflections);
     }
-    $("cifReflectionSetDefault")?.addEventListener("click",()=>{
-      syncCifReflectionBeamFromInstrument();
-      recalculateGeneratedReflections();
-    });
     $("cifReflectionEnergy")?.addEventListener("change",()=>syncCifReflectionBeamFrom("energy"));
     $("cifReflectionWavelength")?.addEventListener("change",()=>syncCifReflectionBeamFrom("wavelength"));
     $("cifReflectionWavevector")?.addEventListener("change",()=>syncCifReflectionBeamFrom("wavevector"));
     // Instrument configuration supplies the default Generator beam condition.
     const syncGeneratorBeam=()=>{ syncCifReflectionBeamFromInstrument(); recalculateGeneratedReflections(); };
+    $("energy")?.addEventListener("input",syncGeneratorBeam);
     $("energy")?.addEventListener("change",syncGeneratorBeam);
     $("energyMode")?.addEventListener("change",syncGeneratorBeam);
     $("instrument")?.addEventListener("change",syncGeneratorBeam);
     $("S2maxUser")?.addEventListener("change",recalculateGeneratedReflections);
     $("S2maxEffective")?.addEventListener("change",recalculateGeneratedReflections);
+    // Synchronize both crystallographic panels, then recompute nuclear peaks.
+    const onSampleLatticeInput=ev=>syncCrystallographicCell("sample",{changedId:ev.target?.id||"",commit:ev.type==="change"});
+    for(const id of ['a','b','c','alpha','beta','gamma']){
+      $(id)?.addEventListener('input',onSampleLatticeInput);
+      $(id)?.addEventListener('change',onSampleLatticeInput);
+    }
+    for(const id of ['sampleSpaceGroup','sampleSpaceGroupNumber']){
+      $(id)?.addEventListener('change',onSampleLatticeInput);
+    }
+    // Positions is a sibling of .cif-generator-input-pane in the unified UI,
+    // so inputPane's delegated listeners never receive its input/change events.
+    // Bind directly to stable row containers; their child rows are rebuilt on
+    // import, paste, copy and deletion.
+    const onLivePositionsEdit=event=>{
+      if(!event.target?.matches?.('input, select')) return;
+      liveNuclearCellReference="editor";
+      updateLiveEditorNuclearSource();
+      scheduleLiveReflectionRecalc({nuclear:true,magnetic:false});
+    };
+    for(const id of ["cifAtomRows","cifAtomDetailedRows"]){
+      const host=$(id);
+      if(host && !host.dataset.nuclearLiveBound){
+        host.addEventListener("input",onLivePositionsEdit);
+        host.addEventListener("change",onLivePositionsEdit);
+        host.dataset.nuclearLiveBound="1";
+      }
+    }
+    // Structural row operations do not necessarily emit an input/change event.
+    // Rebuild the calculation snapshot after the click handler mutates rows.
+    for(const id of ["cifAddAtom","cifRemoveAtom","cifCopyAtom"]){
+      const button=$(id);
+      if(button && !button.dataset.nuclearLiveBound){
+        button.addEventListener("click",()=>requestAnimationFrame(()=>{
+          liveNuclearCellReference="editor";
+          updateLiveEditorNuclearSource();
+          scheduleLiveReflectionRecalc({nuclear:true,magnetic:false});
+        }));
+        button.dataset.nuclearLiveBound="1";
+      }
+    }
+    // Atoms settings can affect displayed structure; keep the nuclear table in
+    // step even when controls are rebuilt dynamically. Pure color changes do
+    // not alter physical intensities, but are harmlessly coalesced here.
+    $("cifAtomColorRows")?.addEventListener("change",()=>scheduleLiveReflectionRecalc({nuclear:true,magnetic:false}));
+    // Spins, propagation vector and structure type only affect magnetic peaks.
+    // Recalculate automatically only once a magnetic table has been requested.
+    const requestMagneticUpdate=()=>scheduleLiveReflectionRecalc({nuclear:false,magnetic:true});
+    for(const id of ['cifMagMomentRows','cifMomentStructureType','cifMomentRotationAxis',
+      'cifMomentChirality','cifMomentPropagationVector',
+      'cifSpinEditingMode','propagationVectors']){
+      $(id)?.addEventListener('input',requestMagneticUpdate);
+      $(id)?.addEventListener('change',requestMagneticUpdate);
+    }
     for(const id of ["Uh","Uk","Ul","Vh","Vk","Vl"]){
       $(id)?.addEventListener("change",recalculateGeneratedReflections);
     }
@@ -4069,6 +4506,7 @@ async function initializeCifGenerator(){
 }
 
   initMcifGeneratorActions();
+  initializeUnifiedOutputActions();
   // v59: All four output tabs are wired together during initializeCifGenerator.
 
   return {
