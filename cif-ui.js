@@ -195,12 +195,15 @@ function loadCifText(text,fileName="generated_structure.cif",{persist=true}={}){
   if($("mcifPreviewText")) $("mcifPreviewText").textContent=cifText;
   // CIF and mCIF share a single filename entry.
   invalidateGeneratedMcif();
-  // Save the currently displayed structure before switching.  Settings are
-  // stored per structure fingerprint, so they can only return for the same CIF.
-  saveStructureViewerState();
+  // An explicit new file replaces the previous editing session. Only startup
+  // restoration (persist=false) may recover its saved Atoms/Spins/Bonds.
+  if(persist){
+    discardStructureEditingSession();
+    resetStructureViewerStateToDefaults();
+  }
   setSelectedCifState(parsed,fileName,cifText);
   cifStructureSourcePreference="selected";
-  restoreStructureViewerState();
+  if(!persist) restoreStructureViewerState();
   // File changes must not navigate Structure editor away from the open tab.
   structureConfigActiveTab=rememberedStructureEditorTab();
   if(parsed.magnetic){
@@ -278,7 +281,7 @@ function clearSelectedCif(){
   liveEditorNuclearSource=null;
   liveEditorNuclearInvalid=false;
   magneticTableHasBeenCalculated=false;
-  saveStructureViewerState();
+  discardStructureEditingSession();
   setSelectedCifState(null,"","");
   // Clear the separate Generator-only viewer cache as well: a later tab
   // switch must not resurrect a CIF that was explicitly cleared.
@@ -705,6 +708,21 @@ function readStructureViewerStateStore(){
   }catch(_e){}
   return {version:2,states:{}};
 }
+// Remove all past structure-specific snapshots when the user switches files
+// or presses Clear. Do not touch global Instrument/Sample/tab preferences.
+function discardStructureEditingSession(){
+  try{localStorage.removeItem(STRUCTURE_VIEWER_STORAGE_KEY);}catch(_e){}
+  try{localStorage.removeItem(MCIF_EDIT_DRAFT_KEY);}catch(_e){}
+  modifiedMagneticDraft=null;
+  importedMagneticEditMode=false;
+  importedMagneticQSignature="";
+  // Invalidate existing DOM rows, otherwise they may be harvested as edits
+  // when the new structure is first rendered.
+  $("cifMagMomentRows")?.replaceChildren();
+  $("cifBondRows")?.replaceChildren();
+  $("cifAtomColorRows")?.replaceChildren();
+  structureControlSignature="";
+}
 function resetStructureViewerStateToDefaults(){
   restoringStructureViewer=true;
   try{
@@ -718,6 +736,7 @@ function resetStructureViewerStateToDefaults(){
       if($("cifRange"+cap+"Max")) $("cifRange"+cap+"Max").value="1";
     }
     structureAtomColorOverrides.clear();
+    structureElementDefaultColors.clear();
     structureAtomSizeOverrides.clear();
     structureAtomSizeCleared.clear();
     structureAtomVisibility.clear();
@@ -784,9 +803,10 @@ function saveStructureViewerState(){
       showXYZ:structureShowXYZ,
       bonds:readStructureBondRules()
     };
-    const store=readStructureViewerStateStore();
-    store.states[identity.fingerprint]=payload;
-    localStorage.setItem(STRUCTURE_VIEWER_STORAGE_KEY,JSON.stringify(store));
+    // Retain only the active structure, never an accumulating history.
+    localStorage.setItem(STRUCTURE_VIEWER_STORAGE_KEY,JSON.stringify({
+      version:2,states:{[identity.fingerprint]:payload}
+    }));
   }catch(_e){}
 }
 function sourceIsMagneticCif(){return currentStructureForViewer()?.structure?.magnetic===true;}
@@ -3990,10 +4010,7 @@ function setGeneratorMode(name){
   try{localStorage.setItem('tas-simulator-generator-mode-v1',name);}catch(_e){}
 }
 function setGeneratorReflectionMode(name){
-  // Magnetic reflections are temporarily unavailable, including saved selections.
-  name='nuclear';
-  const magneticTab=$('generatorReflectionsMagnetic');
-  if(magneticTab) magneticTab.disabled=true;
+  if(name!=='magnetic') name='nuclear';
   for(const [mode,tabId,paneId] of [['nuclear','generatorReflectionsNuclear','generatorNuclearReflectionsPane'],['magnetic','generatorReflectionsMagnetic','generatorMagneticReflectionsPane']]){
     const on=mode===name;
     $(tabId)?.classList.toggle('active',on);
@@ -4234,7 +4251,7 @@ function initializeUnifiedOutputActions(){
     download=$("cifOutputDownload"), set=$("cifOutputSet");
   if(!format||!generate||!download||!set||format.dataset.outputBound) return;
   format.dataset.outputBound="1";
-  // Keep mCIF visible but unavailable, even if browser/localStorage restored it.
+  // Public release: mCIF export is unavailable until BNS validation.
   const mcifOption=format.querySelector('option[value="mcif"]');
   if(mcifOption) mcifOption.disabled=true;
   format.value="cif";
@@ -4242,6 +4259,7 @@ function initializeUnifiedOutputActions(){
   const ids={cif:["cifGenerate","cifDownload","cifSet"],
     mcif:["structureMcifGenerate","structureMcifDownload","structureMcifSet"]};
   const update=()=>{
+    // A saved or programmatic mCIF selection must not re-enable export.
     if(format.value!=="cif") format.value="cif";
     const mcif=false, word="CIF";
     const [g,d,s]=ids[mcif?"mcif":"cif"].map(id=>$(id));
@@ -4261,7 +4279,7 @@ function initializeUnifiedOutputActions(){
   });
   for(const [index,el] of [generate,download,set].entries()){
     el.addEventListener("click",()=>{
-      const id=ids[format.value==="mcif"?"mcif":"cif"][index];
+      const id=ids.cif[index];
       const original=$(id);
       if(original&&!original.disabled)original.click();
       queueMicrotask(update);
@@ -4274,8 +4292,8 @@ function initializeUnifiedOutputActions(){
   update();
 }
 function initMcifGeneratorActions(){
-  // mCIF generation is temporarily unavailable in the public UI.
-  if($("structureMcifGenerate")) $("structureMcifGenerate").disabled=true;
+  // mCIF Generate is available; Download/Set remain disabled until generation.
+  if($("structureMcifGenerate")) $("structureMcifGenerate").disabled=false;
   invalidateGeneratedMcif();
   $("structureMcifShowCurrent")?.addEventListener("click",()=>{
     if(!getSelectedCifText()){mcifMessage("No current CIF/mCIF selected.",true);return;}
